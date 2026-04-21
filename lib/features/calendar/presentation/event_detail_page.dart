@@ -1,15 +1,16 @@
-// 日程详情页 v3：接通数据库，日历本列表从 Provider 读取
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:drift/drift.dart' hide Column;
 import 'package:uuid/uuid.dart';
-import '../../../core/theme/app_theme.dart';
+
 import '../../../core/database/app_database.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 
 class EventDetailPage extends ConsumerStatefulWidget {
   final int? eventId;
+
   const EventDetailPage({super.key, required this.eventId});
 
   @override
@@ -30,40 +31,47 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   bool _isBlock = false;
   int? _eventCalendarId;
   bool _saving = false;
+  bool _isReadOnly = false;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    final next = now.copyWith(
-        hour: now.minute > 0 ? now.hour + 1 : now.hour,
-        minute: 0,
-        second: 0,
-        millisecond: 0,
-        microsecond: 0);
-    _dtstart = next;
-    _dtend = next.add(const Duration(hours: 1));
+    final rounded = now.copyWith(
+      hour: now.minute > 0 ? now.hour + 1 : now.hour,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+    );
+    _dtstart = rounded;
+    _dtend = rounded.add(const Duration(hours: 1));
 
-    if (widget.eventId != null) _loadExistingEvent();
+    if (widget.eventId != null) {
+      _loadExistingEvent();
+    }
   }
 
   Future<void> _loadExistingEvent() async {
     final repo = ref.read(eventRepositoryProvider);
     final event = await repo.getById(widget.eventId!);
-    if (event != null && mounted) {
-      setState(() {
-        _titleController.text = event.summary;
-        _locationController.text = event.location ?? '';
-        _descController.text = event.description ?? '';
-        _dtstart = event.dtstart;
-        _dtend = event.dtend ?? event.dtstart.add(const Duration(hours: 1));
-        _status = event.status;
-        _colorHex = event.colorHex;
-        _rrule = event.rrule;
-        _isBlock = event.isBlock;
-        _eventCalendarId = event.eventCalendarId;
-      });
+    if (event == null || !mounted) {
+      return;
     }
+
+    setState(() {
+      _titleController.text = event.summary;
+      _locationController.text = event.location ?? '';
+      _descController.text = event.description ?? '';
+      _dtstart = event.dtstart;
+      _dtend = event.dtend ?? event.dtstart.add(const Duration(hours: 1));
+      _status = event.status;
+      _colorHex = event.colorHex;
+      _rrule = event.rrule;
+      _isBlock = event.isBlock;
+      _eventCalendarId = event.eventCalendarId;
+      _isReadOnly = event.source == 'outlook';
+    });
   }
 
   @override
@@ -77,31 +85,67 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   void _close(BuildContext context) {
     if (GoRouter.of(context).canPop()) {
       context.pop();
-    } else {
-      Navigator.of(context).pop();
+      return;
     }
+    Navigator.of(context).pop();
+  }
+
+  bool _selectedCalendarIsOutlook() {
+    final calendars =
+        ref.read(allEventCalendarsProvider).asData?.value ?? const <EventCalendar>[];
+    for (final calendar in calendars) {
+      if (calendar.id == _eventCalendarId) {
+        return calendar.source == 'outlook';
+      }
+    }
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final isCreating = widget.eventId == null;
-    final eventCalsAsync = ref.watch(allEventCalendarsProvider);
+    final calendarsAsync = ref.watch(allEventCalendarsProvider);
+    final calendars = calendarsAsync.asData?.value ?? const <EventCalendar>[];
+    EventCalendar? selectedCalendar;
+    for (final calendar in calendars) {
+      if (calendar.id == _eventCalendarId) {
+        selectedCalendar = calendar;
+        break;
+      }
+    }
+
+    final isReadOnly =
+        _isReadOnly || (selectedCalendar?.source == 'outlook' && !isCreating);
+    final pageTitle = isCreating
+        ? '\u65b0\u5efa\u65e5\u7a0b'
+        : isReadOnly
+            ? 'Outlook \u65e5\u7a0b\uff08\u53ea\u8bfb\uff09'
+            : '\u7f16\u8f91\u65e5\u7a0b';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isCreating ? '新建日程' : '编辑日程'),
+        title: Text(pageTitle),
         leading: IconButton(
-            icon: const Icon(Icons.close), onPressed: () => _close(context)),
+          icon: const Icon(Icons.close),
+          onPressed: () => _close(context),
+        ),
         actions: [
+          if (!isCreating && !isReadOnly)
+            IconButton(
+              onPressed: _saving ? null : _delete,
+              tooltip: '\u5220\u9664\u65e5\u7a0b',
+              icon: const Icon(Icons.delete_outline),
+            ),
           TextButton.icon(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || isReadOnly ? null : _save,
             icon: _saving
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.check, size: 18),
-            label: const Text('保存'),
+            label: const Text('\u4fdd\u5b58'),
           ),
         ],
       ),
@@ -110,109 +154,143 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 日历本选择 ────────────────────────────────────────────────
-            _SectionLabel('日历本'),
-            eventCalsAsync.when(
-              loading: () => const SizedBox(
-                  height: 36,
-                  child: Center(child: CircularProgressIndicator())),
-              error: (e, _) => Text('加载失败: $e'),
-              data: (cals) {
-                if (_eventCalendarId == null && cals.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() => _eventCalendarId = cals.first.id);
-                    }
-                  });
-                }
-                return _CalendarSelector(
-                  calendars: cals,
-                  selectedId: _eventCalendarId,
-                  onChanged: (id) => setState(() => _eventCalendarId = id),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // ── 标题 ─────────────────────────────────────────────────────
-            TextField(
-              controller: _titleController,
-              autofocus: true,
-              decoration:
-                  const InputDecoration(hintText: '日程标题', labelText: '标题'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 20),
-
-            // ── 全天 + 时间 ──────────────────────────────────────────────
-            SwitchListTile(
-              title: const Text('全天', style: TextStyle(fontSize: 14)),
-              value: _isAllDay,
-              onChanged: (v) => setState(() => _isAllDay = v),
-              activeThumbColor: AppColors.primary,
-              contentPadding: EdgeInsets.zero,
-            ),
-            _SectionLabel('开始时间'),
-            _DateTimeTile(
-                dateTime: _dtstart,
-                isAllDay: _isAllDay,
-                onTap: () => _pickDateTime(isStart: true)),
-            const SizedBox(height: 12),
-            _SectionLabel('结束时间'),
-            _DateTimeTile(
-                dateTime: _dtend,
-                isAllDay: _isAllDay,
-                onTap: () => _pickDateTime(isStart: false)),
-            const SizedBox(height: 20),
-
-            // ── 地点 ─────────────────────────────────────────────────────
-            TextField(
-              controller: _locationController,
-              decoration: const InputDecoration(
-                  hintText: '添加地点（可选）',
-                  labelText: '地点',
-                  prefixIcon: Icon(Icons.location_on_outlined, size: 20)),
-            ),
-            const SizedBox(height: 16),
-
-            // ── 备注 ─────────────────────────────────────────────────────
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(
-                  hintText: '添加备注（可选）',
-                  labelText: '备注',
-                  prefixIcon: Icon(Icons.notes_outlined, size: 20)),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 20),
-
-            // ── 颜色 ─────────────────────────────────────────────────────
-            _SectionLabel('颜色'),
-            _ColorPicker(
-                selected: _colorHex,
-                onChanged: (c) => setState(() => _colorHex = c)),
-            const SizedBox(height: 20),
-
-            // ── 状态 ─────────────────────────────────────────────────────
-            _SectionLabel('确认状态'),
-            _StatusSelector(
-                value: _status, onChanged: (s) => setState(() => _status = s)),
-            const SizedBox(height: 20),
-
-            // ── 重复规则 ──────────────────────────────────────────────────
-            _SectionLabel('重复'),
-            _RepeatSelector(
-                rrule: _rrule, onChanged: (r) => setState(() => _rrule = r)),
-            const SizedBox(height: 20),
-
-            // ── 排程阻挡 ──────────────────────────────────────────────────
-            SwitchListTile(
-              title: const Text('阻挡自动排程', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('开启后此时间段不会被自动排入任务'),
-              value: _isBlock,
-              onChanged: (v) => setState(() => _isBlock = v),
-              activeThumbColor: AppColors.primary,
-              contentPadding: EdgeInsets.zero,
+            if (isReadOnly) ...[
+              const _WarningNotice(
+                message:
+                    '\u8fd9\u662f\u4ece Outlook \u540c\u6b65\u8fc7\u6765\u7684\u53ea\u8bfb\u65e5\u7a0b\u3002\u8bf7\u5728 Outlook \u5b98\u65b9\u5ba2\u6237\u7aef\u4e2d\u4fee\u6539\u540e\uff0c\u518d\u56de\u5230 FlowPlan \u6267\u884c\u540c\u6b65\u3002',
+              ),
+              const SizedBox(height: 16),
+            ],
+            AbsorbPointer(
+              absorbing: isReadOnly,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _SectionLabel('\u65e5\u5386\u672c'),
+                  calendarsAsync.when(
+                    loading: () => const SizedBox(
+                      height: 40,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                    error: (error, _) => Text(
+                      '\u52a0\u8f7d\u5931\u8d25\uff1a$error',
+                    ),
+                    data: (value) {
+                      final selectableCalendars = isCreating
+                          ? value.where((calendar) => calendar.source == 'local').toList()
+                          : value;
+                      if (selectableCalendars.isEmpty) {
+                        return const _WarningNotice(
+                          message:
+                              '\u5f53\u524d\u6ca1\u6709\u53ef\u5199\u5165\u7684\u672c\u5730\u65e5\u5386\u672c\u3002\u8bf7\u5148\u5728\u201c\u65e5\u5386\u672c\u201d\u4e2d\u521b\u5efa\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\uff0c\u518d\u521b\u5efa\u6216\u6574\u7406\u672c\u5730\u65e5\u7a0b\u3002',
+                        );
+                      }
+                      if (_eventCalendarId == null) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(
+                              () => _eventCalendarId = selectableCalendars.first.id,
+                            );
+                          }
+                        });
+                      }
+                      return _CalendarSelector(
+                        calendars: selectableCalendars,
+                        selectedId: _eventCalendarId,
+                        onChanged: (id) => setState(() => _eventCalendarId = id),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _titleController,
+                    autofocus: !isReadOnly,
+                    decoration: const InputDecoration(
+                      labelText: '\u6807\u9898',
+                      hintText: '\u65e5\u7a0b\u6807\u9898',
+                    ),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SwitchListTile(
+                    title: const Text(
+                      '\u5168\u5929',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    value: _isAllDay,
+                    onChanged: (value) => setState(() => _isAllDay = value),
+                    activeThumbColor: AppColors.primary,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const _SectionLabel('\u5f00\u59cb\u65f6\u95f4'),
+                  _DateTimeTile(
+                    dateTime: _dtstart,
+                    isAllDay: _isAllDay,
+                    onTap: () => _pickDateTime(isStart: true),
+                  ),
+                  const SizedBox(height: 12),
+                  const _SectionLabel('\u7ed3\u675f\u65f6\u95f4'),
+                  _DateTimeTile(
+                    dateTime: _dtend,
+                    isAllDay: _isAllDay,
+                    onTap: () => _pickDateTime(isStart: false),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _locationController,
+                    decoration: const InputDecoration(
+                      labelText: '\u5730\u70b9',
+                      hintText: '\u6dfb\u52a0\u5730\u70b9\uff08\u53ef\u9009\uff09',
+                      prefixIcon: Icon(Icons.location_on_outlined, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _descController,
+                    decoration: const InputDecoration(
+                      labelText: '\u5907\u6ce8',
+                      hintText: '\u6dfb\u52a0\u5907\u6ce8\uff08\u53ef\u9009\uff09',
+                      prefixIcon: Icon(Icons.notes_outlined, size: 20),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 20),
+                  const _SectionLabel('\u989c\u8272'),
+                  _ColorPicker(
+                    selected: _colorHex,
+                    onChanged: (value) => setState(() => _colorHex = value),
+                  ),
+                  const SizedBox(height: 20),
+                  const _SectionLabel('\u786e\u8ba4\u72b6\u6001'),
+                  _StatusSelector(
+                    value: _status,
+                    onChanged: (value) => setState(() => _status = value),
+                  ),
+                  const SizedBox(height: 20),
+                  const _SectionLabel('\u91cd\u590d'),
+                  _RepeatSelector(
+                    rrule: _rrule,
+                    onChanged: (value) => setState(() => _rrule = value),
+                  ),
+                  const SizedBox(height: 20),
+                  SwitchListTile(
+                    title: const Text(
+                      '\u963b\u6321\u81ea\u52a8\u6392\u7a0b',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      '\u5f00\u542f\u540e\u6b64\u65f6\u95f4\u6bb5\u4e0d\u4f1a\u88ab\u81ea\u52a8\u6392\u5165\u4efb\u52a1',
+                    ),
+                    value: _isBlock,
+                    onChanged: (value) => setState(() => _isBlock = value),
+                    activeThumbColor: AppColors.primary,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -228,22 +306,43 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
     );
-    if (date == null || !mounted) return;
+    if (date == null || !mounted) {
+      return;
+    }
+
     if (_isAllDay) {
       setState(() {
+        final selected = DateTime(date.year, date.month, date.day);
         if (isStart) {
-          _dtstart = DateTime(date.year, date.month, date.day);
+          _dtstart = selected;
+          if (_dtend.isBefore(_dtstart)) {
+            _dtend = _dtstart;
+          }
         } else {
-          _dtend = DateTime(date.year, date.month, date.day);
+          if (selected.isBefore(_dtstart)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '\u7ed3\u675f\u65f6\u95f4\u5fc5\u987b\u665a\u4e8e\u6216\u7b49\u4e8e\u5f00\u59cb\u65f6\u95f4',
+                ),
+              ),
+            );
+          } else {
+            _dtend = selected;
+          }
         }
       });
       return;
     }
+
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
-    if (time == null || !mounted) return;
+    if (time == null || !mounted) {
+      return;
+    }
+
     final result =
         DateTime(date.year, date.month, date.day, time.hour, time.minute);
     setState(() {
@@ -252,97 +351,236 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         if (_dtend.isBefore(_dtstart)) {
           _dtend = _dtstart.add(const Duration(hours: 1));
         }
+      } else if (result.isAfter(_dtstart)) {
+        _dtend = result;
       } else {
-        if (result.isAfter(_dtstart)) {
-          _dtend = result;
-        } else {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('结束时间必须晚于开始时间')));
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '\u7ed3\u675f\u65f6\u95f4\u5fc5\u987b\u665a\u4e8e\u5f00\u59cb\u65f6\u95f4',
+            ),
+          ),
+        );
       }
     });
   }
 
   Future<void> _save() async {
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请输入日程标题')));
+    if (_isReadOnly || _selectedCalendarIsOutlook()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Outlook \u540c\u6b65\u65e5\u7a0b\u4e3a\u53ea\u8bfb\uff0c\u8bf7\u5728 Outlook \u5b98\u65b9\u5ba2\u6237\u7aef\u4e2d\u4fee\u6539\u3002',
+          ),
+        ),
+      );
       return;
     }
+    if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('\u8bf7\u8f93\u5165\u65e5\u7a0b\u6807\u9898'),
+        ),
+      );
+      return;
+    }
+    if (_eventCalendarId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '\u65e5\u7a0b\u5fc5\u987b\u5f52\u5c5e\u4e8e\u4e00\u4e2a\u65e5\u5386\u672c\uff0c\u8bf7\u5148\u9009\u62e9\u65e5\u5386\u672c\u3002',
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     final repo = ref.read(eventRepositoryProvider);
     final now = DateTime.now();
     final title = _titleController.text.trim();
-    final desc = _descController.text.trim();
+    final description = _descController.text.trim();
     final location = _locationController.text.trim();
 
     try {
       if (widget.eventId == null) {
-        await repo.create(CalendarEventsCompanion.insert(
-          uid: const Uuid().v4(),
-          dtstamp: now,
-          summary: title,
-          description: Value(desc.isEmpty ? null : desc),
-          location: Value(location.isEmpty ? null : location),
-          dtstart: _dtstart,
-          dtend: Value(_dtend),
-          rrule: Value(_rrule),
-          status: Value(_status),
-          colorHex: Value(_colorHex),
-          isBlock: Value(_isBlock),
-          eventCalendarId: Value(_eventCalendarId),
-        ));
+        await repo.create(
+          CalendarEventsCompanion.insert(
+            uid: const Uuid().v4(),
+            dtstamp: now,
+            summary: title,
+            description: Value(description.isEmpty ? null : description),
+            location: Value(location.isEmpty ? null : location),
+            dtstart: _dtstart,
+            dtend: Value(_dtend),
+            rrule: Value(_rrule),
+            status: Value(_status),
+            colorHex: Value(_colorHex),
+            isBlock: Value(_isBlock),
+            eventCalendarId: Value(_eventCalendarId),
+          ),
+        );
       } else {
-        await repo.update(CalendarEventsCompanion(
-          id: Value(widget.eventId!),
-          summary: Value(title),
-          description: Value(desc.isEmpty ? null : desc),
-          location: Value(location.isEmpty ? null : location),
-          dtstart: Value(_dtstart),
-          dtend: Value(_dtend),
-          rrule: Value(_rrule),
-          status: Value(_status),
-          colorHex: Value(_colorHex),
-          isBlock: Value(_isBlock),
-          eventCalendarId: Value(_eventCalendarId),
-        ));
+        await repo.update(
+          CalendarEventsCompanion(
+            id: Value(widget.eventId!),
+            summary: Value(title),
+            description: Value(description.isEmpty ? null : description),
+            location: Value(location.isEmpty ? null : location),
+            dtstart: Value(_dtstart),
+            dtend: Value(_dtend),
+            rrule: Value(_rrule),
+            status: Value(_status),
+            colorHex: Value(_colorHex),
+            isBlock: Value(_isBlock),
+            eventCalendarId: Value(_eventCalendarId),
+          ),
+        );
       }
-      if (mounted) {
-        ref.read(selectedDateProvider.notifier).setDate(_dtstart);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('日程「$title」已保存')));
-        _close(context);
+
+      if (!mounted) {
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存失败: $e')));
+      ref.read(selectedDateProvider.notifier).setDate(_dtstart);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('\u65e5\u7a0b\u300c$title\u300d\u5df2\u4fdd\u5b58'),
+        ),
+      );
+      _close(context);
+    } catch (error) {
+      if (!mounted) {
+        return;
       }
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('\u4fdd\u5b58\u5931\u8d25\uff1a$error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _delete() async {
+    if (widget.eventId == null || _saving) {
+      return;
+    }
+    if (_isReadOnly || _selectedCalendarIsOutlook()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Outlook \u540c\u6b65\u65e5\u7a0b\u4e3a\u53ea\u8bfb\uff0c\u4e0d\u80fd\u5728 FlowPlan \u4e2d\u5220\u9664\u3002',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('\u5220\u9664\u65e5\u7a0b'),
+        content: Text(
+          '\u786e\u5b9a\u8981\u5220\u9664\u65e5\u7a0b\u300c${_titleController.text.trim().isEmpty ? '\u672a\u547d\u540d\u65e5\u7a0b' : _titleController.text.trim()}\u300d\u5417\uff1f',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('\u53d6\u6d88'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              '\u5220\u9664',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    try {
+      await ref.read(eventRepositoryProvider).delete(widget.eventId!);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('\u65e5\u7a0b\u5df2\u5220\u9664'),
+        ),
+      );
+      _close(context);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('\u5220\u9664\u5931\u8d25\uff1a$error'),
+        ),
+      );
     }
   }
 }
 
-// ─── 辅助 Widgets ────────────────────────────────────────────────────────────
-
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
+
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text,
-          style: Theme.of(context)
-              .textTheme
-              .labelSmall
-              ?.copyWith(color: Colors.grey)));
+      child: Text(
+        text,
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: Colors.grey),
+      ),
+    );
+  }
+}
+
+class _WarningNotice extends StatelessWidget {
+  final String message;
+
+  const _WarningNotice({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.orange.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(fontSize: 13),
+      ),
+    );
+  }
 }
 
 class _CalendarSelector extends StatelessWidget {
   final List<EventCalendar> calendars;
   final int? selectedId;
   final ValueChanged<int?> onChanged;
+
   const _CalendarSelector({
     required this.calendars,
     required this.selectedId,
@@ -358,14 +596,15 @@ class _CalendarSelector extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Wrap(
+  Widget build(BuildContext context) {
+    return Wrap(
       spacing: 8,
       runSpacing: 6,
-      children: calendars.map((cal) {
-        final selected = cal.id == selectedId;
-        final color = _parseColor(cal.colorHex);
+      children: calendars.map((calendar) {
+        final selected = calendar.id == selectedId;
+        final color = _parseColor(calendar.colorHex);
         return GestureDetector(
-          onTap: () => onChanged(cal.id),
+          onTap: () => onChanged(calendar.id),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -375,34 +614,45 @@ class _CalendarSelector extends StatelessWidget {
                   : Theme.of(context).inputDecorationTheme.fillColor,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                  color: selected ? color : Colors.transparent, width: 1.5),
+                color: selected ? color : Colors.transparent,
+                width: 1.5,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                    width: 10,
-                    height: 10,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle)),
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 6),
-                Text(cal.name,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? color : null,
-                    )),
+                Text(
+                  calendar.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? color : null,
+                  ),
+                ),
               ],
             ),
           ),
         );
-      }).toList());
+      }).toList(),
+    );
+  }
 }
 
 class _DateTimeTile extends StatelessWidget {
   final DateTime dateTime;
   final bool isAllDay;
   final VoidCallback onTap;
+
   const _DateTimeTile({
     required this.dateTime,
     required this.isAllDay,
@@ -410,86 +660,122 @@ class _DateTimeTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) {
+    return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-            color: Theme.of(context).inputDecorationTheme.fillColor,
-            borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          const Icon(Icons.access_time_outlined, size: 18),
-          const SizedBox(width: 12),
-          Text(_format(dateTime, isAllDay),
-              style: const TextStyle(fontSize: 15)),
-        ]),
-      ));
+          color: Theme.of(context).inputDecorationTheme.fillColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.access_time_outlined, size: 18),
+            const SizedBox(width: 12),
+            Text(
+              _format(dateTime, isAllDay),
+              style: const TextStyle(fontSize: 15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   String _format(DateTime dt, bool allDay) {
-    final date = '${dt.year}年${dt.month}月${dt.day}日';
-    if (allDay) return date;
-    return '$date  ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final date =
+        '${dt.year}\u5e74${dt.month}\u6708${dt.day}\u65e5';
+    if (allDay) {
+      return date;
+    }
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$date $hour:$minute';
   }
 }
 
 class _ColorPicker extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
+
   const _ColorPicker({required this.selected, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) => Wrap(
+  Widget build(BuildContext context) {
+    return Wrap(
       spacing: 10,
       children: AppColors.taskPalette.map((color) {
         final hex =
             '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
-        final isSel = hex == selected.toUpperCase();
+        final isSelected = hex == selected.toUpperCase();
         return GestureDetector(
           onTap: () => onChanged(hex),
           child: Container(
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-                border: isSel
-                    ? Border.all(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        width: 3)
-                    : null),
-            child: isSel
+              color: color,
+              shape: BoxShape.circle,
+              border: isSelected
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      width: 3,
+                    )
+                  : null,
+            ),
+            child: isSelected
                 ? const Icon(Icons.check, color: Colors.white, size: 16)
                 : null,
           ),
         );
-      }).toList());
+      }).toList(),
+    );
+  }
 }
 
 class _StatusSelector extends StatelessWidget {
   final String value;
   final ValueChanged<String> onChanged;
+
   const _StatusSelector({required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     const items = [
-      (v: 'CONFIRMED', label: '已确认', icon: Icons.check_circle_outline),
-      (v: 'TENTATIVE', label: '暂定', icon: Icons.help_outline),
-      (v: 'CANCELLED', label: '已取消', icon: Icons.cancel_outlined),
+      (
+        value: 'CONFIRMED',
+        label: '\u5df2\u786e\u8ba4',
+        icon: Icons.check_circle_outline,
+      ),
+      (
+        value: 'TENTATIVE',
+        label: '\u6682\u5b9a',
+        icon: Icons.help_outline,
+      ),
+      (
+        value: 'CANCELLED',
+        label: '\u5df2\u53d6\u6d88',
+        icon: Icons.cancel_outlined,
+      ),
     ];
+
     return Wrap(
       spacing: 8,
       runSpacing: 6,
       children: items.map((item) {
-        final sel = item.v == value;
+        final selected = item.value == value;
         return ChoiceChip(
           avatar: Icon(item.icon, size: 16),
           label: Text(item.label),
-          selected: sel,
-          onSelected: (_) => onChanged(item.v),
+          selected: selected,
+          onSelected: (_) => onChanged(item.value),
           selectedColor: AppColors.primary,
-          labelStyle: TextStyle(color: sel ? Colors.white : null, fontSize: 12),
+          labelStyle: TextStyle(
+            color: selected ? Colors.white : null,
+            fontSize: 12,
+          ),
         );
       }).toList(),
     );
@@ -499,28 +785,33 @@ class _StatusSelector extends StatelessWidget {
 class _RepeatSelector extends StatelessWidget {
   final String? rrule;
   final ValueChanged<String?> onChanged;
+
   const _RepeatSelector({required this.rrule, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    const opts = [
-      (v: null, label: '不重复'),
-      (v: 'FREQ=DAILY', label: '每天'),
-      (v: 'FREQ=WEEKLY', label: '每周'),
-      (v: 'FREQ=MONTHLY', label: '每月'),
-      (v: 'FREQ=YEARLY', label: '每年'),
+    const items = [
+      (value: null, label: '\u4e0d\u91cd\u590d'),
+      (value: 'FREQ=DAILY', label: '\u6bcf\u5929'),
+      (value: 'FREQ=WEEKLY', label: '\u6bcf\u5468'),
+      (value: 'FREQ=MONTHLY', label: '\u6bcf\u6708'),
+      (value: 'FREQ=YEARLY', label: '\u6bcf\u5e74'),
     ];
+
     return Wrap(
       spacing: 8,
       runSpacing: 6,
-      children: opts.map((opt) {
-        final sel = opt.v == rrule;
+      children: items.map((item) {
+        final selected = item.value == rrule;
         return ChoiceChip(
-          label: Text(opt.label),
-          selected: sel,
-          onSelected: (_) => onChanged(opt.v),
+          label: Text(item.label),
+          selected: selected,
+          onSelected: (_) => onChanged(item.value),
           selectedColor: AppColors.primary,
-          labelStyle: TextStyle(color: sel ? Colors.white : null, fontSize: 12),
+          labelStyle: TextStyle(
+            color: selected ? Colors.white : null,
+            fontSize: 12,
+          ),
         );
       }).toList(),
     );

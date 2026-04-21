@@ -13,20 +13,17 @@ import '../../../tracker/models/work_session.dart';
 
 final _taskLinkedRecordsProvider =
     StreamProvider.family<List<ActivityRecord>, int>((ref, taskId) {
-  final repository = ref.watch(activityRecordRepositoryProvider);
-  return repository.watchByTaskId(taskId);
+  return ref.watch(activityRecordRepositoryProvider).watchByTaskId(taskId);
 });
 
 final _taskLinkedInputSummaryProvider =
     FutureProvider.family<InputHeatmapSummary, int>((ref, taskId) {
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.buildHeatmapSummaryForTask(taskId);
+  return ref.watch(inputActivityEventServiceProvider).buildHeatmapSummaryForTask(taskId);
 });
 
 final _taskLinkedRecentEventsProvider =
     FutureProvider.family<List<TrackedInputEvent>, int>((ref, taskId) {
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.listRecentEventsForTask(taskId, limit: 8);
+  return ref.watch(inputActivityEventServiceProvider).listRecentEventsForTask(taskId, limit: 8);
 });
 
 class TaskTrackerEvidenceSection extends ConsumerWidget {
@@ -40,20 +37,17 @@ class TaskTrackerEvidenceSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recordsAsync = ref.watch(_taskLinkedRecordsProvider(taskId));
-    final inputSummaryAsync = ref.watch(_taskLinkedInputSummaryProvider(taskId));
+    final summaryAsync = ref.watch(_taskLinkedInputSummaryProvider(taskId));
     final recentEventsAsync = ref.watch(_taskLinkedRecentEventsProvider(taskId));
 
     return recordsAsync.when(
-      loading: () => _TaskTrackerSectionCard(
-        child: SizedBox(
-          height: 180,
-          child: const Center(child: CircularProgressIndicator()),
-        ),
+      loading: () => const _SectionCard(
+        child: SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
       ),
-      error: (error, _) => _TaskTrackerSectionCard(
-        child: _TaskTrackerMessage(
+      error: (error, _) => _SectionCard(
+        child: _EmptyMessage(
           icon: Icons.warning_amber_rounded,
-          title: '追踪证据读取失败',
+          title: '\u8ffd\u8e2a\u8bc1\u636e\u8bfb\u53d6\u5931\u8d25',
           subtitle: '$error',
         ),
       ),
@@ -63,23 +57,19 @@ class TaskTrackerEvidenceSection extends ConsumerWidget {
         final latestAnchor = sessions.isNotEmpty
             ? sessions.last.startTime
             : (records.isEmpty ? null : records.last.startTime);
-        final recentRecords = records.reversed.take(6).toList(growable: false);
+        final recentRecords = records.reversed.take(5).toList(growable: false);
 
-        return _TaskTrackerSectionCard(
+        return _SectionCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(
-                    Icons.radar_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
+                  const Icon(Icons.radar_outlined, size: 18, color: AppColors.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '追踪证据',
+                      '\u8ffd\u8e2a\u8bc1\u636e',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -87,59 +77,57 @@ class TaskTrackerEvidenceSection extends ConsumerWidget {
                   ),
                   TextButton.icon(
                     onPressed: () {
-                      final anchor = latestAnchor ?? DateTime.now();
-                      ref.read(selectedDateProvider.notifier).setDate(anchor);
+                      ref.read(selectedDateProvider.notifier).setDate(latestAnchor ?? DateTime.now());
                       context.go(AppRoutes.tracker);
                     },
                     icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('打开追踪页'),
+                    label: const Text('\u6253\u5f00\u8ffd\u8e2a\u9875'),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
                 records.isEmpty
-                    ? '这个任务还没有关联追踪记录。后续可在追踪页中从工作会话或原始记录直接绑定。'
-                    : '这里汇总与当前任务关联的工作会话、原始活动记录和输入行为证据，方便回看真实执行过程。',
+                    ? '\u5f53\u524d\u4efb\u52a1\u8fd8\u6ca1\u6709\u5173\u8054\u8ffd\u8e2a\u8bb0\u5f55\u3002\u540e\u7eed\u53ef\u4ee5\u5728\u8ffd\u8e2a\u9875\u4e2d\u4ece\u5de5\u4f5c\u4f1a\u8bdd\u6216\u539f\u59cb\u6d3b\u52a8\u8bb0\u5f55\u76f4\u63a5\u7ed1\u5b9a\u3002'
+                    : '\u8fd9\u91cc\u4f1a\u6c47\u603b\u5f53\u524d\u4efb\u52a1\u5173\u8054\u7684\u5de5\u4f5c\u4f1a\u8bdd\u3001\u539f\u59cb\u6d3b\u52a8\u8bb0\u5f55\u4e0e\u8f93\u5165\u884c\u4e3a\u8bc1\u636e\u3002',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               if (records.isEmpty)
-                const _TaskTrackerMessage(
+                const _EmptyMessage(
                   icon: Icons.link_off_outlined,
-                  title: '暂时没有追踪证据',
-                  subtitle: '先去追踪页中把工作会话或原始活动记录关联到这个任务，这里就会自动出现历史证据。',
+                  title: '\u6682\u65f6\u6ca1\u6709\u8ffd\u8e2a\u8bc1\u636e',
+                  subtitle: '\u5148\u5728\u8ffd\u8e2a\u9875\u4e2d\u628a\u5de5\u4f5c\u4f1a\u8bdd\u6216\u539f\u59cb\u6d3b\u52a8\u8bb0\u5f55\u5173\u8054\u5230\u8fd9\u4e2a\u4efb\u52a1\u3002',
                 )
               else ...[
                 Wrap(
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    _TaskTrackerMetricCard(
-                      title: '累计追踪时长',
+                    _MetricCard(
+                      title: '\u7d2f\u8ba1\u8ffd\u8e2a\u65f6\u957f',
                       value: _formatMinutes(insights.totalMinutes),
-                      subtitle: '来自 ${records.length} 条原始记录',
+                      subtitle: '\u6765\u81ea ${records.length} \u6761\u539f\u59cb\u8bb0\u5f55',
                     ),
-                    _TaskTrackerMetricCard(
-                      title: '工作会话',
-                      value: '${sessions.length} 段',
-                      subtitle: '已按去碎片规则合并',
+                    _MetricCard(
+                      title: '\u5de5\u4f5c\u4f1a\u8bdd',
+                      value: '${sessions.length} \u6bb5',
+                      subtitle: '\u5df2\u6309\u53bb\u788e\u7247\u89c4\u5219\u5408\u5e76',
                     ),
-                    _TaskTrackerMetricCard(
-                      title: '按键与点击',
-                      value: '${insights.totalKeys} 键 / ${insights.totalClicks} 次',
-                      subtitle: '来自活动记录聚合',
+                    _MetricCard(
+                      title: '\u6309\u952e\u4e0e\u70b9\u51fb',
+                      value: '${insights.totalKeys} \u952e / ${insights.totalClicks} \u6b21',
+                      subtitle: '\u6765\u81ea\u6d3b\u52a8\u8bb0\u5f55\u805a\u5408',
                     ),
-                    _TaskTrackerMetricCard(
-                      title: '输入事件',
-                      value: inputSummaryAsync.maybeWhen(
-                        data: (summary) => '${summary.totalEventCount} 条',
-                        orElse: () => '读取中',
+                    _MetricCard(
+                      title: '\u8f93\u5165\u4e8b\u4ef6',
+                      value: summaryAsync.maybeWhen(
+                        data: (summary) => '${summary.totalEventCount} \u6761',
+                        orElse: () => '\u8bfb\u53d6\u4e2d',
                       ),
-                      subtitle: inputSummaryAsync.maybeWhen(
-                        data: (summary) =>
-                            '活跃 ${summary.activeMinuteCount} 分钟',
-                        orElse: () => '来自 tracked_input_events',
+                      subtitle: summaryAsync.maybeWhen(
+                        data: (summary) => '\u6d3b\u8dc3 ${summary.activeMinuteCount} \u5206\u949f',
+                        orElse: () => '\u6765\u81ea tracked_input_events',
                       ),
                     ),
                   ],
@@ -147,63 +135,55 @@ class TaskTrackerEvidenceSection extends ConsumerWidget {
                 if (insights.topProcesses.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Text(
-                    '主力应用：${insights.topProcesses.map((item) => item.label).join('、')}',
+                    '\u4e3b\u529b\u5e94\u7528\uff1a${insights.topProcesses.map((item) => item.label).join('\u3001')}',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
                 const SizedBox(height: 18),
-                _TaskInputEvidencePanel(
-                  summaryAsync: inputSummaryAsync,
+                _InputEvidencePanel(
+                  summaryAsync: summaryAsync,
                   recentEventsAsync: recentEventsAsync,
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  '关联工作会话',
+                  '\u5173\u8054\u5de5\u4f5c\u4f1a\u8bdd',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 8),
                 ...sessions.reversed.take(5).map(
-                  (session) => _TaskLinkedSessionCard(
+                  (session) => _SessionCard(
                     session: session,
                     onOpenDay: () {
-                      ref.read(selectedDateProvider.notifier).setDate(
-                            session.startTime,
-                          );
+                      ref.read(selectedDateProvider.notifier).setDate(session.startTime);
                       context.go(AppRoutes.tracker);
                     },
                   ),
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  '最近关联的原始记录',
+                  '\u6700\u8fd1\u5173\u8054\u7684\u539f\u59cb\u8bb0\u5f55',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 8),
                 ...recentRecords.map(
-                  (record) => _TaskLinkedRecordCard(
+                  (record) => _RecordCard(
                     record: record,
                     onOpenDay: () {
-                      ref.read(selectedDateProvider.notifier).setDate(
-                            record.startTime,
-                          );
+                      ref.read(selectedDateProvider.notifier).setDate(record.startTime);
                       context.go(AppRoutes.tracker);
                     },
                     onUnlink: () async {
-                      await ref
-                          .read(activityRecordRepositoryProvider)
-                          .linkTask(record.id, null);
+                      await ref.read(activityRecordRepositoryProvider).linkTask(record.id, null);
                       ref.invalidate(_taskLinkedInputSummaryProvider(taskId));
                       ref.invalidate(_taskLinkedRecentEventsProvider(taskId));
-                      if (!context.mounted) {
-                        return;
-                      }
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('已取消这条原始记录与当前任务的关联'),
+                          content: Text('\u5df2\u53d6\u6d88\u8fd9\u6761\u8bb0\u5f55\u4e0e\u5f53\u524d\u4efb\u52a1\u7684\u5173\u8054'),
                         ),
                       );
                     },
@@ -218,8 +198,8 @@ class TaskTrackerEvidenceSection extends ConsumerWidget {
   }
 }
 
-class _TaskInputEvidencePanel extends StatelessWidget {
-  const _TaskInputEvidencePanel({
+class _InputEvidencePanel extends StatelessWidget {
+  const _InputEvidencePanel({
     required this.summaryAsync,
     required this.recentEventsAsync,
   });
@@ -233,55 +213,26 @@ class _TaskInputEvidencePanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '输入行为证据',
+          '\u8f93\u5165\u884c\u4e3a\u8bc1\u636e',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
         ),
         const SizedBox(height: 8),
         summaryAsync.when(
-          loading: () => Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Text(
-              '正在汇总任务级输入行为分析…',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          error: (error, _) => Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              '读取输入行为分析失败：$error',
-              style: const TextStyle(fontSize: 12, color: Colors.red),
-            ),
+          loading: () => _surfaceMessage('\u6b63\u5728\u6c47\u603b\u4efb\u52a1\u7ea7\u8f93\u5165\u884c\u4e3a\u5206\u6790...', context),
+          error: (error, _) => _surfaceMessage(
+            '\u8bfb\u53d6\u8f93\u5165\u884c\u4e3a\u5206\u6790\u5931\u8d25\uff1a$error',
+            context,
+            isError: true,
           ),
           data: (summary) {
             if (summary.totalEventCount <= 0) {
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Text(
-                  '当前任务已有关联记录，但还没有更细粒度的输入事件可供分析。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+              return _surfaceMessage(
+                '\u5f53\u524d\u4efb\u52a1\u5df2\u6709\u5173\u8054\u8bb0\u5f55\uff0c\u4f46\u8fd8\u6ca1\u6709\u66f4\u7ec6\u7c92\u5ea6\u7684\u8f93\u5165\u4e8b\u4ef6\u53ef\u4f9b\u5206\u6790\u3002',
+                context,
               );
             }
-
-            final peakHour = summary.peakHourBucket;
-            final leadingProcess = summary.leadingProcessIntensity;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,23 +241,17 @@ class _TaskInputEvidencePanel extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _TaskTag(
-                      text:
-                          '键盘占比 ${(summary.keyboardInteractionShare * 100).toStringAsFixed(1)}%',
-                    ),
-                    _TaskTag(
-                      text:
-                          '指针占比 ${(summary.pointerInteractionShare * 100).toStringAsFixed(1)}%',
-                    ),
-                    if (peakHour != null)
-                      _TaskTag(
+                    _Tag(text: '\u952e\u76d8\u5360\u6bd4 ${(summary.keyboardInteractionShare * 100).toStringAsFixed(1)}%'),
+                    _Tag(text: '\u6307\u9488\u5360\u6bd4 ${(summary.pointerInteractionShare * 100).toStringAsFixed(1)}%'),
+                    if (summary.peakHourBucket != null)
+                      _Tag(
                         text:
-                            '峰值时段 ${_formatHourLabel(peakHour.hour)} · ${peakHour.totalEvents} 条',
+                            '\u5cf0\u503c\u65f6\u6bb5 ${_formatHourLabel(summary.peakHourBucket!.hour)} \u00b7 ${summary.peakHourBucket!.totalEvents} \u6761',
                       ),
-                    if (leadingProcess != null)
-                      _TaskTag(
+                    if (summary.leadingProcessIntensity != null)
+                      _Tag(
                         text:
-                            '主力应用 ${leadingProcess.processName} · 强度 ${leadingProcess.intensityScore}',
+                            '\u4e3b\u529b\u5e94\u7528 ${summary.leadingProcessIntensity!.processName} \u00b7 \u5f3a\u5ea6 ${summary.leadingProcessIntensity!.intensityScore}',
                       ),
                   ],
                 ),
@@ -317,36 +262,30 @@ class _TaskInputEvidencePanel extends StatelessWidget {
                     runSpacing: 8,
                     children: summary.topKeys
                         .take(6)
-                        .map(
-                          (item) => _TaskTag(
-                            text: '${item.label} ${item.count} 次',
-                            highlighted: true,
-                          ),
-                        )
+                        .map((item) => _Tag(text: '${item.label} ${item.count} \u6b21', highlighted: true))
                         .toList(growable: false),
                   ),
                 ],
                 const SizedBox(height: 12),
                 recentEventsAsync.when(
                   loading: () => const Text(
-                    '正在读取最近输入事件…',
+                    '\u6b63\u5728\u8bfb\u53d6\u6700\u8fd1\u8f93\u5165\u4e8b\u4ef6...',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   error: (error, _) => Text(
-                    '最近输入事件读取失败：$error',
+                    '\u6700\u8fd1\u8f93\u5165\u4e8b\u4ef6\u8bfb\u53d6\u5931\u8d25\uff1a$error',
                     style: const TextStyle(fontSize: 12, color: Colors.red),
                   ),
                   data: (events) {
                     if (events.isEmpty) {
                       return const Text(
-                        '当前没有可展示的最近输入事件。',
+                        '\u5f53\u524d\u6ca1\u6709\u53ef\u5c55\u793a\u7684\u6700\u8fd1\u8f93\u5165\u4e8b\u4ef6\u3002',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       );
                     }
-
                     return Column(
                       children: events
-                          .map((event) => _TaskRecentEventTile(event: event))
+                          .map((event) => _RecentEventTile(event: event))
                           .toList(growable: false),
                     );
                   },
@@ -358,10 +297,29 @@ class _TaskInputEvidencePanel extends StatelessWidget {
       ],
     );
   }
+
+  Widget _surfaceMessage(
+    String message,
+    BuildContext context, {
+    bool isError = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(fontSize: 12, color: isError ? Colors.red : Colors.grey),
+      ),
+    );
+  }
 }
 
-class _TaskLinkedSessionCard extends StatelessWidget {
-  const _TaskLinkedSessionCard({
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({
     required this.session,
     required this.onOpenDay,
   });
@@ -372,84 +330,34 @@ class _TaskLinkedSessionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final meta = <String>[
-      if (session.category != null && session.category!.trim().isNotEmpty)
-        session.category!.trim(),
-      if (session.processName != null && session.processName!.trim().isNotEmpty)
-        session.processName!.trim(),
-      if (session.spansMultipleProcesses) '跨 ${session.processNames.length} 个应用',
-      if (session.interruptionCount > 0) '吸收 ${session.interruptionCount} 次打断',
-    ].join(' · ');
+      if (session.category != null && session.category!.trim().isNotEmpty) session.category!.trim(),
+      if (session.processName != null && session.processName!.trim().isNotEmpty) session.processName!.trim(),
+      if (session.spansMultipleProcesses) '\u8de8 ${session.processNames.length} \u4e2a\u5e94\u7528',
+      if (session.interruptionCount > 0) '\u88ab\u6253\u65ad ${session.interruptionCount} \u6b21',
+    ].join(' \u00b7 ');
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  session.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                _formatMinutes(session.durationMinutes),
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${_formatDate(session.startTime)} ${_formatTime(session.startTime)} - ${_formatTime(session.endTime)}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          if (meta.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              meta,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _TaskTag(text: '${session.keyCount} 次按键'),
-              _TaskTag(text: '${session.mouseClicks} 次点击'),
-              if (session.scrollPx > 0) _TaskTag(text: '${session.scrollPx}px 滚动'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onOpenDay,
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('查看当天追踪'),
-            ),
-          ),
-        ],
+    return _EvidenceCard(
+      title: session.label,
+      subtitle:
+          '${_formatDate(session.startTime)} ${_formatTime(session.startTime)} - ${_formatTime(session.endTime)}',
+      durationText: _formatMinutes(session.durationMinutes),
+      meta: meta,
+      tags: [
+        _Tag(text: '${session.keyCount} \u6b21\u6309\u952e'),
+        _Tag(text: '${session.mouseClicks} \u6b21\u70b9\u51fb'),
+        if (session.scrollPx > 0) _Tag(text: '${session.scrollPx}px \u6eda\u52a8'),
+      ],
+      trailing: TextButton.icon(
+        onPressed: onOpenDay,
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: const Text('\u67e5\u770b\u5f53\u5929\u8ffd\u8e2a'),
       ),
     );
   }
 }
 
-class _TaskLinkedRecordCard extends StatelessWidget {
-  const _TaskLinkedRecordCard({
+class _RecordCard extends StatelessWidget {
+  const _RecordCard({
     required this.record,
     required this.onOpenDay,
     required this.onUnlink,
@@ -463,85 +371,34 @@ class _TaskLinkedRecordCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final endTime = record.endTime ?? record.startTime;
     final meta = <String>[
-      if (record.category != null && record.category!.trim().isNotEmpty)
-        record.category!.trim(),
-      if (record.processName != null && record.processName!.trim().isNotEmpty)
-        record.processName!.trim(),
-    ].join(' · ');
+      if (record.category != null && record.category!.trim().isNotEmpty) record.category!.trim(),
+      if (record.processName != null && record.processName!.trim().isNotEmpty) record.processName!.trim(),
+    ].join(' \u00b7 ');
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return _EvidenceCard(
+      title: WorkSessionGrouper.preferredLabel(record),
+      subtitle:
+          '${_formatDate(record.startTime)} ${_formatTime(record.startTime)} - ${_formatTime(endTime)}',
+      durationText: _formatMinutes(record.durationMinutes),
+      meta: meta,
+      tags: [
+        if (record.keyCount > 0) _Tag(text: '${record.keyCount} \u6b21\u6309\u952e'),
+        if (record.mouseClicks > 0) _Tag(text: '${record.mouseClicks} \u6b21\u70b9\u51fb'),
+        if (record.scrollPx > 0) _Tag(text: '${record.scrollPx}px \u6eda\u52a8'),
+        if (record.mouseMovePx > 0) _Tag(text: '${record.mouseMovePx}px \u79fb\u52a8'),
+      ],
+      trailing: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  WorkSessionGrouper.preferredLabel(record),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                _formatMinutes(record.durationMinutes),
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
+          TextButton.icon(
+            onPressed: onOpenDay,
+            icon: const Icon(Icons.travel_explore_outlined, size: 16),
+            label: const Text('\u67e5\u770b\u5f53\u5929'),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '${_formatDate(record.startTime)} ${_formatTime(record.startTime)} - ${_formatTime(endTime)}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          if (meta.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              meta,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (record.keyCount > 0) _TaskTag(text: '${record.keyCount} 次按键'),
-              if (record.mouseClicks > 0)
-                _TaskTag(text: '${record.mouseClicks} 次点击'),
-              if (record.scrollPx > 0) _TaskTag(text: '${record.scrollPx}px 滚动'),
-              if (record.mouseMovePx > 0)
-                _TaskTag(text: '${record.mouseMovePx}px 移动'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              TextButton.icon(
-                onPressed: onOpenDay,
-                icon: const Icon(Icons.travel_explore_outlined, size: 16),
-                label: const Text('查看当天'),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: () {
-                  onUnlink();
-                },
-                icon: const Icon(Icons.link_off_outlined, size: 16),
-                label: const Text('取消关联'),
-              ),
-            ],
+          const Spacer(),
+          TextButton.icon(
+            onPressed: onUnlink,
+            icon: const Icon(Icons.link_off_outlined, size: 16),
+            label: const Text('\u53d6\u6d88\u5173\u8054'),
           ),
         ],
       ),
@@ -549,21 +406,17 @@ class _TaskLinkedRecordCard extends StatelessWidget {
   }
 }
 
-class _TaskRecentEventTile extends StatelessWidget {
-  const _TaskRecentEventTile({
-    required this.event,
-  });
+class _RecentEventTile extends StatelessWidget {
+  const _RecentEventTile({required this.event});
 
   final TrackedInputEvent event;
 
   @override
   Widget build(BuildContext context) {
     final subtitle = <String>[
-      if (event.processName != null && event.processName!.trim().isNotEmpty)
-        event.processName!.trim(),
-      if (event.activityLabel != null && event.activityLabel!.trim().isNotEmpty)
-        event.activityLabel!.trim(),
-    ].join(' · ');
+      if (event.processName != null && event.processName!.trim().isNotEmpty) event.processName!.trim(),
+      if (event.activityLabel != null && event.activityLabel!.trim().isNotEmpty) event.activityLabel!.trim(),
+    ].join(' \u00b7 ');
 
     return Container(
       width: double.infinity,
@@ -582,10 +435,7 @@ class _TaskRecentEventTile extends StatelessWidget {
             width: 70,
             child: Text(
               _formatTimeWithSeconds(event.timestamp),
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(width: 8),
@@ -595,17 +445,11 @@ class _TaskRecentEventTile extends StatelessWidget {
               children: [
                 Text(
                   _eventTitle(event),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 if (subtitle.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
                 ],
               ],
             ),
@@ -616,8 +460,8 @@ class _TaskRecentEventTile extends StatelessWidget {
   }
 }
 
-class _TaskTrackerMetricCard extends StatelessWidget {
-  const _TaskTrackerMetricCard({
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
     required this.title,
     required this.value,
     required this.subtitle,
@@ -639,33 +483,81 @@ class _TaskTrackerMetricCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
+          Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),
     );
   }
 }
 
-class _TaskTrackerSectionCard extends StatelessWidget {
-  const _TaskTrackerSectionCard({
-    required this.child,
+class _EvidenceCard extends StatelessWidget {
+  const _EvidenceCard({
+    required this.title,
+    required this.subtitle,
+    required this.durationText,
+    required this.meta,
+    required this.tags,
+    required this.trailing,
   });
+
+  final String title;
+  final String subtitle;
+  final String durationText;
+  final String meta;
+  final List<Widget> tags;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(durationText, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          if (meta.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(meta, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+          if (tags.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: tags),
+          ],
+          const SizedBox(height: 8),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
 
   final Widget child;
 
@@ -686,8 +578,8 @@ class _TaskTrackerSectionCard extends StatelessWidget {
   }
 }
 
-class _TaskTrackerMessage extends StatelessWidget {
-  const _TaskTrackerMessage({
+class _EmptyMessage extends StatelessWidget {
+  const _EmptyMessage({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -706,13 +598,7 @@ class _TaskTrackerMessage extends StatelessWidget {
         children: [
           Icon(icon, size: 28, color: Colors.grey),
           const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text(
             subtitle,
@@ -725,8 +611,8 @@ class _TaskTrackerMessage extends StatelessWidget {
   }
 }
 
-class _TaskTag extends StatelessWidget {
-  const _TaskTag({
+class _Tag extends StatelessWidget {
+  const _Tag({
     required this.text,
     this.highlighted = false,
   });
@@ -742,10 +628,7 @@ class _TaskTag extends StatelessWidget {
       decoration: BoxDecoration(
         color: highlighted
             ? AppColors.primary.withValues(alpha: 0.08)
-            : Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
-                .withValues(alpha: 0.45),
+            : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -762,7 +645,7 @@ class _TaskTag extends StatelessWidget {
 
 String _formatDate(DateTime value) {
   final date = value.toLocal();
-  return '${date.year}年${date.month}月${date.day}日';
+  return '${date.year}\u5e74${date.month}\u6708${date.day}\u65e5';
 }
 
 String _formatTime(DateTime value) {
@@ -781,18 +664,12 @@ String _formatTimeWithSeconds(DateTime value) {
 }
 
 String _formatMinutes(int minutes) {
-  if (minutes <= 0) {
-    return '不足 1 分钟';
-  }
-  if (minutes < 60) {
-    return '$minutes 分钟';
-  }
+  if (minutes <= 0) return '\u4e0d\u8db3 1 \u5206\u949f';
+  if (minutes < 60) return '$minutes \u5206\u949f';
   final hours = minutes ~/ 60;
-  final restMinutes = minutes % 60;
-  if (restMinutes == 0) {
-    return '$hours 小时';
-  }
-  return '$hours 小时 $restMinutes 分钟';
+  final rest = minutes % 60;
+  if (rest == 0) return '$hours \u5c0f\u65f6';
+  return '$hours \u5c0f\u65f6 $rest \u5206\u949f';
 }
 
 String _formatHourLabel(int hour) {
@@ -806,14 +683,14 @@ String _eventTitle(TrackedInputEvent event) {
     case TrackedInputEventKind.keyDown:
       final label = event.keyLabel?.trim();
       if (label != null && label.isNotEmpty) {
-        return '按键 $label';
+        return '\u6309\u952e $label';
       }
-      return '按键输入';
+      return '\u6309\u952e\u8f93\u5165';
     case TrackedInputEventKind.mouseButton:
-      return '鼠标${event.mouseButton ?? '按键'}';
+      return '\u9f20\u6807${event.mouseButton ?? '\u6309\u952e'}';
     case TrackedInputEventKind.mouseWheel:
-      return '滚轮 ${event.wheelDelta}';
+      return '\u6eda\u8f6e ${event.wheelDelta}';
     case TrackedInputEventKind.mouseMove:
-      return '鼠标移动 ${event.moveDistance}px';
+      return '\u9f20\u6807\u79fb\u52a8 ${event.moveDistance}px';
   }
 }

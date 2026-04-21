@@ -38,7 +38,10 @@ final GoRouter appRouter = GoRouter(
   debugLogDiagnostics: false,
   routes: [
     ShellRoute(
-      builder: (context, state, child) => CalendarShell(child: child),
+      builder: (context, state, child) => CalendarShell(
+        child: child,
+        currentRoute: state.uri.path,
+      ),
       routes: [
         GoRoute(
           path: AppRoutes.timeline,

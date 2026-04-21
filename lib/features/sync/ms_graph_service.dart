@@ -1,131 +1,135 @@
-// Microsoft Graph API 服务：日历事件 CRUD
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import 'outlook_auth_service.dart';
 
-/// Microsoft Graph API 日历事件操作
 class MsGraphService {
   static const _baseUrl = 'https://graph.microsoft.com/v1.0';
+  static const _defaultTimezone = 'Asia/Shanghai';
+  static const _defaultOutlookColor = '#0078D4';
 
-  final OutlookConfig config;
   MsGraphService(this.config);
 
-  /// 获取认证头
+  final OutlookConfig config;
+
   Future<Map<String, String>?> _authHeaders() async {
     final token = await OutlookAuthService.getValidAccessToken(config);
-    if (token == null) return null;
+    if (token == null) {
+      return null;
+    }
     return {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
+      'Prefer': 'outlook.timezone="$_defaultTimezone"',
     };
   }
 
-  /// 获取用户自己的日历列表
   Future<List<Map<String, dynamic>>> getCalendars() async {
     final headers = await _authHeaders();
-    if (headers == null) return [];
+    if (headers == null) {
+      return [];
+    }
 
-    final response = await http.get(
-      Uri.parse('$_baseUrl/me/calendars'),
-      headers: headers,
+    final uri = Uri.parse('$_baseUrl/me/calendars').replace(
+      queryParameters: {
+        r'$top': '200',
+        r'$select': 'id,name,color,hexColor,isDefaultCalendar,canEdit',
+      },
     );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return List<Map<String, dynamic>>.from(data['value'] ?? []);
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode != 200) {
+      return [];
     }
-    return [];
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return List<Map<String, dynamic>>.from(
+      data['value'] as List<dynamic>? ?? const <dynamic>[],
+    );
   }
 
-  /// 获取指定日历的事件（带增量查询支持）
   Future<({List<Map<String, dynamic>> events, String? deltaLink})> getEvents({
-    String? calendarId,
+    required String calendarId,
     String? deltaLink,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
     final headers = await _authHeaders();
     if (headers == null) {
-      return (events: <Map<String, dynamic>>[], deltaLink: null);
+      return (events: const <Map<String, dynamic>>[], deltaLink: null);
     }
 
-    // 如果有 deltaLink，直接使用（增量同步）
-    final String url;
-    if (deltaLink != null) {
-      url = deltaLink;
-    } else {
-      final calPath = calendarId != null
-          ? '/me/calendars/$calendarId/events'
-          : '/me/events';
-      final start =
-          startDate ?? DateTime.now().subtract(const Duration(days: 30));
-      final end = endDate ?? DateTime.now().add(const Duration(days: 365));
-      url = '$_baseUrl$calPath?\$top=100'
-          '&\$filter=start/dateTime ge \'${start.toIso8601String()}\''
-          ' and end/dateTime le \'${end.toIso8601String()}\''
-          '&\$orderby=start/dateTime';
+    final uri = deltaLink != null
+        ? Uri.parse(deltaLink)
+        : Uri.parse('$_baseUrl/me/calendars/$calendarId/calendarView/delta').replace(
+            queryParameters: {
+              'startDateTime': (startDate ??
+                      DateTime.now().subtract(const Duration(days: 30)))
+                  .toUtc()
+                  .toIso8601String(),
+              'endDateTime': (endDate ?? DateTime.now().add(const Duration(days: 365)))
+                  .toUtc()
+                  .toIso8601String(),
+            },
+          );
+
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode != 200) {
+      return (events: const <Map<String, dynamic>>[], deltaLink: null);
     }
 
-    final response = await http.get(Uri.parse(url), headers: headers);
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final events = List<Map<String, dynamic>>.from(data['value'] ?? []);
-      final nextDelta = data['@odata.deltaLink'] as String?;
-      return (events: events, deltaLink: nextDelta);
-    }
-    return (events: <Map<String, dynamic>>[], deltaLink: null);
-  }
-
-  /// 创建日历事件
-  Future<Map<String, dynamic>?> createEvent(Map<String, dynamic> event,
-      {String? calendarId}) async {
-    final headers = await _authHeaders();
-    if (headers == null) return null;
-
-    final path =
-        calendarId != null ? '/me/calendars/$calendarId/events' : '/me/events';
-
-    final response = await http.post(
-      Uri.parse('$_baseUrl$path'),
-      headers: headers,
-      body: jsonEncode(event),
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (
+      events: List<Map<String, dynamic>>.from(
+        data['value'] as List<dynamic>? ?? const <dynamic>[],
+      ),
+      deltaLink: data['@odata.deltaLink'] as String?,
     );
-
-    if (response.statusCode == 201) {
-      return jsonDecode(response.body);
-    }
-    return null;
   }
 
-  /// 更新日历事件
+  Never _throwWriteDisabled() {
+    throw StateError(
+      'FlowPlan \u5f53\u524d\u4ec5\u5141\u8bb8\u5355\u5411\u8bfb\u53d6 Outlook \u65e5\u5386\uff0c\u7981\u6b62\u5199\u56de\u8fdc\u7aef\u3002',
+    );
+  }
+
+  Future<Map<String, dynamic>?> createEvent(
+    Map<String, dynamic> event, {
+    String? calendarId,
+  }) async {
+    _throwWriteDisabled();
+  }
+
   Future<bool> updateEvent(String eventId, Map<String, dynamic> event) async {
-    final headers = await _authHeaders();
-    if (headers == null) return false;
-
-    final response = await http.patch(
-      Uri.parse('$_baseUrl/me/events/$eventId'),
-      headers: headers,
-      body: jsonEncode(event),
-    );
-
-    return response.statusCode == 200;
+    _throwWriteDisabled();
   }
 
-  /// 删除日历事件
   Future<bool> deleteEvent(String eventId) async {
-    final headers = await _authHeaders();
-    if (headers == null) return false;
-
-    final response = await http.delete(
-      Uri.parse('$_baseUrl/me/events/$eventId'),
-      headers: headers,
-    );
-
-    return response.statusCode == 204;
+    _throwWriteDisabled();
   }
 
-  /// 将 CalendarEvent 转换为 Graph API 格式
+  static bool isDeletedEvent(Map<String, dynamic> graphEvent) {
+    return graphEvent.containsKey('@removed');
+  }
+
+  static String calendarIdOf(Map<String, dynamic> calendar) {
+    return calendar['id'] as String? ?? '';
+  }
+
+  static String calendarNameOf(Map<String, dynamic> calendar) {
+    final name = (calendar['name'] as String?)?.trim();
+    return (name == null || name.isEmpty) ? 'Outlook \u65e5\u5386' : name;
+  }
+
+  static String calendarColorHexOf(Map<String, dynamic> calendar) {
+    final rawHex = (calendar['hexColor'] as String?)?.trim();
+    if (rawHex != null && rawHex.isNotEmpty) {
+      return rawHex.startsWith('#') ? rawHex : '#$rawHex';
+    }
+    return _defaultOutlookColor;
+  }
+
   static Map<String, dynamic> toGraphEvent({
     required String subject,
     required DateTime start,
@@ -139,33 +143,56 @@ class MsGraphService {
       'body': body != null ? {'contentType': 'Text', 'content': body} : null,
       'start': {
         'dateTime': start.toIso8601String(),
-        'timeZone': 'Asia/Shanghai',
+        'timeZone': _defaultTimezone,
       },
       'end': {
         'dateTime': end.toIso8601String(),
-        'timeZone': 'Asia/Shanghai',
+        'timeZone': _defaultTimezone,
       },
       if (location != null) 'location': {'displayName': location},
       'isAllDay': isAllDay,
     };
   }
 
-  /// 将 Graph API 事件转换为简单 Map（供同步引擎使用）
   static ({
     String id,
     String subject,
-    DateTime start,
-    DateTime end,
     String? body,
     String? location,
+    DateTime start,
+    DateTime end,
+    String status,
   }) fromGraphEvent(Map<String, dynamic> graphEvent) {
+    final id = graphEvent['id'] as String? ?? '';
+    final subject = graphEvent['subject'] as String? ?? '';
+    final body = (graphEvent['bodyPreview'] as String?)?.trim();
+    final location =
+        (graphEvent['location'] as Map<String, dynamic>?)?['displayName'] as String?;
+
+    final startRaw = graphEvent['start'] as Map<String, dynamic>? ?? const {};
+    final endRaw = graphEvent['end'] as Map<String, dynamic>? ?? const {};
+
+    final start = DateTime.tryParse(startRaw['dateTime'] as String? ?? '')?.toLocal() ??
+        DateTime.now();
+    final end = DateTime.tryParse(endRaw['dateTime'] as String? ?? '')?.toLocal() ??
+        start.add(const Duration(hours: 1));
+
+    final statusRaw = (graphEvent['showAs'] as String? ?? 'busy').toLowerCase();
+    final status = switch (statusRaw) {
+      'free' => 'CONFIRMED',
+      'tentative' => 'TENTATIVE',
+      'oof' => 'CONFIRMED',
+      _ => 'CONFIRMED',
+    };
+
     return (
-      id: graphEvent['id'] as String,
-      subject: graphEvent['subject'] as String? ?? '',
-      start: DateTime.parse(graphEvent['start']['dateTime'] as String),
-      end: DateTime.parse(graphEvent['end']['dateTime'] as String),
-      body: (graphEvent['body'] as Map?)?['content'] as String?,
-      location: (graphEvent['location'] as Map?)?['displayName'] as String?,
+      id: id,
+      subject: subject,
+      body: body,
+      location: location,
+      start: start,
+      end: end,
+      status: status,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/app/app_release.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_theme.dart';
@@ -190,7 +191,7 @@ class SettingsPage extends ConsumerWidget {
             leading: const Icon(Icons.cloud_sync_outlined),
             title: const Text('Outlook \u65e5\u5386\u540c\u6b65'),
             subtitle: const Text(
-              '\u901a\u8fc7 Microsoft Graph API \u8fdb\u884c\u53cc\u5411\u540c\u6b65',
+              '\u901a\u8fc7 Microsoft Graph API \u5355\u5411\u53ea\u8bfb\u540c\u6b65 Outlook \u65e5\u5386',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.outlookSync),
@@ -227,12 +228,13 @@ class SettingsPage extends ConsumerWidget {
           ),
           const Divider(),
           const _SectionTitle('\u5173\u4e8e'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('FlowPlan'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text(appProductName),
             subtitle: Text(
-              'v0.1.0 \u00b7 \u4e2d\u6587\u4f18\u5148\u7684\u672c\u5730\u667a\u80fd\u89c4\u5212\u5de5\u5177',
+              '$appAboutSubtitle\n\u53d1\u5e03\u53f7 $appPackageVersion',
             ),
+            isThreeLine: true,
           ),
         ],
       ),

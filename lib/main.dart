@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'core/database/app_database.dart';
 import 'core/storage/app_storage.dart';
+import 'features/calendar/data/calendar_books_repository.dart';
 import 'features/tracker/services/raw_input_service.dart';
 import 'features/tracker/services/tracker_service.dart';
 import 'shared/providers/database_provider.dart';
@@ -26,6 +27,7 @@ void main() async {
   await initializeDateFormatting('zh_CN', null);
 
   final database = AppDatabase();
+  await CalendarBooksRepository(database).ensureContainerIntegrity();
 
   if (Platform.isWindows) {
     await rawInputService.start();

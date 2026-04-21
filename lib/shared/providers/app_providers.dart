@@ -87,6 +87,10 @@ final allTaskListsProvider = StreamProvider<List<TaskList>>((ref) {
   final repo = ref.watch(calendarBooksRepositoryProvider);
   return repo.watchAllTaskLists();
 });
+final archivedTaskListsProvider = StreamProvider<List<TaskList>>((ref) {
+  final repo = ref.watch(calendarBooksRepositoryProvider);
+  return repo.watchArchivedTaskLists();
+});
 
 // ── 所有任务流 ────────────────────────────────────────────────────────────────
 

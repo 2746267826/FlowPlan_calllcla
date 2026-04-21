@@ -88,114 +88,152 @@ class _HeatmapWidgetState extends State<HeatmapWidget> {
         selectedBucket != null &&
         widget.activeAnalysisBucket != null &&
         _isSameBucket(selectedBucket, widget.activeAnalysisBucket!);
-    final columns = _columnCount(series.scale, buckets.length);
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final isCompactHeader = maxWidth < 520;
+        final columns = _columnCount(
+          series.scale,
+          buckets.length,
+          maxWidth: maxWidth,
+        );
+        final cellWidth = _cellWidth(
+          availableWidth: maxWidth,
+          columns: columns,
+        );
+        final cellHeight = _cellHeight(
+          scale: series.scale,
+          cellWidth: cellWidth,
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isCompactHeader)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTitleBlock(context, series),
+                  const SizedBox(height: 12),
+                  _buildScaleSelector(),
+                ],
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildTitleBlock(context, series),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildScaleSelector(),
+                ],
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome_outlined,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.selectedScaleOverride == null
+                        ? '\u5f53\u524d\u4e3a\u81ea\u52a8\u63a8\u8350\uff1a'
+                            '${series.historySummary.recommendedScale.label}\u89c6\u56fe'
+                        : '\u5f53\u524d\u4e3a\u624b\u52a8\u67e5\u770b\uff1a'
+                            '${series.scale.label}\u89c6\u56fe',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildLegend(),
+            const SizedBox(height: 12),
+            if (!hasBuckets)
+              const _EmptyHeatmapState()
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: buckets.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  mainAxisExtent: cellHeight,
+                ),
+                itemBuilder: (context, index) {
+                  final bucket = buckets[index];
+                  final isSelected = index == selectedIndex;
+                  return _HeatmapCell(
+                    bucket: bucket,
+                    maxMinutes: series.maxMinutes,
+                    isSelected: isSelected,
+                    cellWidth: cellWidth,
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = index;
+                      });
+                    },
+                  );
+                },
+              ),
+            if (selectedBucket != null) ...[
+              const SizedBox(height: 14),
+              _SelectedBucketCard(
+                bucket: selectedBucket,
+                scale: series.scale,
+                isFilterActive: isFilterActive,
+                isAnalysisActive: isAnalysisActive,
+                onFilterAction: () {
+                  if (isFilterActive) {
+                    widget.onClearBucketFilter();
+                    return;
+                  }
+                  widget.onFilterBucket(selectedBucket);
+                },
+                onAnalyzeAction: () {
+                  if (isAnalysisActive) {
+                    widget.onClearAnalysisBucket();
+                    return;
+                  }
+                  widget.onAnalyzeBucket(selectedBucket);
+                },
+                onDrillDownAction: () {
+                  widget.onDrillDownBucket(selectedBucket);
+                },
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTitleBlock(BuildContext context, ActivityHeatmapSeries series) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    series.title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    series.subtitle,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
+        Text(
+          series.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
-            ),
-            const SizedBox(width: 12),
-            _buildScaleSelector(),
-          ],
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const Icon(
-              Icons.auto_awesome_outlined,
-              size: 14,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                widget.selectedScaleOverride == null
-                    ? '\u5f53\u524d\u4e3a\u81ea\u52a8\u63a8\u8350\uff1a'
-                        '${series.historySummary.recommendedScale.label}\u89c6\u56fe'
-                    : '\u5f53\u524d\u4e3a\u624b\u52a8\u67e5\u770b\uff1a'
-                        '${series.scale.label}\u89c6\u56fe',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ),
-          ],
+        const SizedBox(height: 4),
+        Text(
+          series.subtitle,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
         ),
-        const SizedBox(height: 12),
-        _buildLegend(),
-        const SizedBox(height: 12),
-        if (!hasBuckets)
-          const _EmptyHeatmapState()
-        else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: buckets.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: _childAspectRatio(series.scale),
-            ),
-            itemBuilder: (context, index) {
-              final bucket = buckets[index];
-              final isSelected = index == selectedIndex;
-              return _HeatmapCell(
-                bucket: bucket,
-                maxMinutes: series.maxMinutes,
-                isSelected: isSelected,
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                },
-              );
-            },
-          ),
-        if (selectedBucket != null) ...[
-          const SizedBox(height: 14),
-          _SelectedBucketCard(
-            bucket: selectedBucket,
-            scale: series.scale,
-            isFilterActive: isFilterActive,
-            isAnalysisActive: isAnalysisActive,
-            onFilterAction: () {
-              if (isFilterActive) {
-                widget.onClearBucketFilter();
-                return;
-              }
-              widget.onFilterBucket(selectedBucket);
-            },
-            onAnalyzeAction: () {
-              if (isAnalysisActive) {
-                widget.onClearAnalysisBucket();
-                return;
-              }
-              widget.onAnalyzeBucket(selectedBucket);
-            },
-            onDrillDownAction: () {
-              widget.onDrillDownBucket(selectedBucket);
-            },
-          ),
-        ],
       ],
     );
   }
@@ -259,26 +297,59 @@ class _HeatmapWidgetState extends State<HeatmapWidget> {
     return series.buckets.length - 1;
   }
 
-  int _columnCount(ActivityHeatmapScale scale, int itemCount) {
+  int _columnCount(
+    ActivityHeatmapScale scale,
+    int itemCount, {
+    required double maxWidth,
+  }) {
     final preferred = switch (scale) {
       ActivityHeatmapScale.hour => 6,
       ActivityHeatmapScale.day => 7,
       ActivityHeatmapScale.month => 4,
       ActivityHeatmapScale.year => 5,
     };
-    return math.max(1, math.min(preferred, itemCount));
+    final compactPreferred = switch (scale) {
+      ActivityHeatmapScale.hour => maxWidth < 340 ? 4 : 5,
+      ActivityHeatmapScale.day => maxWidth < 340 ? 5 : 7,
+      ActivityHeatmapScale.month => 4,
+      ActivityHeatmapScale.year => maxWidth < 340 ? 4 : 5,
+    };
+    return math
+        .max(
+          1,
+          math.min(
+            maxWidth < 380 ? compactPreferred : preferred,
+            itemCount,
+          ),
+        )
+        .toInt();
   }
 
-  double _childAspectRatio(ActivityHeatmapScale scale) {
+  double _cellWidth({
+    required double availableWidth,
+    required int columns,
+  }) {
+    if (columns <= 0) {
+      return availableWidth;
+    }
+    final spacing = (math.max(0, columns - 1) * 8).toDouble();
+    return (availableWidth - spacing) / columns;
+  }
+
+  double _cellHeight({
+    required ActivityHeatmapScale scale,
+    required double cellWidth,
+  }) {
+    final compact = cellWidth < 60;
     switch (scale) {
       case ActivityHeatmapScale.hour:
-        return 1.15;
+        return compact ? 60 : 74;
       case ActivityHeatmapScale.day:
-        return 1.0;
+        return compact ? 56 : 74;
       case ActivityHeatmapScale.month:
-        return 1.25;
+        return compact ? 62 : 76;
       case ActivityHeatmapScale.year:
-        return 1.35;
+        return compact ? 62 : 76;
     }
   }
 
@@ -304,12 +375,14 @@ class _HeatmapCell extends StatelessWidget {
   final ActivityHeatmapBucket bucket;
   final int maxMinutes;
   final bool isSelected;
+  final double cellWidth;
   final VoidCallback onTap;
 
   const _HeatmapCell({
     required this.bucket,
     required this.maxMinutes,
     required this.isSelected,
+    required this.cellWidth,
     required this.onTap,
   });
 
@@ -317,13 +390,25 @@ class _HeatmapCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final background = _resolveColor(bucket.totalMinutes, maxMinutes);
     final foreground = bucket.hasData ? Colors.black87 : Colors.grey.shade600;
+    final compact = cellWidth < 60;
+    final ultraCompact = cellWidth < 48;
+    final minutesLabel = ultraCompact
+        ? '${bucket.totalMinutes}\u5206'
+        : compact
+            ? '${bucket.totalMinutes} \u5206'
+            : '${bucket.totalMinutes} \u5206\u949f';
+    final recordLabel = ultraCompact
+        ? '${bucket.completedCount}\u6761'
+        : compact
+            ? '${bucket.completedCount} \u6761'
+            : '${bucket.completedCount} \u6761\u8bb0\u5f55';
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(10),
+        padding: EdgeInsets.all(ultraCompact ? 6 : (compact ? 8 : 10)),
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(12),
@@ -333,32 +418,46 @@ class _HeatmapCell extends StatelessWidget {
           ),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              ultraCompact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
           children: [
             Text(
               bucket.shortLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: ultraCompact ? TextAlign.center : TextAlign.start,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: ultraCompact ? 11 : 12,
                 fontWeight: FontWeight.w700,
                 color: foreground,
+                height: 1,
               ),
             ),
             const Spacer(),
             Text(
-              '${bucket.totalMinutes} \u5206\u949f',
+              minutesLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: ultraCompact ? TextAlign.center : TextAlign.start,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: ultraCompact ? 10 : 11,
                 color: foreground,
                 fontWeight: bucket.hasData ? FontWeight.w600 : FontWeight.w400,
+                height: 1,
               ),
             ),
-            Text(
-              '${bucket.completedCount} \u6761\u8bb0\u5f55',
-              style: TextStyle(
-                fontSize: 10,
-                color: foreground.withValues(alpha: 0.75),
+            if (!ultraCompact)
+              Text(
+                recordLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+                style: TextStyle(
+                  fontSize: compact ? 9 : 10,
+                  color: foreground.withValues(alpha: 0.75),
+                  height: 1,
+                ),
               ),
-            ),
           ],
         ),
       ),

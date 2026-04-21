@@ -1,7 +1,9 @@
-// 底部快速打卡栏（「现在在做：___」活动追踪入口）
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 
@@ -29,49 +31,49 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
   }
 
   Future<void> _startTracking(String label) async {
-    if (label.isEmpty) return;
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) return;
 
-    final repo = ref.read(activityRecordRepositoryProvider);
     final now = DateTime.now();
-
-    final id = await repo.startRecord(
-      startTime: now,
-      manualLabel: label,
-      source: 'manual',
-    );
+    final id = await ref.read(activityRecordRepositoryProvider).startRecord(
+          startTime: now,
+          manualLabel: trimmed,
+          source: 'manual',
+        );
 
     setState(() {
       _isTracking = true;
-      _currentActivity = label;
+      _currentActivity = trimmed;
       _activeRecordId = id;
       _trackingStart = now;
       _elapsed = Duration.zero;
     });
     _controller.clear();
 
-    // 启动每秒刷新计时器
     _elapsedTimer?.cancel();
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_trackingStart != null) {
-        setState(() {
-          _elapsed = DateTime.now().difference(_trackingStart!);
-        });
-      }
+      if (!mounted || _trackingStart == null) return;
+      setState(() {
+        _elapsed = DateTime.now().difference(_trackingStart!);
+      });
     });
   }
 
   Future<void> _stopTracking() async {
     _elapsedTimer?.cancel();
-
     if (_activeRecordId != null) {
-      final repo = ref.read(activityRecordRepositoryProvider);
-      await repo.endRecord(_activeRecordId!, DateTime.now());
+      await ref.read(activityRecordRepositoryProvider).endRecord(
+            _activeRecordId!,
+            DateTime.now(),
+          );
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('「$_currentActivity」已记录 ${_formatDuration(_elapsed)}'),
+          content: Text(
+            '\u300c$_currentActivity\u300d\u5df2\u8bb0\u5f55 ${_formatDuration(_elapsed)}',
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -86,13 +88,13 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     });
   }
 
-  String _formatDuration(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes % 60;
-    final s = d.inSeconds % 60;
-    if (h > 0) return '${h}h ${m}m';
-    if (m > 0) return '${m}m ${s}s';
-    return '${s}s';
+  String _formatDuration(Duration value) {
+    final hours = value.inHours;
+    final minutes = value.inMinutes % 60;
+    final seconds = value.inSeconds % 60;
+    if (hours > 0) return '${hours}h ${minutes}m';
+    if (minutes > 0) return '${minutes}m ${seconds}s';
+    return '${seconds}s';
   }
 
   @override
@@ -127,7 +129,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           child: TextField(
             controller: _controller,
             decoration: const InputDecoration(
-              hintText: '现在在做：___',
+              hintText: '\u73b0\u5728\u5728\u505a\uff1a',
               border: InputBorder.none,
               isDense: true,
               contentPadding: EdgeInsets.zero,
@@ -155,7 +157,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           width: 8,
           height: 8,
           decoration: const BoxDecoration(
-            color: Color(0xFF43A047), // 绿色：追踪中
+            color: Color(0xFF43A047),
             shape: BoxShape.circle,
           ),
         ),
@@ -163,11 +165,10 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
         Expanded(
           child: Text(
             _currentActivity,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
         ),
-        // 实时计时器
         Text(
           _formatDuration(_elapsed),
           style: TextStyle(
@@ -179,9 +180,9 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
         ),
         const SizedBox(width: 12),
         TextButton.icon(
-          icon: const Icon(Icons.stop_circle_outlined, size: 18),
-          label: const Text('结束'),
           onPressed: _stopTracking,
+          icon: const Icon(Icons.stop_circle_outlined, size: 18),
+          label: const Text('\u7ed3\u675f'),
           style: TextButton.styleFrom(
             foregroundColor: const Color(0xFFE53935),
           ),

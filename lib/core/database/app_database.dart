@@ -268,7 +268,7 @@ class AppDatabase extends _$AppDatabase {
 
     await into(eventCalendars).insert(
       EventCalendarsCompanion.insert(
-        name: 'Personal',
+        name: '\u9ed8\u8ba4\u65e5\u5386',
         colorHex: const Value('#6B5EE4'),
         isDefault: const Value(true),
         createdAt: now,
@@ -277,7 +277,7 @@ class AppDatabase extends _$AppDatabase {
 
     await into(eventCalendars).insert(
       EventCalendarsCompanion.insert(
-        name: 'Work',
+        name: '\u5de5\u4f5c\u65e5\u5386',
         colorHex: const Value('#0EA8A0'),
         createdAt: now,
       ),
@@ -285,9 +285,9 @@ class AppDatabase extends _$AppDatabase {
 
     await into(taskLists).insert(
       TaskListsCompanion.insert(
-        name: 'Inbox',
+        name: '\u6536\u4ef6\u7bb1',
         colorHex: const Value('#6B5EE4'),
-        emoji: const Value('IN'),
+        emoji: const Value('\u6536'),
         isDefault: const Value(true),
         createdAt: now,
       ),
@@ -295,18 +295,18 @@ class AppDatabase extends _$AppDatabase {
 
     await into(taskLists).insert(
       TaskListsCompanion.insert(
-        name: 'Work',
+        name: '\u5de5\u4f5c',
         colorHex: const Value('#F5935A'),
-        emoji: const Value('WK'),
+        emoji: const Value('\u5de5'),
         createdAt: now,
       ),
     );
 
     await into(taskLists).insert(
       TaskListsCompanion.insert(
-        name: 'Personal',
+        name: '\u4e2a\u4eba',
         colorHex: const Value('#0EA8A0'),
-        emoji: const Value('ME'),
+        emoji: const Value('\u6211'),
         createdAt: now,
       ),
     );
