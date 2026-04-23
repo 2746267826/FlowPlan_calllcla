@@ -1,4 +1,4 @@
-// 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
+﻿// 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,9 +23,10 @@ import '../../features/scheduler/task_schedule_segment_repository.dart';
 import '../../features/sync/outlook_sync_bindings_repository.dart';
 import '../../features/sync/outlook_task_mirror_repository.dart';
 import '../../features/sync/outlook_task_list_binding.dart';
+import '../../features/sync/outlook_task_mirror_binding.dart';
 import '../../features/sync/outlook_task_mirror_snapshot.dart';
 
-// ── Repository Providers ──────────────────────────────────────────────────────
+// 鈹€鈹€ Repository Providers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final db = ref.watch(databaseProvider);
@@ -208,14 +209,26 @@ class OutlookFieldConflictSummary {
     required this.taskSummary,
     required this.taskListName,
     required this.remoteCalendarName,
+    required this.conflictState,
     required this.changedFields,
+    required this.detail,
+    required this.canPushLocal,
+    required this.canPullRemote,
+    required this.canRecreateRemote,
+    required this.canDetachMirror,
   });
 
   final int taskId;
   final String taskSummary;
   final String taskListName;
   final String remoteCalendarName;
+  final OutlookTaskMirrorConflictState conflictState;
   final List<String> changedFields;
+  final String detail;
+  final bool canPushLocal;
+  final bool canPullRemote;
+  final bool canRecreateRemote;
+  final bool canDetachMirror;
 }
 
 final outlookFieldConflictSummariesProvider =
@@ -243,29 +256,180 @@ final outlookFieldConflictSummariesProvider =
 
   final results = <OutlookFieldConflictSummary>[];
   for (final entry in mirrorBindings.entries) {
+    final binding = entry.value;
     final task = taskById[entry.key];
-    if (task == null || task.taskListId == null) {
+    if (task == null) {
+      results.add(
+        OutlookFieldConflictSummary(
+          taskId: entry.key,
+          taskSummary: '任务 #${entry.key}',
+          taskListName:
+              _previousSnapshotTaskListName(binding.localSnapshotJson) ?? '任务本',
+          remoteCalendarName: binding.remoteCalendarName,
+          conflictState: OutlookTaskMirrorConflictState.remoteDeleted,
+          changedFields: const <String>['本地任务已不存在'],
+          detail:
+              '本地任务已经不存在，但仍保留了 Outlook 镜像绑定。建议先清理镜像索引，或导出诊断报告后再处理。',
+          canPushLocal: false,
+          canPullRemote: false,
+          canRecreateRemote: false,
+          canDetachMirror: true,
+        ),
+      );
+      continue;
+    }
+
+    if (task.taskListId == null) {
+      results.add(
+        OutlookFieldConflictSummary(
+          taskId: task.id,
+          taskSummary: task.summary,
+          taskListName:
+              _previousSnapshotTaskListName(binding.localSnapshotJson) ?? '任务本',
+          remoteCalendarName: binding.remoteCalendarName,
+          conflictState: OutlookTaskMirrorConflictState.writeFailed,
+          changedFields: const <String>['缺少任务本归属'],
+          detail: '该任务已经失去任务本归属，当前无法继续安全同步，请先检查容器归属关系。',
+          canPushLocal: false,
+          canPullRemote: false,
+          canRecreateRemote: false,
+          canDetachMirror: true,
+        ),
+      );
       continue;
     }
 
     final taskListBinding = taskListBindings[task.taskListId!];
-    if (taskListBinding == null ||
-        taskListBinding.remoteCalendarId != entry.value.remoteCalendarId) {
+    if (taskListBinding == null) {
+      results.add(
+        OutlookFieldConflictSummary(
+          taskId: task.id,
+          taskSummary: task.summary,
+          taskListName: taskListById[task.taskListId!]?.name ??
+              _previousSnapshotTaskListName(binding.localSnapshotJson) ??
+              '任务本',
+          remoteCalendarName: binding.remoteCalendarName,
+          conflictState: OutlookTaskMirrorConflictState.writeFailed,
+          changedFields: const <String>['任务本已解除绑定'],
+          detail: '该任务本已经解除 Outlook 镜像绑定，当前任务无法继续写回远端。',
+          canPushLocal: false,
+          canPullRemote: false,
+          canRecreateRemote: false,
+          canDetachMirror: true,
+        ),
+      );
+      continue;
+    }
+
+    if (taskListBinding.remoteCalendarId != binding.remoteCalendarId) {
+      results.add(
+        OutlookFieldConflictSummary(
+          taskId: task.id,
+          taskSummary: task.summary,
+          taskListName: taskListById[task.taskListId!]?.name ??
+              _previousSnapshotTaskListName(binding.localSnapshotJson) ??
+              '任务本',
+          remoteCalendarName: binding.remoteCalendarName,
+          conflictState: OutlookTaskMirrorConflictState.remoteChanged,
+          changedFields: const <String>['镜像目标已变更'],
+          detail: '任务本绑定的 Outlook 容器已经变化，旧镜像需要人工确认是重建还是解除绑定。',
+          canPushLocal: true,
+          canPullRemote: false,
+          canRecreateRemote: true,
+          canDetachMirror: true,
+        ),
+      );
       continue;
     }
 
     final taskListName = taskListById[task.taskListId!]?.name ??
-        _previousSnapshotTaskListName(entry.value.localSnapshotJson) ??
+        _previousSnapshotTaskListName(binding.localSnapshotJson) ??
         taskListBinding.remoteCalendarName;
     final snapshot = OutlookTaskMirrorSnapshot.fromTask(
       task: task,
       taskListName: taskListName,
     );
-    final previousHash = entry.value.localSnapshotHash?.trim();
-    if (previousHash == null ||
-        previousHash.isEmpty ||
-        previousHash == snapshot.fingerprint) {
+    final previousHash = binding.localSnapshotHash?.trim();
+    final localChanged = previousHash != null &&
+        previousHash.isNotEmpty &&
+        previousHash != snapshot.fingerprint;
+
+    final conflictState = binding.conflictState ==
+            OutlookTaskMirrorConflictState.none
+        ? (localChanged
+            ? OutlookTaskMirrorConflictState.pendingLocalPush
+            : OutlookTaskMirrorConflictState.none)
+        : binding.conflictState;
+    if (conflictState == OutlookTaskMirrorConflictState.none) {
       continue;
+    }
+
+    List<String> changedFields;
+    String detail;
+    var canPushLocal = false;
+    var canPullRemote = false;
+    var canRecreateRemote = false;
+    var canDetachMirror = false;
+
+    switch (conflictState) {
+      case OutlookTaskMirrorConflictState.pendingLocalPush:
+        changedFields = OutlookTaskMirrorSnapshot.changedFieldLabels(
+          previousSnapshotJson: binding.localSnapshotJson,
+          current: snapshot,
+        );
+        detail = '本地任务字段已经变化，等待用户确认是否按 FlowPlan 当前内容写回 Outlook 镜像。';
+        canPushLocal = true;
+        break;
+      case OutlookTaskMirrorConflictState.remoteDeleted:
+        changedFields = const <String>['远端镜像已删除'];
+        detail = binding.conflictMessage?.trim().isNotEmpty == true
+            ? binding.conflictMessage!.trim()
+            : '远端镜像已经不存在。可以重建镜像，也可以仅解除镜像绑定并保留本地任务。';
+        canPushLocal = true;
+        canRecreateRemote = true;
+        canDetachMirror = true;
+        break;
+      case OutlookTaskMirrorConflictState.remoteChanged:
+        changedFields = OutlookTaskMirrorSnapshot.changedFieldLabelsBetween(
+          leftSnapshotJson: binding.localSnapshotJson,
+          rightSnapshotJson: binding.remoteSnapshotJson,
+        );
+        detail = binding.conflictMessage?.trim().isNotEmpty == true
+            ? binding.conflictMessage!.trim()
+            : 'Outlook 镜像已被修改，请确认是用本地内容覆盖远端，还是把远端内容回填到 FlowPlan。';
+        canPushLocal = true;
+        canPullRemote = true;
+        canDetachMirror = true;
+        break;
+      case OutlookTaskMirrorConflictState.divergent:
+        changedFields = OutlookTaskMirrorSnapshot.changedFieldLabelsBetween(
+          leftSnapshotJson: binding.localSnapshotJson,
+          rightSnapshotJson: binding.remoteSnapshotJson,
+        );
+        detail = binding.conflictMessage?.trim().isNotEmpty == true
+            ? binding.conflictMessage!.trim()
+            : 'FlowPlan 与 Outlook 两侧都已经修改，请人工选择以哪一侧为准。';
+        canPushLocal = true;
+        canPullRemote = true;
+        canDetachMirror = true;
+        break;
+      case OutlookTaskMirrorConflictState.writeFailed:
+        changedFields = localChanged
+            ? OutlookTaskMirrorSnapshot.changedFieldLabels(
+                previousSnapshotJson: binding.localSnapshotJson,
+                current: snapshot,
+              )
+            : const <String>['远端写回失败'];
+        detail = binding.conflictMessage?.trim().isNotEmpty == true
+            ? binding.conflictMessage!.trim()
+            : '最近一次远端写回失败，请稍后重试，或导出诊断报告进一步检查。';
+        canPushLocal = true;
+        canDetachMirror = true;
+        break;
+      case OutlookTaskMirrorConflictState.none:
+        changedFields = const <String>[];
+        detail = '';
+        break;
     }
 
     results.add(
@@ -274,10 +438,13 @@ final outlookFieldConflictSummariesProvider =
         taskSummary: task.summary,
         taskListName: taskListName,
         remoteCalendarName: taskListBinding.remoteCalendarName,
-        changedFields: OutlookTaskMirrorSnapshot.changedFieldLabels(
-          previousSnapshotJson: entry.value.localSnapshotJson,
-          current: snapshot,
-        ),
+        conflictState: conflictState,
+        changedFields: changedFields,
+        detail: detail,
+        canPushLocal: canPushLocal,
+        canPullRemote: canPullRemote,
+        canRecreateRemote: canRecreateRemote,
+        canDetachMirror: canDetachMirror,
       ),
     );
   }
@@ -286,7 +453,7 @@ final outlookFieldConflictSummariesProvider =
   return results;
 });
 
-// ── 当前查看日期 ───────────────────────────────────────────────────────────────
+// 鈹€鈹€ 褰撳墠鏌ョ湅鏃ユ湡 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 class _SelectedDateNotifier extends StateNotifier<DateTime> {
   _SelectedDateNotifier()
@@ -308,7 +475,7 @@ final selectedDateProvider =
   (ref) => _SelectedDateNotifier(),
 );
 
-// ── 当日任务流 ────────────────────────────────────────────────────────────────
+// 鈹€鈹€ 褰撴棩浠诲姟娴?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final tasksForSelectedDateProvider = StreamProvider<List<TaskItem>>((ref) {
   final date = ref.watch(selectedDateProvider);
@@ -323,7 +490,7 @@ final taskScheduleSegmentsForSelectedDateProvider =
   return repo.watchForDate(date);
 });
 
-// ── 当日事件流 ────────────────────────────────────────────────────────────────
+// 鈹€鈹€ 褰撴棩浜嬩欢娴?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final eventsForSelectedDateProvider =
     StreamProvider<List<CalendarEvent>>((ref) {
@@ -332,14 +499,14 @@ final eventsForSelectedDateProvider =
   return repo.watchVisibleForDate(date);
 });
 
-// ── 事件日历本列表流 ──────────────────────────────────────────────────────────
+// 鈹€鈹€ 浜嬩欢鏃ュ巻鏈垪琛ㄦ祦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final allEventCalendarsProvider = StreamProvider<List<EventCalendar>>((ref) {
   final repo = ref.watch(calendarBooksRepositoryProvider);
   return repo.watchAllEventCalendars();
 });
 
-// ── 任务清单列表流 ────────────────────────────────────────────────────────────
+// 鈹€鈹€ 浠诲姟娓呭崟鍒楄〃娴?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final allTaskListsProvider = StreamProvider<List<TaskList>>((ref) {
   final repo = ref.watch(calendarBooksRepositoryProvider);
@@ -350,21 +517,21 @@ final archivedTaskListsProvider = StreamProvider<List<TaskList>>((ref) {
   return repo.watchArchivedTaskLists();
 });
 
-// ── 所有任务流 ────────────────────────────────────────────────────────────────
+// 鈹€鈹€ 鎵€鏈変换鍔℃祦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final allTasksProvider = StreamProvider<List<TaskItem>>((ref) {
   final repo = ref.watch(taskRepositoryProvider);
   return repo.watchAll();
 });
 
-// ── Tracker Repository ────────────────────────────────────────────────────────
+// 鈹€鈹€ Tracker Repository 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final trackerRepositoryProvider = Provider<TrackerRepository>((ref) {
   final db = ref.watch(databaseProvider);
   return TrackerRepository(db);
 }, dependencies: [databaseProvider]);
 
-// ── Activity Record Repository ────────────────────────────────────────────────
+// 鈹€鈹€ Activity Record Repository 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final activityRecordRepositoryProvider =
     Provider<ActivityRecordRepository>((ref) {
@@ -417,7 +584,7 @@ final selectedDateInputBehaviorSummaryProvider =
   );
 });
 
-// ── 热力图数据（过去一年）─────────────────────────────────────────────────────
+// 鈹€鈹€ 鐑姏鍥炬暟鎹紙杩囧幓涓€骞达級鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final activityHeatmapScaleOverrideProvider =
     StateProvider<ActivityHeatmapScale?>((ref) => null);
@@ -442,11 +609,11 @@ final activityHeatmapSeriesProvider =
   );
 });
 
-// ── 拖拽状态 ───────────────────────────────────────────────────────────────
-// 全局：当前拖拽光标是否在时间轴上方
+// 鈹€鈹€ 鎷栨嫿鐘舵€?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 鍏ㄥ眬锛氬綋鍓嶆嫋鎷藉厜鏍囨槸鍚﹀湪鏃堕棿杞翠笂鏂?
 final dragHoveringTimelineProvider = StateProvider<bool>((ref) => false);
 
-// ── 当日活动记录流 ────────────────────────────────────────────────────────────
+// 鈹€鈹€ 褰撴棩娲诲姩璁板綍娴?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final activityRecordsForDateProvider =
     StreamProvider<List<ActivityRecord>>((ref) {

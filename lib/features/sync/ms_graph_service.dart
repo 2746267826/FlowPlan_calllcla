@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -197,6 +197,38 @@ class MsGraphService {
       body: jsonEncode(event),
     );
     return response.statusCode >= 200 && response.statusCode < 300;
+  }
+
+  Future<Map<String, dynamic>?> getEvent({
+    required String calendarId,
+    required String eventId,
+  }) async {
+    if (!syncMode.allowsPull) {
+      return null;
+    }
+
+    final headers = await _authHeaders();
+    if (headers == null) {
+      return null;
+    }
+
+    final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events/$eventId')
+        .replace(
+      queryParameters: {
+        r'$select':
+            'id,subject,body,start,end,showAs,lastModifiedDateTime,categories',
+      },
+    );
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 404) {
+      return null;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        '读取 Outlook 事件失败：${response.statusCode} ${response.body}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<bool> deleteEvent({

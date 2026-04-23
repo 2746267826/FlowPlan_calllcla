@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 
-import '../../calendar/data/calendar_books_repository.dart';
-import '../../calendar/data/event_repository.dart';
-import '../../task/data/task_repository.dart';
 import '../../../core/database/app_database.dart';
+import '../calendar/data/calendar_books_repository.dart';
+import '../calendar/data/event_repository.dart';
+import '../task/data/task_repository.dart';
 
 enum FlowPlanArchiveImportMode {
   smartMerge,
@@ -843,7 +843,9 @@ class FlowPlanArchiveService {
         }
 
         if (mode == FlowPlanArchiveImportMode.replaceMatchingContainers) {
-          removedEvents += await _eventRepository.deleteByCalendarId(target.id);
+          final deletedEvents =
+              await _eventRepository.deleteByCalendarId(target.id);
+          removedEvents = removedEvents + deletedEvents;
         }
 
         final existingEvents =
@@ -937,7 +939,9 @@ class FlowPlanArchiveService {
         }
 
         if (mode == FlowPlanArchiveImportMode.replaceMatchingContainers) {
-          removedTasks += await _taskRepository.deleteByTaskListId(target.id);
+          final deletedTasks =
+              await _taskRepository.deleteByTaskListId(target.id);
+          removedTasks = removedTasks + deletedTasks;
         }
 
         final existingTasks =

@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import '../../core/database/app_database.dart';
 import '../calendar/data/calendar_books_repository.dart';
@@ -47,9 +47,11 @@ class OutlookDiagnosticsService {
     final outlookCalendars =
         eventCalendars.where((calendar) => calendar.source == 'outlook').toList();
     final managedCalendars = outlookCalendars
-        .where((calendar) =>
-            OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name))
-        .toList();
+        .where(
+          (calendar) =>
+              OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name),
+        )
+        .toList(growable: false);
     final mirrorDiagnostics = _buildMirrorDiagnostics(
       taskListBindings: taskListBindings,
       mirrorBindings: mirrorBindings,
@@ -58,97 +60,107 @@ class OutlookDiagnosticsService {
     );
 
     final buffer = StringBuffer()
-      ..writeln('# FlowPlan Outlook 同步诊断报告')
+      ..writeln('# FlowPlan Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a')
       ..writeln()
-      ..writeln('- 生成时间：${_formatDateTime(generatedAt)}')
-      ..writeln('- 同步模式：${syncMode.label}')
-      ..writeln('- OAuth 配置：${config == null ? '未配置' : '已配置'}')
-      ..writeln('- 当前授权：${_authorizationLabel(token)}')
-      ..writeln('- 写回边界：只允许写入 FlowPlan 托管的 Outlook 专属日历容器')
+      ..writeln('- \u751f\u6210\u65f6\u95f4\uff1a${_formatDateTime(generatedAt)}')
+      ..writeln('- \u540c\u6b65\u6a21\u5f0f\uff1a${syncMode.label}')
+      ..writeln('- OAuth \u914d\u7f6e\uff1a${config == null ? '\u672a\u914d\u7f6e' : '\u5df2\u914d\u7f6e'}')
+      ..writeln('- \u5f53\u524d\u6388\u6743\uff1a${_authorizationLabel(token)}')
+      ..writeln('- \u5199\u56de\u8fb9\u754c\uff1a\u53ea\u5141\u8bb8\u5199\u5165 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668')
       ..writeln()
-      ..writeln('## 1. 安全边界')
+      ..writeln('## 1. \u5b89\u5168\u8fb9\u754c')
       ..writeln()
-      ..writeln('- 普通 Outlook 日历：始终只读，只会导入到 FlowPlan 本地。')
-      ..writeln('- FlowPlan 托管日历：仅在“双向同步 + 读写授权”同时满足时允许写回。')
-      ..writeln('- 任务镜像：只写入明确绑定的 `FlowPlan 任务本 - ...` 专属容器。')
-      ..writeln('- 冲突策略：远端更新失败或疑似被删除时，不静默覆盖远端数据，而是记录为冲突候选。')
+      ..writeln('- \u666e\u901a Outlook \u65e5\u5386\uff1a\u59cb\u7ec8\u53ea\u8bfb\uff0c\u53ea\u4f1a\u5bfc\u5165\u5230 FlowPlan \u672c\u5730\u3002')
+      ..writeln(
+        '- FlowPlan \u6258\u7ba1\u65e5\u5386\uff1a\u4ec5\u5728\u201c\u53cc\u5411\u540c\u6b65 + \u8bfb\u5199\u6388\u6743\u201d\u540c\u65f6\u6ee1\u8db3\u65f6\u5141\u8bb8\u5199\u56de\u3002',
+      )
+      ..writeln(
+        '- \u4efb\u52a1\u955c\u50cf\uff1a\u53ea\u5199\u5165\u660e\u786e\u7ed1\u5b9a\u7684 FlowPlan \u4efb\u52a1\u672c - ... \u4e13\u5c5e\u5bb9\u5668\u3002',
+      )
+      ..writeln(
+        '- \u51b2\u7a81\u7b56\u7565\uff1a\u8fdc\u7aef\u66f4\u65b0\u5931\u8d25\u3001\u8fdc\u7aef\u5df2\u6539\u52a8\u6216\u8fdc\u7aef\u5df2\u5220\u9664\u65f6\uff0c\u4e0d\u4f1a\u9759\u9ed8\u8986\u76d6\u6570\u636e\uff0c\u800c\u662f\u8bb0\u5f55\u4e3a\u5f85\u4eba\u5de5\u786e\u8ba4\u7684\u51b2\u7a81\u3002',
+      )
       ..writeln()
-      ..writeln('## 2. 最近同步结果')
+      ..writeln('## 2. \u6700\u8fd1\u540c\u6b65\u7ed3\u679c')
       ..writeln();
 
     if (lastReport == null) {
-      buffer.writeln('当前还没有最近同步报告。');
+      buffer.writeln('\u5f53\u524d\u8fd8\u6ca1\u6709\u6700\u8fd1\u540c\u6b65\u62a5\u544a\u3002');
     } else {
       buffer
-        ..writeln('- 时间：${_formatDateTime(lastReport.attemptedAt)}')
-        ..writeln('- 状态：${lastReport.success ? '成功' : '失败'}')
-        ..writeln('- 模式：${lastReport.mode.label}')
-        ..writeln('- 日历本数量：${lastReport.calendarBooks}')
-        ..writeln('- 日程更新：${lastReport.downloaded}')
-        ..writeln('- 任务镜像新增：${lastReport.mirroredCreated}')
-        ..writeln('- 任务镜像更新：${lastReport.mirroredUpdated}')
-        ..writeln('- 任务镜像删除：${lastReport.mirroredDeleted}')
-        ..writeln('- 任务镜像冲突：${lastReport.mirroredConflicted}');
+        ..writeln('- \u65f6\u95f4\uff1a${_formatDateTime(lastReport.attemptedAt)}')
+        ..writeln('- \u72b6\u6001\uff1a${lastReport.success ? '\u6210\u529f' : '\u5931\u8d25'}')
+        ..writeln('- \u6a21\u5f0f\uff1a${lastReport.mode.label}')
+        ..writeln('- \u65e5\u5386\u672c\u6570\u91cf\uff1a${lastReport.calendarBooks}')
+        ..writeln('- \u65e5\u7a0b\u66f4\u65b0\uff1a${lastReport.downloaded}')
+        ..writeln('- \u4efb\u52a1\u955c\u50cf\u65b0\u589e\uff1a${lastReport.mirroredCreated}')
+        ..writeln('- \u4efb\u52a1\u955c\u50cf\u66f4\u65b0\uff1a${lastReport.mirroredUpdated}')
+        ..writeln('- \u4efb\u52a1\u955c\u50cf\u5220\u9664\uff1a${lastReport.mirroredDeleted}')
+        ..writeln('- \u4efb\u52a1\u955c\u50cf\u51b2\u7a81\uff1a${lastReport.mirroredConflicted}');
       if (lastReport.errorMessage != null &&
           lastReport.errorMessage!.trim().isNotEmpty) {
-        buffer.writeln('- 错误信息：${lastReport.errorMessage}');
+        buffer.writeln('- \u9519\u8bef\u4fe1\u606f\uff1a${lastReport.errorMessage}');
       }
     }
 
     buffer
       ..writeln()
-      ..writeln('## 3. Outlook 日历本')
+      ..writeln('## 3. Outlook \u65e5\u5386\u672c')
       ..writeln()
-      ..writeln('- 已接入 Outlook 日历本：${outlookCalendars.length}')
-      ..writeln('- FlowPlan 托管容器：${managedCalendars.length}')
+      ..writeln('- \u5df2\u63a5\u5165 Outlook \u65e5\u5386\u672c\uff1a${outlookCalendars.length}')
+      ..writeln('- FlowPlan \u6258\u7ba1\u5bb9\u5668\uff1a${managedCalendars.length}')
       ..writeln();
     for (final calendar in outlookCalendars) {
       final managed =
           OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name);
       buffer
         ..writeln('### ${calendar.name}')
-        ..writeln('- 本地 ID：${calendar.id}')
-        ..writeln('- 类型：${managed ? 'FlowPlan 托管容器' : '外部 Outlook 日历，只读'}')
-        ..writeln('- 可见状态：${calendar.isVisible ? '显示' : '隐藏'}')
-        ..writeln('- 远端 ID：${calendar.syncUrl ?? '无'}')
+        ..writeln('- \u672c\u5730 ID\uff1a${calendar.id}')
+        ..writeln('- \u7c7b\u578b\uff1a${managed ? 'FlowPlan \u6258\u7ba1\u5bb9\u5668' : '\u5916\u90e8 Outlook \u65e5\u5386\uff08\u53ea\u8bfb\uff09'}')
+        ..writeln('- \u53ef\u89c1\u72b6\u6001\uff1a${calendar.isVisible ? '\u663e\u793a' : '\u9690\u85cf'}')
+        ..writeln('- \u8fdc\u7aef ID\uff1a${calendar.syncUrl ?? '\u65e0'}')
         ..writeln();
     }
 
     buffer
-      ..writeln('## 4. 任务本镜像绑定')
+      ..writeln('## 4. \u4efb\u52a1\u955c\u50cf\u7ed1\u5b9a')
       ..writeln()
-      ..writeln('- 任务本总数：${taskLists.length}')
-      ..writeln('- 已绑定任务本：${taskListBindings.length}')
-      ..writeln('- 镜像索引总数：${mirrorBindings.length}')
-      ..writeln('- 正常镜像：${mirrorDiagnostics.active}')
-      ..writeln('- 待清理镜像：${mirrorDiagnostics.pendingCleanup}')
-      ..writeln('- 本地任务已不存在：${mirrorDiagnostics.missingTasks}')
-      ..writeln('- 任务本已解绑：${mirrorDiagnostics.unboundTaskLists}')
-      ..writeln('- 镜像目标变更：${mirrorDiagnostics.movedTargets}')
-      ..writeln('- 本地字段变更待写回：${mirrorDiagnostics.localChanged}')
+      ..writeln('- \u4efb\u52a1\u672c\u603b\u6570\uff1a${taskLists.length}')
+      ..writeln('- \u5df2\u7ed1\u5b9a\u4efb\u52a1\u672c\uff1a${taskListBindings.length}')
+      ..writeln('- \u955c\u50cf\u7d22\u5f15\u603b\u6570\uff1a${mirrorBindings.length}')
+      ..writeln('- \u6b63\u5e38\u955c\u50cf\uff1a${mirrorDiagnostics.active}')
+      ..writeln('- \u5f85\u6e05\u7406\u955c\u50cf\uff1a${mirrorDiagnostics.pendingCleanup}')
+      ..writeln('- \u672c\u5730\u4efb\u52a1\u5df2\u4e0d\u5b58\u5728\uff1a${mirrorDiagnostics.missingTasks}')
+      ..writeln('- \u4efb\u52a1\u672c\u5df2\u89e3\u7ed1\uff1a${mirrorDiagnostics.unboundTaskLists}')
+      ..writeln('- \u955c\u50cf\u76ee\u6807\u53d8\u66f4\uff1a${mirrorDiagnostics.movedTargets}')
+      ..writeln('- \u672c\u5730\u5b57\u6bb5\u5f85\u5199\u56de\uff1a${mirrorDiagnostics.localChanged}')
+      ..writeln('- \u8fdc\u7aef\u955c\u50cf\u5df2\u5220\u9664\uff1a${mirrorDiagnostics.remoteDeleted}')
+      ..writeln('- \u8fdc\u7aef\u955c\u50cf\u5df2\u4fee\u6539\uff1a${mirrorDiagnostics.remoteChanged}')
+      ..writeln('- \u53cc\u4fa7\u540c\u65f6\u4fee\u6539\uff1a${mirrorDiagnostics.divergent}')
+      ..writeln('- \u6700\u8fd1\u5199\u56de\u5931\u8d25\uff1a${mirrorDiagnostics.writeFailed}')
       ..writeln();
 
     for (final taskList in taskLists) {
       final binding = taskListBindings[taskList.id];
       buffer
         ..writeln('### ${taskList.name}')
-        ..writeln('- 本地 ID：${taskList.id}')
-        ..writeln('- 状态：${taskList.isArchived ? '已归档' : '未归档'}')
-        ..writeln('- 可见状态：${taskList.isVisible ? '显示' : '隐藏'}')
-        ..writeln('- Outlook 镜像：${binding == null ? '未绑定' : binding.remoteCalendarName}');
+        ..writeln('- \u672c\u5730 ID\uff1a${taskList.id}')
+        ..writeln('- \u72b6\u6001\uff1a${taskList.isArchived ? '\u5df2\u5f52\u6863' : '\u672a\u5f52\u6863'}')
+        ..writeln('- \u53ef\u89c1\u72b6\u6001\uff1a${taskList.isVisible ? '\u663e\u793a' : '\u9690\u85cf'}')
+        ..writeln('- Outlook \u955c\u50cf\uff1a${binding == null ? '\u672a\u7ed1\u5b9a' : binding.remoteCalendarName}');
       if (binding != null) {
         buffer
-          ..writeln('- 远端容器 ID：${binding.remoteCalendarId}')
-          ..writeln('- 绑定时间：${_formatDateTime(binding.linkedAt)}');
+          ..writeln('- \u8fdc\u7aef\u5bb9\u5668 ID\uff1a${binding.remoteCalendarId}')
+          ..writeln('- \u7ed1\u5b9a\u65f6\u95f4\uff1a${_formatDateTime(binding.linkedAt)}');
       }
       buffer.writeln();
     }
 
     buffer
-      ..writeln('## 5. 字段级冲突候选')
+      ..writeln('## 5. \u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009')
       ..writeln();
     if (mirrorDiagnostics.conflictLines.isEmpty) {
-      buffer.writeln('当前没有发现字段级冲突候选。');
+      buffer.writeln('\u5f53\u524d\u6ca1\u6709\u53d1\u73b0\u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009\u3002');
     } else {
       for (final line in mirrorDiagnostics.conflictLines) {
         buffer.writeln('- $line');
@@ -157,7 +169,7 @@ class OutlookDiagnosticsService {
 
     buffer
       ..writeln()
-      ..writeln('## 6. 机器可读快照')
+      ..writeln('## 6. \u673a\u5668\u53ef\u8bfb\u5feb\u7167')
       ..writeln()
       ..writeln('```json')
       ..writeln(
@@ -203,16 +215,38 @@ class OutlookDiagnosticsService {
     var unboundTaskLists = 0;
     var movedTargets = 0;
     var localChanged = 0;
+    var remoteDeleted = 0;
+    var remoteChanged = 0;
+    var divergent = 0;
+    var writeFailed = 0;
     final conflictLines = <String>[];
 
     for (final entry in mirrorBindings.entries) {
       final binding = entry.value;
+      switch (binding.conflictState) {
+        case OutlookTaskMirrorConflictState.remoteDeleted:
+          remoteDeleted++;
+          break;
+        case OutlookTaskMirrorConflictState.remoteChanged:
+          remoteChanged++;
+          break;
+        case OutlookTaskMirrorConflictState.divergent:
+          divergent++;
+          break;
+        case OutlookTaskMirrorConflictState.writeFailed:
+          writeFailed++;
+          break;
+        case OutlookTaskMirrorConflictState.pendingLocalPush:
+        case OutlookTaskMirrorConflictState.none:
+          break;
+      }
+
       final task = taskById[entry.key];
       if (task == null) {
         missingTasks++;
         pendingCleanup++;
         conflictLines.add(
-          '本地任务 #${entry.key} 已不存在，但仍有 Outlook 镜像索引：${binding.remoteCalendarName}',
+          '\u672c\u5730\u4efb\u52a1 #${entry.key} \u5df2\u4e0d\u5b58\u5728\uff0c\u4f46\u4ecd\u4fdd\u7559\u4e86 Outlook \u955c\u50cf\u7d22\u5f15\uff1a${binding.remoteCalendarName}',
         );
         continue;
       }
@@ -221,7 +255,7 @@ class OutlookDiagnosticsService {
       if (taskListId == null) {
         missingTasks++;
         pendingCleanup++;
-        conflictLines.add('任务「${task.summary}」缺少任务本归属，镜像需要人工检查。');
+        conflictLines.add('\u4efb\u52a1\u201c${task.summary}\u201d\u7f3a\u5c11\u4efb\u52a1\u672c\u5f52\u5c5e\uff0c\u955c\u50cf\u9700\u8981\u4eba\u5de5\u68c0\u67e5\u3002');
         continue;
       }
 
@@ -229,7 +263,7 @@ class OutlookDiagnosticsService {
       if (taskListBinding == null) {
         unboundTaskLists++;
         pendingCleanup++;
-        conflictLines.add('任务「${task.summary}」所在任务本已解绑 Outlook 镜像容器。');
+        conflictLines.add('\u4efb\u52a1\u201c${task.summary}\u201d\u6240\u5728\u4efb\u52a1\u672c\u5df2\u89e3\u7ed1 Outlook \u955c\u50cf\u5bb9\u5668\u3002');
         continue;
       }
 
@@ -239,12 +273,13 @@ class OutlookDiagnosticsService {
         movedTargets++;
         pendingCleanup++;
         conflictLines.add(
-          '任务「${task.summary}」的镜像目标已从 ${binding.remoteCalendarName} 变更为 $remoteCalendarName。',
+          '\u4efb\u52a1\u201c${task.summary}\u201d\u7684\u955c\u50cf\u76ee\u6807\u5df2\u4ece ${binding.remoteCalendarName} \u53d8\u66f4\u4e3a $remoteCalendarName\u3002',
         );
         continue;
       }
 
-      final taskListName = taskListById[taskListId]?.name ??
+      final taskListName =
+          taskListById[taskListId]?.name ??
           _previousTaskListName(binding.localSnapshotJson) ??
           remoteCalendarName;
       final snapshot = OutlookTaskMirrorSnapshot.fromTask(
@@ -261,7 +296,7 @@ class OutlookDiagnosticsService {
           current: snapshot,
         );
         conflictLines.add(
-          '任务「${task.summary}」本地字段已变化，待写回字段：${changedFields.join('、')}。',
+          '\u4efb\u52a1\u201c${task.summary}\u201d\u672c\u5730\u5b57\u6bb5\u5df2\u53d8\u5316\uff0c\u5f85\u5199\u56de\u5b57\u6bb5\uff1a${changedFields.join('\u3001')}\u3002',
         );
       }
 
@@ -275,6 +310,10 @@ class OutlookDiagnosticsService {
       unboundTaskLists: unboundTaskLists,
       movedTargets: movedTargets,
       localChanged: localChanged,
+      remoteDeleted: remoteDeleted,
+      remoteChanged: remoteChanged,
+      divergent: divergent,
+      writeFailed: writeFailed,
       conflictLines: conflictLines,
     );
   }
@@ -294,11 +333,9 @@ class OutlookDiagnosticsService {
 
   static String _authorizationLabel(AuthToken? token) {
     if (token == null) {
-      return '未授权';
+      return '\u672a\u6388\u6743';
     }
-    return token.grantedMode == OutlookSyncMode.bidirectional
-        ? '读写授权'
-        : '只读授权';
+    return token.grantedMode == OutlookSyncMode.bidirectional ? '\u8bfb\u5199\u6388\u6743' : '\u53ea\u8bfb\u6388\u6743';
   }
 
   static String _formatDateTime(DateTime value) {
@@ -319,6 +356,10 @@ class _MirrorDiagnostics {
     required this.unboundTaskLists,
     required this.movedTargets,
     required this.localChanged,
+    required this.remoteDeleted,
+    required this.remoteChanged,
+    required this.divergent,
+    required this.writeFailed,
     required this.conflictLines,
   });
 
@@ -328,6 +369,10 @@ class _MirrorDiagnostics {
   final int unboundTaskLists;
   final int movedTargets;
   final int localChanged;
+  final int remoteDeleted;
+  final int remoteChanged;
+  final int divergent;
+  final int writeFailed;
   final List<String> conflictLines;
 
   Map<String, dynamic> toJson() => {
@@ -337,6 +382,11 @@ class _MirrorDiagnostics {
         'unbound_task_lists': unboundTaskLists,
         'moved_targets': movedTargets,
         'local_changed': localChanged,
+        'remote_deleted': remoteDeleted,
+        'remote_changed': remoteChanged,
+        'divergent': divergent,
+        'write_failed': writeFailed,
         'conflict_lines': conflictLines,
       };
 }
+
