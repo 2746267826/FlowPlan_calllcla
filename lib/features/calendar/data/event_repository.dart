@@ -108,6 +108,24 @@ class EventRepository {
       (_db.select(_db.calendarEvents)..where((e) => e.id.equals(id)))
           .getSingleOrNull();
 
+  Future<List<CalendarEvent>> getByCalendarId(int calendarId) =>
+      (_db.select(_db.calendarEvents)
+            ..where((e) => e.eventCalendarId.equals(calendarId))
+            ..orderBy([(e) => OrderingTerm(expression: e.dtstart)]))
+          .get();
+
+  Future<List<CalendarEvent>> getByCalendarIds(Iterable<int> calendarIds) async {
+    final ids = calendarIds.toSet().toList(growable: false);
+    if (ids.isEmpty) {
+      return const <CalendarEvent>[];
+    }
+
+    return (_db.select(_db.calendarEvents)
+          ..where((e) => e.eventCalendarId.isIn(ids))
+          ..orderBy([(e) => OrderingTerm(expression: e.dtstart)]))
+        .get();
+  }
+
   Future<List<CalendarEvent>> getAllByUid(String uid) =>
       (_db.select(_db.calendarEvents)..where((e) => e.uid.equals(uid))).get();
 
@@ -137,6 +155,37 @@ class EventRepository {
 
   Future<int> delete(int id) =>
       (_db.delete(_db.calendarEvents)..where((e) => e.id.equals(id))).go();
+
+  Future<int> deleteByCalendarId(int calendarId) =>
+      (_db.delete(_db.calendarEvents)
+            ..where((e) => e.eventCalendarId.equals(calendarId)))
+          .go();
+
+  Future<void> replaceCalendarEvents({
+    required int calendarId,
+    required List<CalendarEventsCompanion> companions,
+  }) async {
+    final normalized = companions
+        .map(
+          (companion) => companion.copyWith(
+            eventCalendarId: Value(calendarId),
+          ),
+        )
+        .toList(growable: false);
+
+    await _db.transaction(() async {
+      await (_db.delete(_db.calendarEvents)
+            ..where((e) => e.eventCalendarId.equals(calendarId)))
+          .go();
+      for (final companion in normalized) {
+        await _ensureEventCalendarBinding(
+          companion.eventCalendarId,
+          requirePresent: true,
+        );
+        await _db.into(_db.calendarEvents).insert(companion);
+      }
+    });
+  }
 
   Future<void> deleteByUid(String uid) async {
     await (_db.delete(_db.calendarEvents)..where((e) => e.uid.equals(uid)))

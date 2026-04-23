@@ -32,6 +32,7 @@ class DesktopShellPlugin : public flutter::Plugin {
   bool CreateStartupTask() const;
   bool RemoveStartupTask() const;
   bool RunSchtasks(const std::wstring& arguments, DWORD* exit_code) const;
+  void ShowReminder(const std::wstring& title, const std::wstring& body) const;
   std::wstring GetCurrentUserName() const;
   std::wstring GetStartupTaskName() const;
   std::wstring GetExecutableCommand(bool start_hidden_to_tray) const;

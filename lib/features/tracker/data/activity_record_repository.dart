@@ -1,11 +1,18 @@
 // ActivityRecordRepository: activity record CRUD.
 import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/platform/device_identity_service.dart';
 import '../services/raw_input_service.dart';
 
 class ActivityRecordRepository {
   final AppDatabase _db;
-  ActivityRecordRepository(this._db);
+  final DeviceIdentityService _deviceIdentityService;
+
+  ActivityRecordRepository(
+    this._db, {
+    DeviceIdentityService? deviceIdentityService,
+  }) : _deviceIdentityService =
+            deviceIdentityService ?? DeviceIdentityService();
 
   Future<int> startRecord({
     required DateTime startTime,
@@ -14,11 +21,14 @@ class ActivityRecordRepository {
     String? windowTitle,
     String? packageName,
     String? category,
+    String? deviceId,
+    String? platform,
     int? linkedTaskId,
     bool isAuto = false,
     String source = 'manual',
-  }) =>
-      _db.into(_db.activityRecords).insert(ActivityRecordsCompanion.insert(
+  }) async {
+    final id = await _db.into(_db.activityRecords).insert(
+          ActivityRecordsCompanion.insert(
             startTime: startTime,
             manualLabel: Value(manualLabel),
             processName: Value(processName),
@@ -28,7 +38,11 @@ class ActivityRecordRepository {
             linkedTaskId: Value(linkedTaskId),
             isAuto: Value(isAuto),
             source: Value(source),
-          ));
+          ),
+        );
+    await _stampDeviceContext(id, deviceId: deviceId, platform: platform);
+    return id;
+  }
 
   Future<int> insertImportedRecord({
     required DateTime startTime,
@@ -37,12 +51,14 @@ class ActivityRecordRepository {
     String? windowTitle,
     String? packageName,
     String? category,
+    String? deviceId,
+    String? platform,
     bool isAuto = true,
     String source = 'imported',
-  }) {
+  }) async {
     final durationMinutes =
         endTime.difference(startTime).inMinutes.clamp(0, 1 << 31).toInt();
-    return _db.into(_db.activityRecords).insert(
+    final id = await _db.into(_db.activityRecords).insert(
           ActivityRecordsCompanion.insert(
             startTime: startTime,
             endTime: Value(endTime),
@@ -55,6 +71,39 @@ class ActivityRecordRepository {
             source: Value(source),
           ),
         );
+    await _stampDeviceContext(id, deviceId: deviceId, platform: platform);
+    return id;
+  }
+
+  Future<void> _stampDeviceContext(
+    int id, {
+    String? deviceId,
+    String? platform,
+  }) async {
+    var normalizedDeviceId = deviceId?.trim();
+    var normalizedPlatform = platform?.trim();
+
+    if (normalizedDeviceId == null || normalizedDeviceId.isEmpty) {
+      normalizedDeviceId =
+          await _deviceIdentityService.getOrCreateDeviceId(_db);
+    }
+    if (normalizedPlatform == null || normalizedPlatform.isEmpty) {
+      normalizedPlatform = _deviceIdentityService.currentPlatform;
+    }
+
+    await _db.customStatement(
+      '''
+      UPDATE activity_records
+      SET device_id = COALESCE(?, device_id),
+          platform = COALESCE(?, platform)
+      WHERE id = ?
+      ''',
+      [
+        normalizedDeviceId?.isEmpty == true ? null : normalizedDeviceId,
+        normalizedPlatform?.isEmpty == true ? null : normalizedPlatform,
+        id,
+      ],
+    );
   }
 
   Future<void> endRecord(

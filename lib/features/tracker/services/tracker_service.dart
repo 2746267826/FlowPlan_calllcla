@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../core/platform/device_identity_service.dart';
 import '../../../main.dart' show rawInputService;
 import '../../../shared/providers/app_providers.dart';
 import '../../../shared/providers/database_provider.dart';
@@ -14,6 +15,7 @@ import 'activity_classifier.dart';
 import 'android_usage_import_service.dart';
 import 'android_usage_stats_service.dart';
 import 'raw_input_service.dart';
+import 'tracker_platform_source.dart';
 import 'window_sensor.dart';
 
 part 'tracker_service.g.dart';
@@ -112,6 +114,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   Timer? _timer;
   final WindowSensor _sensor = const WindowSensor();
   final ActivityClassifier _classifier = ActivityClassifier();
+  final DeviceIdentityService _deviceIdentityService = DeviceIdentityService();
+  final TrackerPlatformSource _platform = TrackerPlatformSource.current();
   final Duration _sampleInterval = const Duration(seconds: 5);
   InputTelemetry? _telemetryBaseline;
   InputTelemetry _activeTelemetry = InputTelemetry.empty();
@@ -120,11 +124,11 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   TrackerState build() {
     ref.onDispose(() => _timer?.cancel());
     ref.listen<bool>(sequenceRecordingProvider, (previous, next) {
-      if (Platform.isWindows) {
+      if (_platform.supportsSequenceRecording) {
         unawaited(rawInputService.setSequenceRecording(next));
       }
     });
-    if (Platform.isWindows) {
+    if (_platform.supportsSequenceRecording) {
       unawaited(
         rawInputService.setSequenceRecording(
           ref.read(sequenceRecordingProvider),
@@ -139,13 +143,14 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       return;
     }
 
-    if (Platform.isAndroid) {
+    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
       state = state.copyWith(isRunning: true);
       unawaited(_importAndroidUsage());
       return;
     }
 
-    if (!Platform.isWindows) {
+    if (_platform.collectionMode !=
+        TrackerCollectionMode.continuousWindowSampling) {
       return;
     }
 
@@ -163,12 +168,13 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> refreshNow() async {
-    if (Platform.isAndroid) {
+    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
       await _importAndroidUsage();
       return;
     }
 
-    if (!Platform.isWindows) {
+    if (_platform.collectionMode !=
+        TrackerCollectionMode.continuousWindowSampling) {
       return;
     }
     await _sample();
@@ -182,7 +188,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> _stopAsync() async {
-    if (Platform.isAndroid) {
+    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
       state = const TrackerState(isRunning: false);
       return;
     }
@@ -203,6 +209,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
         activityRecordRepository: ref.read(activityRecordRepositoryProvider),
         activityLogService: ref.read(activityLogServiceProvider),
         classifier: _classifier,
+        deviceIdentityService: _deviceIdentityService,
       );
       final result = await importService.importLatest();
       final sampledAt = result.importedUntil ?? DateTime.now();
@@ -436,11 +443,16 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   ) async {
     try {
       final repo = ref.read(activityRecordRepositoryProvider);
+      final database = ref.read(databaseProvider);
+      final deviceId =
+          await _deviceIdentityService.getOrCreateDeviceId(database);
       final id = await repo.startRecord(
         startTime: snapshot.timestamp,
         processName: snapshot.processName,
         windowTitle: snapshot.windowTitle,
         category: classification.category,
+        deviceId: deviceId,
+        platform: _deviceIdentityService.currentPlatform,
         isAuto: true,
         source: 'windows_auto',
       );

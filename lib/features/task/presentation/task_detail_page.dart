@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
+import '../../../shared/providers/settings_provider.dart';
 import 'widgets/task_tracker_evidence_section.dart';
 
 class TaskDetailPage extends ConsumerStatefulWidget {
@@ -26,11 +27,15 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
   int _priorityLocal = 2;
   bool _isSplittable = false;
   bool _isAutoScheduled = true;
+  bool _isLocked = false;
   DateTime? _due;
   String? _rrule;
   int? _taskListId;
   int _reminderMinutes = 15;
   bool _saving = false;
+  bool _hasUserEditedAutoScheduled = false;
+  bool _hasUserEditedReminder = false;
+  int _taskListDefaultsRequestVersion = 0;
 
   @override
   void initState() {
@@ -54,10 +59,48 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       _priorityLocal = task.priorityLocal;
       _isSplittable = task.isSplittable;
       _isAutoScheduled = task.isAutoScheduled;
+      _isLocked = task.isLocked;
       _due = task.due;
       _rrule = task.rrule;
       _taskListId = task.taskListId;
       _reminderMinutes = task.reminderMinutesBefore;
+    });
+  }
+
+  Future<void> _handleTaskListSelection(
+    int? taskListId, {
+    bool forceApplyDefaults = false,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _taskListId = taskListId);
+    if (widget.taskId != null || taskListId == null) {
+      return;
+    }
+
+    final fallbackReminderMinutes = ref.read(reminderMinutesProvider);
+    final requestVersion = ++_taskListDefaultsRequestVersion;
+    final defaults =
+        await ref.read(calendarBooksRepositoryProvider).getTaskListDefaults(
+              taskListId,
+              fallbackReminderMinutes: fallbackReminderMinutes,
+            );
+    if (!mounted ||
+        widget.taskId != null ||
+        requestVersion != _taskListDefaultsRequestVersion ||
+        _taskListId != taskListId) {
+      return;
+    }
+
+    setState(() {
+      if (forceApplyDefaults || !_hasUserEditedAutoScheduled) {
+        _isAutoScheduled = defaults.defaultIsAutoScheduled;
+      }
+      if (forceApplyDefaults || !_hasUserEditedReminder) {
+        _reminderMinutes = defaults.defaultReminderMinutesBefore;
+      }
     });
   }
 
@@ -125,17 +168,20 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                         '\u5f53\u524d\u6ca1\u6709\u53ef\u7528\u7684\u4efb\u52a1\u672c\u3002\u8bf7\u5148\u5728\u201c\u65e5\u5386\u672c\u201d\u4e2d\u521b\u5efa\u4e00\u4e2a\u4efb\u52a1\u672c\uff0c\u518d\u521b\u5efa\u4efb\u52a1\u3002',
                   );
                 }
-                if (_taskListId == null) {
+                if (isCreating && _taskListId == null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
-                      setState(() => _taskListId = lists.first.id);
+                      _handleTaskListSelection(
+                        lists.first.id,
+                        forceApplyDefaults: true,
+                      );
                     }
                   });
                 }
                 return _TaskListSelector(
                   lists: lists,
                   selectedId: _taskListId,
-                  onChanged: (id) => setState(() => _taskListId = id),
+                  onChanged: (id) => _handleTaskListSelection(id),
                 );
               },
             ),
@@ -191,7 +237,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             const _SectionLabel('\u63d0\u524d\u63d0\u9192'),
             _ReminderSelector(
               value: _reminderMinutes,
-              onChanged: (value) => setState(() => _reminderMinutes = value),
+              onChanged: (value) => setState(() {
+                _reminderMinutes = value;
+                _hasUserEditedReminder = true;
+              }),
             ),
             const SizedBox(height: 20),
             SwitchListTile(
@@ -203,7 +252,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 '\u7531\u6392\u7a0b\u5f15\u64ce\u81ea\u52a8\u5b89\u6392\u65f6\u95f4',
               ),
               value: _isAutoScheduled,
-              onChanged: (value) => setState(() => _isAutoScheduled = value),
+              onChanged: (value) => setState(() {
+                _isAutoScheduled = value;
+                _hasUserEditedAutoScheduled = true;
+              }),
               activeThumbColor: AppColors.primary,
               contentPadding: EdgeInsets.zero,
             ),
@@ -217,6 +269,19 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
               ),
               value: _isSplittable,
               onChanged: (value) => setState(() => _isSplittable = value),
+              activeThumbColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text(
+                '\u9501\u5b9a\u6392\u7a0b',
+                style: TextStyle(fontSize: 14),
+              ),
+              subtitle: const Text(
+                '\u9501\u5b9a\u540e\u4e00\u952e\u91cd\u6392\u4e0d\u4f1a\u79fb\u52a8\u8fd9\u4e2a\u4efb\u52a1',
+              ),
+              value: _isLocked,
+              onChanged: (value) => setState(() => _isLocked = value),
               activeThumbColor: AppColors.primary,
               contentPadding: EdgeInsets.zero,
             ),
@@ -303,6 +368,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             durationMinutes: Value(_durationMinutes),
             isSplittable: Value(_isSplittable),
             isAutoScheduled: Value(_isAutoScheduled),
+            isLocked: Value(_isLocked),
             taskListId: Value(_taskListId),
             rrule: Value(_rrule),
             reminderMinutesBefore: Value(_reminderMinutes),
@@ -319,6 +385,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             durationMinutes: Value(_durationMinutes),
             isSplittable: Value(_isSplittable),
             isAutoScheduled: Value(_isAutoScheduled),
+            isLocked: Value(_isLocked),
             taskListId: Value(_taskListId),
             rrule: Value(_rrule),
             reminderMinutesBefore: Value(_reminderMinutes),
@@ -514,11 +581,47 @@ class _TaskListSelector extends StatelessWidget {
                     color: selected ? color : null,
                   ),
                 ),
+                if (list.isDefault) ...[
+                  const SizedBox(width: 6),
+                  _SelectorTag(
+                    label: '\u9ed8\u8ba4',
+                    color: selected ? color : AppColors.primary,
+                  ),
+                ],
               ],
             ),
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _SelectorTag extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _SelectorTag({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
     );
   }
 }

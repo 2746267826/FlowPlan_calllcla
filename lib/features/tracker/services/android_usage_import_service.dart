@@ -136,6 +136,8 @@ class AndroidUsageImportService {
         windowTitle: displayLabel,
         packageName: session.packageName,
         category: classification.category,
+        deviceId: deviceId,
+        platform: _deviceIdentityService.currentPlatform,
         isAuto: true,
         source: _androidSource,
       );

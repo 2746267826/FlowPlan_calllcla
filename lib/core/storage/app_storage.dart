@@ -10,6 +10,13 @@ enum AppStorageFlavor {
   release,
 }
 
+const appDatabaseFileName = 'flowplan.db';
+const appPendingDatabaseRestoreFileName = 'flowplan.restore.pending.db';
+const appPendingDatabaseRestoreMetadataFileName =
+    'flowplan.restore.pending.json';
+const appDatabaseRestoreNoticeFileName = 'flowplan.restore.notice.json';
+const appDatabasePreRestoreBackupFileName = 'flowplan.before_restore.db';
+
 AppStorageFlavor get currentAppStorageFlavor {
   if (kReleaseMode) {
     return AppStorageFlavor.release;
@@ -74,4 +81,24 @@ Future<Directory> resolveAppStorageDirectory() async {
 Future<File> resolveAppStorageFile(String fileName) async {
   final directory = await resolveAppStorageDirectory();
   return File(p.join(directory.path, fileName));
+}
+
+Future<File> resolvePrimaryDatabaseFile() {
+  return resolveAppStorageFile(appDatabaseFileName);
+}
+
+Future<File> resolvePendingDatabaseRestoreFile() {
+  return resolveAppStorageFile(appPendingDatabaseRestoreFileName);
+}
+
+Future<File> resolvePendingDatabaseRestoreMetadataFile() {
+  return resolveAppStorageFile(appPendingDatabaseRestoreMetadataFileName);
+}
+
+Future<File> resolveDatabaseRestoreNoticeFile() {
+  return resolveAppStorageFile(appDatabaseRestoreNoticeFileName);
+}
+
+Future<File> resolvePreRestoreDatabaseBackupFile() {
+  return resolveAppStorageFile(appDatabasePreRestoreBackupFileName);
 }

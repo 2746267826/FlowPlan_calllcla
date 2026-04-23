@@ -22,6 +22,7 @@ import '../models/input_heatmap_summary.dart';
 import '../models/tracked_input_event.dart';
 import '../models/work_session.dart';
 import '../services/raw_input_service.dart';
+import '../services/tracker_platform_source.dart';
 import '../services/tracker_service.dart';
 import '../widgets/heatmap_widget.dart';
 
@@ -795,7 +796,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       final trackerRepository = ref.read(trackerRepositoryProvider);
       final activityRecordRepository =
           ref.read(activityRecordRepositoryProvider);
-      final supportsInputAnalytics = Platform.isWindows;
+      final supportsInputAnalytics =
+          TrackerPlatformSource.current().supportsInputAnalytics;
       final inputActivityEventService = supportsInputAnalytics
           ? ref.read(inputActivityEventServiceProvider)
           : null;
@@ -906,7 +908,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
   @override
   Widget build(BuildContext context) {
     final selectedDate = ref.watch(selectedDateProvider);
-    final supportsInputAnalytics = Platform.isWindows;
+    final trackerPlatform = TrackerPlatformSource.current();
+    final supportsInputAnalytics = trackerPlatform.supportsInputAnalytics;
+    final pageWidth = MediaQuery.of(context).size.width;
+    final isCompactLayout = pageWidth < 600;
     final sequenceEnabled = ref.watch(sequenceRecordingProvider);
     final heatmapScaleOverride =
         ref.watch(activityHeatmapScaleOverrideProvider);
@@ -1089,7 +1094,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(isCompactLayout ? 12 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1124,7 +1129,27 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               ),
             ),
             const SizedBox(height: 16),
-            if (Platform.isAndroid && hasAndroidUsageAccess == false) ...[
+            if (trackerPlatform.isAndroid) ...[
+              _AndroidTrackingModePanel(
+                hasUsageAccess: hasAndroidUsageAccess,
+                platformDescription: trackerPlatform.collectionDescription,
+                lastSampleAt: trackerState.lastSampleAt,
+                isRefreshing: _isRefreshing,
+                onOpenUsageAccessSettings: () {
+                  ref
+                      .read(trackerServiceNotifierProvider.notifier)
+                      .openAndroidUsageAccessSettings();
+                },
+                onRefresh: () async {
+                  await _refreshSnapshot(
+                    refreshTrackerNow: true,
+                    force: true,
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (trackerPlatform.isAndroid && hasAndroidUsageAccess == false) ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -1306,6 +1331,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                   selectedDate: selectedDate,
                   insights: insights,
                   workSessionCount: workSessions.length,
+                  showInputMetrics: supportsInputAnalytics,
                 ),
               ),
             ),
@@ -1365,6 +1391,92 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
   }
 }
 
+class _AndroidTrackingModePanel extends StatelessWidget {
+  const _AndroidTrackingModePanel({
+    required this.hasUsageAccess,
+    required this.platformDescription,
+    required this.lastSampleAt,
+    required this.isRefreshing,
+    required this.onOpenUsageAccessSettings,
+    required this.onRefresh,
+  });
+
+  final bool? hasUsageAccess;
+  final String platformDescription;
+  final DateTime? lastSampleAt;
+  final bool isRefreshing;
+  final VoidCallback onOpenUsageAccessSettings;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final granted = hasUsageAccess == true;
+    final statusText = hasUsageAccess == null
+        ? '等待权限检查'
+        : (granted ? '使用情况访问权限已开启' : '尚未开启使用情况访问权限');
+    final lastRefreshText = lastSampleAt == null
+        ? '尚未导入'
+        : '上次导入：${_formatDateTimeShort(lastSampleAt!)}';
+
+    return _card(
+      context,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                granted
+                    ? Icons.mobile_friendly_outlined
+                    : Icons.mobile_off_outlined,
+                size: 18,
+                color: granted ? const Color(0xFF0EA8A0) : Colors.orange,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '安卓追踪模式',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              _statusBadge(
+                statusText,
+                granted ? const Color(0xFF0EA8A0) : Colors.orange,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '$platformDescription 追踪页会优先展示应用名，包名仅作为技术标识保存在底层数据中。',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _tag(lastRefreshText),
+              OutlinedButton.icon(
+                onPressed: onOpenUsageAccessSettings,
+                icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+                label: const Text('使用情况权限'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: isRefreshing ? null : onRefresh,
+                icon: const Icon(Icons.refresh_outlined, size: 18),
+                label: Text(isRefreshing ? '正在刷新' : '立即导入'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class TrackerDayDetailsPage extends ConsumerWidget {
   const TrackerDayDetailsPage({super.key});
 
@@ -1419,7 +1531,8 @@ class TrackerDayDetailsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     const logPreviewLimit = 80;
-    final supportsInputAnalytics = Platform.isWindows;
+    final supportsInputAnalytics =
+        TrackerPlatformSource.current().supportsInputAnalytics;
     final selectedDate = ref.watch(selectedDateProvider);
     final recordsAsync = ref.watch(activityRecordsForDateProvider);
     final logEntriesAsync = ref.watch(activityLogEntriesForDateProvider);
@@ -2055,7 +2168,10 @@ class _HistoryToolbar extends ConsumerWidget {
       selectedDate.day,
     );
 
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
           '\u5386\u53f2\u67e5\u8be2',
@@ -2063,7 +2179,6 @@ class _HistoryToolbar extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
         ),
-        const SizedBox(width: 12),
         IconButton(
           tooltip: '\u524d\u4e00\u5929',
           onPressed: () {
@@ -2184,6 +2299,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final supportsInputAnalytics =
+        TrackerPlatformSource.current().supportsInputAnalytics;
     final hasFilters =
         widget.searchQuery.trim().isNotEmpty ||
         widget.selectedProcess != null ||
@@ -2369,7 +2486,7 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
                 },
               ),
             ),
-            if (Platform.isWindows)
+            if (supportsInputAnalytics)
               FilterChip(
                 label: const Text('仅看有输入活动'),
                 selected: widget.onlyWithInput,
@@ -2796,11 +2913,13 @@ class _DailyOverview extends StatelessWidget {
   final DateTime selectedDate;
   final ActivityInsights insights;
   final int workSessionCount;
+  final bool showInputMetrics;
 
   const _DailyOverview({
     required this.selectedDate,
     required this.insights,
     required this.workSessionCount,
+    required this.showInputMetrics,
   });
 
   @override
@@ -2835,9 +2954,11 @@ class _DailyOverview extends StatelessWidget {
               '\u5f53\u5929\u7d2f\u8ba1\u8bb0\u5f55',
             ),
             _summaryCard(
-              '\u6709\u6548\u8f93\u5165\u65f6\u957f',
-              _formatMinutes(insights.focusMinutes),
-              '\u68c0\u6d4b\u5230\u952e\u9f20\u8f93\u5165',
+              showInputMetrics ? '\u6709\u6548\u8f93\u5165\u65f6\u957f' : '使用记录',
+              showInputMetrics
+                  ? _formatMinutes(insights.focusMinutes)
+                  : '${insights.records.length}',
+              showInputMetrics ? '\u68c0\u6d4b\u5230\u952e\u9f20\u8f93\u5165' : '当天导入的活动片段',
             ),
             _summaryCard(
               '\u5de5\u4f5c\u4f1a\u8bdd',
@@ -2849,18 +2970,20 @@ class _DailyOverview extends StatelessWidget {
               '${insights.activeProcessCount}',
               '\u5f53\u5929\u4e3b\u8981\u5e94\u7528\u6570',
             ),
-            _summaryCard(
-              '\u6309\u952e\u603b\u6570',
-              '${insights.totalKeys}',
-              '${insights.keysPerMinute.toStringAsFixed(1)} '
-                  '\u6b21/\u5206\u949f',
-            ),
-            _summaryCard(
-              '\u70b9\u51fb\u603b\u6570',
-              '${insights.totalClicks}',
-              '${insights.clickPerHour.toStringAsFixed(1)} '
-                  '\u6b21/\u5c0f\u65f6',
-            ),
+            if (showInputMetrics)
+              _summaryCard(
+                '\u6309\u952e\u603b\u6570',
+                '${insights.totalKeys}',
+                '${insights.keysPerMinute.toStringAsFixed(1)} '
+                    '\u6b21/\u5206\u949f',
+              ),
+            if (showInputMetrics)
+              _summaryCard(
+                '\u70b9\u51fb\u603b\u6570',
+                '${insights.totalClicks}',
+                '${insights.clickPerHour.toStringAsFixed(1)} '
+                    '\u6b21/\u5c0f\u65f6',
+              ),
           ],
         ),
         const SizedBox(height: 16),
@@ -4872,8 +4995,14 @@ Widget _emptyState({
 }
 
 Widget _summaryCard(String title, String value, String note) {
+  final views = WidgetsBinding.instance.platformDispatcher.views;
+  final view = views.isEmpty ? null : views.first;
+  final width = view == null
+      ? 800.0
+      : view.physicalSize.width / view.devicePixelRatio;
+  final compact = width < 520;
   return Container(
-    width: 210,
+    width: compact ? math.max(180, width - 56) : 210,
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: const Color(0xFFF6F7F9),

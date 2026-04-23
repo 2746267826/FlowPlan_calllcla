@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,8 @@ import '../../../core/database/app_database.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
+import '../../../shared/providers/settings_provider.dart';
+import '../../scheduler/plan_feedback_service.dart';
 import '../../scheduler/scheduler_engine.dart';
 import '../../task/presentation/quick_add_bar.dart';
 import '../../task/presentation/task_detail_page.dart';
@@ -63,6 +67,24 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     ),
   ];
 
+  Timer? _planFeedbackTimer;
+  bool _handlingPlanDeviation = false;
+  String? _lastPlanDeviationPromptKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _planFeedbackTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      ref.read(planFeedbackRefreshTickProvider.notifier).state++;
+    });
+  }
+
+  @override
+  void dispose() {
+    _planFeedbackTimer?.cancel();
+    super.dispose();
+  }
+
   int get _currentIndex {
     final route = widget.currentRoute;
     if (route.startsWith(AppRoutes.week)) return 1;
@@ -76,15 +98,199 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
 
   Future<void> _autoSchedule() async {
     final date = ref.read(selectedDateProvider);
-    final count = await ref.read(schedulerEngineProvider).autoSchedule(date);
+    final result =
+        await ref.read(schedulerEngineProvider).autoScheduleDetailed(date);
+    if (!mounted) return;
+
+    if (!result.requiresConfirmation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.summary),
+          action: SnackBarAction(
+            label: '\u8be6\u60c5',
+            onPressed: () {
+              _showScheduleReport(result);
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await _showScheduleReport(
+      result,
+      allowApply: true,
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    await ref.read(schedulerEngineProvider).applyRunResult(result);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        content: Text('\u5df2\u6309\u4f60\u786e\u8ba4\u7684\u9884\u6848\u5e94\u7528\u91cd\u6392\uff1a${result.summary}'),
+      ),
+    );
+  }
+
+  Future<void> _handlePlanDeviation(PlanDeviationSnapshot snapshot) async {
+    if (_handlingPlanDeviation ||
+        !snapshot.shouldPrompt ||
+        snapshot.plan == null ||
+        snapshot.activity == null ||
+        snapshot.promptKey == _lastPlanDeviationPromptKey) {
+      return;
+    }
+    _handlingPlanDeviation = true;
+    _lastPlanDeviationPromptKey = snapshot.promptKey;
+
+    final plan = snapshot.plan!;
+    final activity = snapshot.activity!;
+    final shouldReschedule = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('\u68c0\u6d4b\u5230\u8ba1\u5212\u504f\u79bb'),
         content: Text(
-          count > 0
-              ? '\u5df2\u81ea\u52a8\u6392\u5165 $count \u4e2a\u4efb\u52a1'
-              : '\u6ca1\u6709\u53ef\u6392\u5165\u7684\u4efb\u52a1\uff0c\u6216\u4eca\u5929\u5df2\u6392\u6ee1',
+          '\u5f53\u524d\u8ba1\u5212\uff1a\u300c${plan.taskLabel}\u300d\n'
+          '\u5f53\u524d\u8ffd\u8e2a\uff1a${activity.label}\n'
+          '\u5224\u65ad\u539f\u56e0\uff1a${snapshot.reason}\n\n'
+          '\u8981\u751f\u6210\u4e00\u4e2a\u5c06\u5f53\u524d\u4efb\u52a1\u548c\u540e\u7eed\u53ef\u81ea\u52a8\u6392\u7a0b\u4efb\u52a1\u5411\u540e\u987a\u5ef6\u7684\u91cd\u6392\u9884\u6848\u5417\uff1f',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('\u6682\u4e0d\u5904\u7406'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('\u751f\u6210\u91cd\u6392\u9884\u6848'),
+          ),
+        ],
+      ),
+    );
+
+    try {
+      if (shouldReschedule != true) {
+        await ref
+            .read(planFeedbackServiceProvider)
+            .markDecision(snapshot, decision: 'snoozed');
+        return;
+      }
+
+      final now = DateTime.now();
+      await ref
+          .read(planFeedbackServiceProvider)
+          .markDecision(snapshot, decision: 'accepted');
+      final result = await ref.read(schedulerEngineProvider).autoScheduleDetailed(
+            plan.planStart,
+            from: now,
+            forceMovableTaskIds: {plan.task.id},
+            trigger: 'plan_deviation_confirmed',
+          );
+      if (!mounted) {
+        return;
+      }
+      final confirmed = await _showScheduleReport(
+        result,
+        allowApply: result.requiresConfirmation,
+      );
+      if (!result.requiresConfirmation) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.summary)),
+        );
+        return;
+      }
+      if (confirmed != true || !mounted) {
+        return;
+      }
+      await ref.read(schedulerEngineProvider).applyRunResult(result);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('\u5df2\u6839\u636e\u8ba1\u5212\u504f\u79bb\u786e\u8ba4\u987a\u5ef6\uff1a${result.summary}'),
+        ),
+      );
+    } finally {
+      _handlingPlanDeviation = false;
+      if (mounted) {
+        ref.read(planFeedbackRefreshTickProvider.notifier).state++;
+      }
+    }
+  }
+
+  Future<bool?> _showScheduleReport(
+    SchedulerRunResult result, {
+    bool allowApply = false,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          allowApply ? '\u786e\u8ba4\u5e94\u7528\u91cd\u6392\u9884\u6848' : '\u6392\u7a0b\u53d8\u66f4\u8bb0\u5f55',
+        ),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(result.summary),
+                const SizedBox(height: 12),
+                if (result.splitSuggestedTaskCount > 0)
+                  Text(
+                    '\u6709 ${result.splitSuggestedTaskCount} \u4e2a\u53ef\u62c6\u5206\u4efb\u52a1\u5c06\u5199\u5165\u591a\u4e2a\u6392\u7a0b\u7247\u6bb5\uff0c\u65f6\u95f4\u8f74\u4f1a\u6309\u7247\u6bb5\u663e\u793a\u3002',
+                    style: const TextStyle(color: Colors.orange),
+                  ),
+                const SizedBox(height: 12),
+                for (final entry in result.logEntries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          entry.level == 'success'
+                              ? Icons.check_circle_outline
+                              : entry.level == 'warning'
+                                  ? Icons.info_outline
+                                  : Icons.notes_outlined,
+                          size: 18,
+                          color: entry.level == 'success'
+                              ? Colors.green
+                              : entry.level == 'warning'
+                                  ? Colors.orange
+                                  : AppColors.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            entry.taskSummary == null
+                                ? entry.message
+                                : '\u300c${entry.taskSummary}\u300d：${entry.message}',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(allowApply ? '\u53d6\u6d88' : '\u77e5\u9053\u4e86'),
+          ),
+          if (allowApply)
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('\u786e\u8ba4\u5e94\u7528'),
+            ),
+        ],
       ),
     );
   }
@@ -111,6 +317,22 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<PlanDeviationSnapshot>>(
+      planDeviationSnapshotProvider,
+      (previous, next) {
+        next.whenData((snapshot) {
+          if (!snapshot.shouldPrompt) {
+            return;
+          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              unawaited(_handlePlanDeviation(snapshot));
+            }
+          });
+        });
+      },
+    );
+
     final width = MediaQuery.of(context).size.width;
     final isDesktop = width >= 1200;
     final isTablet = width >= 700 && width < 1200;
@@ -362,7 +584,12 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
     setState(() => _saving = true);
     try {
       if (_tab == 0) {
-        final taskListId = await ref.read(calendarBooksRepositoryProvider).getOrCreateActiveTaskListId();
+        final booksRepo = ref.read(calendarBooksRepositoryProvider);
+        final taskListId = await booksRepo.getOrCreateActiveTaskListId();
+        final taskListDefaults = await booksRepo.getTaskListDefaults(
+          taskListId,
+          fallbackReminderMinutes: ref.read(reminderMinutesProvider),
+        );
         await ref.read(taskRepositoryProvider).create(
               TaskItemsCompanion.insert(
                 uid: const Uuid().v4(),
@@ -370,12 +597,20 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
                 summary: title,
                 durationMinutes: Value(_taskDuration),
                 priorityLocal: Value(_taskPriority),
+                isAutoScheduled:
+                    Value(taskListDefaults.defaultIsAutoScheduled),
                 taskListId: Value(taskListId),
+                reminderMinutesBefore: Value(
+                  taskListDefaults.defaultReminderMinutesBefore,
+                ),
               ),
             );
       } else {
+        final booksRepo = ref.read(calendarBooksRepositoryProvider);
         final eventCalendarId =
-            await ref.read(calendarBooksRepositoryProvider).getOrCreateWritableEventCalendarId();
+            await booksRepo.getOrCreateWritableEventCalendarId();
+        final eventCalendarDefaults =
+            await booksRepo.getEventCalendarDefaults(eventCalendarId);
         await ref.read(eventRepositoryProvider).create(
               CalendarEventsCompanion.insert(
                 uid: const Uuid().v4(),
@@ -383,6 +618,7 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
                 summary: title,
                 dtstart: _eventStart,
                 dtend: Value(_eventEnd),
+                isBlock: Value(eventCalendarDefaults.defaultIsBlock),
                 eventCalendarId: Value(eventCalendarId),
               ),
             );

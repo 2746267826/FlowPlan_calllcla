@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "flutter_window.h"
@@ -35,6 +36,40 @@ bool ReadBoolArgument(
     }
   }
   return fallback;
+}
+
+std::string ReadStringArgument(
+    const flutter::MethodCall<flutter::EncodableValue>& method_call,
+    const char* key,
+    const std::string& fallback) {
+  if (const auto* args =
+          std::get_if<flutter::EncodableMap>(method_call.arguments())) {
+    auto it = args->find(flutter::EncodableValue(key));
+    if (it != args->end()) {
+      if (const auto* value = std::get_if<std::string>(&it->second)) {
+        return *value;
+      }
+    }
+  }
+  return fallback;
+}
+
+std::wstring Utf8ToWide(const std::string& value) {
+  if (value.empty()) {
+    return L"";
+  }
+
+  const int required_size = MultiByteToWideChar(
+      CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), nullptr, 0);
+  if (required_size <= 0) {
+    return L"";
+  }
+
+  std::wstring result(required_size, L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, value.c_str(),
+                      static_cast<int>(value.size()), result.data(),
+                      required_size);
+  return result;
 }
 
 std::wstring EscapeScheduledTaskArgument(const std::wstring& value) {
@@ -98,6 +133,16 @@ void DesktopShellPlugin::HandleMethodCall(
     const bool enabled = ReadBoolArgument(method_call, "enabled", false);
     const bool applied = SetLaunchAtStartupEnabled(enabled);
     result->Success(flutter::EncodableValue(applied));
+    return;
+  }
+
+  if (method_call.method_name() == "showReminder") {
+    const std::wstring title = Utf8ToWide(
+        ReadStringArgument(method_call, "title", "FlowPlan"));
+    const std::wstring body =
+        Utf8ToWide(ReadStringArgument(method_call, "body", ""));
+    ShowReminder(title, body);
+    result->Success();
     return;
   }
 
@@ -266,6 +311,19 @@ bool DesktopShellPlugin::RunSchtasks(const std::wstring& arguments,
     *exit_code = local_exit_code;
   }
   return true;
+}
+
+void DesktopShellPlugin::ShowReminder(
+    const std::wstring& title,
+    const std::wstring& body) const {
+  if (window_ != nullptr) {
+    window_->ShowTrayNotification(title, body);
+  }
+
+  std::thread([title, body]() {
+    MessageBoxW(nullptr, body.c_str(), title.c_str(),
+                MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+  }).detach();
 }
 
 std::wstring DesktopShellPlugin::GetCurrentUserName() const {

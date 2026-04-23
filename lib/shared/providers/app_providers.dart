@@ -1,4 +1,6 @@
 // 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/app_database.dart';
 import '../../shared/providers/database_provider.dart';
@@ -16,6 +18,12 @@ import '../../features/tracker/models/tracked_input_event.dart';
 import '../../features/tracker/models/work_session.dart';
 import '../../features/tracker/services/activity_log_service.dart';
 import '../../features/tracker/services/input_activity_event_service.dart';
+import '../../features/audit/data_operation_log_repository.dart';
+import '../../features/scheduler/task_schedule_segment_repository.dart';
+import '../../features/sync/outlook_sync_bindings_repository.dart';
+import '../../features/sync/outlook_task_mirror_repository.dart';
+import '../../features/sync/outlook_task_list_binding.dart';
+import '../../features/sync/outlook_task_mirror_snapshot.dart';
 
 // ── Repository Providers ──────────────────────────────────────────────────────
 
@@ -34,6 +42,249 @@ final calendarBooksRepositoryProvider =
   final db = ref.watch(databaseProvider);
   return CalendarBooksRepository(db);
 }, dependencies: [databaseProvider]);
+
+final dataOperationLogRepositoryProvider =
+    Provider<DataOperationLogRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return DataOperationLogRepository(db);
+}, dependencies: [databaseProvider]);
+
+final taskScheduleSegmentRepositoryProvider =
+    Provider<TaskScheduleSegmentRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
+  return TaskScheduleSegmentRepository(db, operationLogs);
+}, dependencies: [databaseProvider, dataOperationLogRepositoryProvider]);
+
+final outlookSyncBindingsRepositoryProvider =
+    Provider<OutlookSyncBindingsRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return OutlookSyncBindingsRepository(db);
+}, dependencies: [databaseProvider]);
+
+final outlookTaskMirrorRepositoryProvider =
+    Provider<OutlookTaskMirrorRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return OutlookTaskMirrorRepository(db);
+}, dependencies: [databaseProvider]);
+
+final outlookBindingRefreshTickProvider = StateProvider<int>((ref) => 0);
+
+final outlookTaskListBindingsProvider =
+    FutureProvider<Map<int, OutlookTaskListBinding>>((ref) {
+  ref.watch(outlookBindingRefreshTickProvider);
+  final repo = ref.watch(outlookSyncBindingsRepositoryProvider);
+  return repo.loadTaskListBindings();
+});
+
+class OutlookTaskMirrorDiagnostics {
+  const OutlookTaskMirrorDiagnostics({
+    required this.totalBindings,
+    required this.activeBindings,
+    required this.pendingCleanup,
+    required this.missingTasks,
+    required this.unboundTaskLists,
+    required this.movedTargets,
+    required this.localChangedSinceLastMirror,
+  });
+
+  const OutlookTaskMirrorDiagnostics.empty()
+      : totalBindings = 0,
+        activeBindings = 0,
+        pendingCleanup = 0,
+        missingTasks = 0,
+        unboundTaskLists = 0,
+        movedTargets = 0,
+        localChangedSinceLastMirror = 0;
+
+  final int totalBindings;
+  final int activeBindings;
+  final int pendingCleanup;
+  final int missingTasks;
+  final int unboundTaskLists;
+  final int movedTargets;
+  final int localChangedSinceLastMirror;
+
+  bool get hasPendingCleanup => pendingCleanup > 0;
+}
+
+final outlookTaskMirrorDiagnosticsProvider =
+    FutureProvider<OutlookTaskMirrorDiagnostics>((ref) async {
+  ref.watch(outlookBindingRefreshTickProvider);
+  final mirrorRepo = ref.watch(outlookTaskMirrorRepositoryProvider);
+  final taskListBindingsRepo = ref.watch(outlookSyncBindingsRepositoryProvider);
+  final taskRepo = ref.watch(taskRepositoryProvider);
+
+  final mirrorBindings = await mirrorRepo.loadTaskMirrorBindings();
+  if (mirrorBindings.isEmpty) {
+    return const OutlookTaskMirrorDiagnostics.empty();
+  }
+
+  final taskListBindings = await taskListBindingsRepo.loadTaskListBindings();
+  final tasks = await taskRepo.getByIds(mirrorBindings.keys);
+  final taskById = <int, TaskItem>{
+    for (final task in tasks) task.id: task,
+  };
+
+  var activeBindings = 0;
+  var pendingCleanup = 0;
+  var missingTasks = 0;
+  var unboundTaskLists = 0;
+  var movedTargets = 0;
+  var localChangedSinceLastMirror = 0;
+
+  for (final entry in mirrorBindings.entries) {
+    final task = taskById[entry.key];
+    if (task == null) {
+      missingTasks++;
+      pendingCleanup++;
+      continue;
+    }
+
+    final taskListId = task.taskListId;
+    if (taskListId == null) {
+      missingTasks++;
+      pendingCleanup++;
+      continue;
+    }
+
+    final taskListBinding = taskListBindings[taskListId];
+    if (taskListBinding == null) {
+      unboundTaskLists++;
+      pendingCleanup++;
+      continue;
+    }
+
+    if (taskListBinding.remoteCalendarId != entry.value.remoteCalendarId) {
+      movedTargets++;
+      pendingCleanup++;
+      continue;
+    }
+
+    final snapshot = OutlookTaskMirrorSnapshot.fromTask(
+      task: task,
+      taskListName: _previousSnapshotTaskListName(
+            entry.value.localSnapshotJson,
+          ) ??
+          taskListBinding.remoteCalendarName,
+    );
+    final previousHash = entry.value.localSnapshotHash?.trim();
+    if (previousHash != null &&
+        previousHash.isNotEmpty &&
+        previousHash != snapshot.fingerprint) {
+      localChangedSinceLastMirror++;
+    }
+
+    activeBindings++;
+  }
+
+  return OutlookTaskMirrorDiagnostics(
+    totalBindings: mirrorBindings.length,
+    activeBindings: activeBindings,
+    pendingCleanup: pendingCleanup,
+    missingTasks: missingTasks,
+    unboundTaskLists: unboundTaskLists,
+    movedTargets: movedTargets,
+    localChangedSinceLastMirror: localChangedSinceLastMirror,
+  );
+});
+
+String? _previousSnapshotTaskListName(String? rawSnapshotJson) {
+  if (rawSnapshotJson == null || rawSnapshotJson.trim().isEmpty) {
+    return null;
+  }
+  try {
+    final decoded = jsonDecode(rawSnapshotJson) as Map<String, dynamic>;
+    final name = (decoded['task_list_name'] as String?)?.trim();
+    return name == null || name.isEmpty ? null : name;
+  } catch (_) {
+    return null;
+  }
+}
+
+class OutlookFieldConflictSummary {
+  const OutlookFieldConflictSummary({
+    required this.taskId,
+    required this.taskSummary,
+    required this.taskListName,
+    required this.remoteCalendarName,
+    required this.changedFields,
+  });
+
+  final int taskId;
+  final String taskSummary;
+  final String taskListName;
+  final String remoteCalendarName;
+  final List<String> changedFields;
+}
+
+final outlookFieldConflictSummariesProvider =
+    FutureProvider<List<OutlookFieldConflictSummary>>((ref) async {
+  ref.watch(outlookBindingRefreshTickProvider);
+  final mirrorRepo = ref.watch(outlookTaskMirrorRepositoryProvider);
+  final taskListBindingsRepo = ref.watch(outlookSyncBindingsRepositoryProvider);
+  final taskRepo = ref.watch(taskRepositoryProvider);
+  final calendarBooksRepo = ref.watch(calendarBooksRepositoryProvider);
+
+  final mirrorBindings = await mirrorRepo.loadTaskMirrorBindings();
+  if (mirrorBindings.isEmpty) {
+    return const <OutlookFieldConflictSummary>[];
+  }
+
+  final taskListBindings = await taskListBindingsRepo.loadTaskListBindings();
+  final tasks = await taskRepo.getByIds(mirrorBindings.keys);
+  final taskLists = await calendarBooksRepo.getAllTaskLists();
+  final taskById = <int, TaskItem>{
+    for (final task in tasks) task.id: task,
+  };
+  final taskListById = <int, TaskList>{
+    for (final taskList in taskLists) taskList.id: taskList,
+  };
+
+  final results = <OutlookFieldConflictSummary>[];
+  for (final entry in mirrorBindings.entries) {
+    final task = taskById[entry.key];
+    if (task == null || task.taskListId == null) {
+      continue;
+    }
+
+    final taskListBinding = taskListBindings[task.taskListId!];
+    if (taskListBinding == null ||
+        taskListBinding.remoteCalendarId != entry.value.remoteCalendarId) {
+      continue;
+    }
+
+    final taskListName = taskListById[task.taskListId!]?.name ??
+        _previousSnapshotTaskListName(entry.value.localSnapshotJson) ??
+        taskListBinding.remoteCalendarName;
+    final snapshot = OutlookTaskMirrorSnapshot.fromTask(
+      task: task,
+      taskListName: taskListName,
+    );
+    final previousHash = entry.value.localSnapshotHash?.trim();
+    if (previousHash == null ||
+        previousHash.isEmpty ||
+        previousHash == snapshot.fingerprint) {
+      continue;
+    }
+
+    results.add(
+      OutlookFieldConflictSummary(
+        taskId: task.id,
+        taskSummary: task.summary,
+        taskListName: taskListName,
+        remoteCalendarName: taskListBinding.remoteCalendarName,
+        changedFields: OutlookTaskMirrorSnapshot.changedFieldLabels(
+          previousSnapshotJson: entry.value.localSnapshotJson,
+          current: snapshot,
+        ),
+      ),
+    );
+  }
+
+  results.sort((left, right) => left.taskSummary.compareTo(right.taskSummary));
+  return results;
+});
 
 // ── 当前查看日期 ───────────────────────────────────────────────────────────────
 
@@ -62,6 +313,13 @@ final selectedDateProvider =
 final tasksForSelectedDateProvider = StreamProvider<List<TaskItem>>((ref) {
   final date = ref.watch(selectedDateProvider);
   final repo = ref.watch(taskRepositoryProvider);
+  return repo.watchForDate(date);
+});
+
+final taskScheduleSegmentsForSelectedDateProvider =
+    StreamProvider<List<TaskScheduleSegmentWithTask>>((ref) {
+  final date = ref.watch(selectedDateProvider);
+  final repo = ref.watch(taskScheduleSegmentRepositoryProvider);
   return repo.watchForDate(date);
 });
 

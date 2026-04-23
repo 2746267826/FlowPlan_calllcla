@@ -20,6 +20,8 @@ class FlutterWindow : public Win32Window {
   void SetStartHiddenToTray(bool enabled);
   void RestoreFromTray();
   void ExitFromTray();
+  bool ShowTrayNotification(const std::wstring& title,
+                            const std::wstring& body);
 
  protected:
   // Win32Window:

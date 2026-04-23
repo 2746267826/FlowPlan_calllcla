@@ -50,4 +50,24 @@ class DesktopShellService {
       return getLaunchAtStartupEnabled();
     }
   }
+
+  Future<void> showReminder({
+    required String title,
+    required String body,
+  }) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>(
+        'showReminder',
+        <String, Object?>{
+          'title': title,
+          'body': body,
+        },
+      );
+    } catch (_) {
+      // Reminder delivery is best-effort on the native shell side.
+    }
+  }
 }

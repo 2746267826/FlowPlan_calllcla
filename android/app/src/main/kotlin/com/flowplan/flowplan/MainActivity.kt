@@ -1,11 +1,13 @@
 package com.flowplan.flowplan
 
 import android.app.AppOpsManager
+import android.app.AlarmManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
@@ -16,6 +18,8 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.flowplan.flowplan/android_usage_stats"
+        private const val REMINDER_CHANNEL =
+            "com.flowplan.flowplan/android_reminders"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -43,7 +47,7 @@ class MainActivity : FlutterActivity() {
                     if (sinceMillis == null || untilMillis == null) {
                         result.error(
                             "invalid_args",
-                            "Missing sinceMillis or untilMillis.",
+                            "缺少 sinceMillis 或 untilMillis。",
                             null,
                         )
                         return@setMethodCallHandler
@@ -55,6 +59,65 @@ class MainActivity : FlutterActivity() {
                             untilMillis = untilMillis,
                         ),
                     )
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            REMINDER_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "canScheduleExactAlarms" -> {
+                    result.success(canScheduleExactAlarms())
+                }
+
+                "openExactAlarmSettings" -> {
+                    openExactAlarmSettings()
+                    result.success(null)
+                }
+
+                "pendingExactReminderCount" -> {
+                    result.success(ReminderScheduler.pendingCount(this))
+                }
+
+                "scheduleExactReminder" -> {
+                    val id = call.argument<Number>("id")?.toInt()
+                    val triggerAtMillis =
+                        call.argument<Number>("triggerAtMillis")?.toLong()
+                    val title = call.argument<String>("title")
+                    val body = call.argument<String>("body")
+                    if (
+                        id == null ||
+                        triggerAtMillis == null ||
+                        title == null ||
+                        body == null
+                    ) {
+                        result.error(
+                            "invalid_args",
+                            "缺少 id、triggerAtMillis、title 或 body。",
+                            null,
+                        )
+                        return@setMethodCallHandler
+                    }
+
+                    result.success(
+                        ReminderScheduler.schedule(
+                            context = this,
+                            id = id,
+                            triggerAtMillis = triggerAtMillis,
+                            title = title,
+                            body = body,
+                            persist = true,
+                        ),
+                    )
+                }
+
+                "cancelAllExactReminders" -> {
+                    ReminderScheduler.cancelAll(this)
+                    result.success(null)
                 }
 
                 else -> result.notImplemented()
@@ -89,6 +152,43 @@ class MainActivity : FlutterActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
+    }
+
+    private fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true
+        }
+        val alarmManager =
+            getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return alarmManager.canScheduleExactAlarms()
+    }
+
+    private fun openExactAlarmSettings() {
+        val intent =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse("package:$packageName"),
+                )
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            }
+        try {
+            startActivity(
+                intent.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+        } catch (_: Exception) {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+        }
     }
 
     private fun queryUsageEvents(

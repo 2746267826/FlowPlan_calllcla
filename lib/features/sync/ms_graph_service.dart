@@ -9,12 +9,23 @@ class MsGraphService {
   static const _defaultTimezone = 'Asia/Shanghai';
   static const _defaultOutlookColor = '#0078D4';
 
-  MsGraphService(this.config);
+  MsGraphService(
+    this.config, {
+    required this.syncMode,
+  });
 
   final OutlookConfig config;
+  final OutlookSyncMode syncMode;
 
   Future<Map<String, String>?> _authHeaders() async {
-    final token = await OutlookAuthService.getValidAccessToken(config);
+    if (!syncMode.allowsPull) {
+      return null;
+    }
+
+    final token = await OutlookAuthService.getValidAccessToken(
+      config,
+      requestedMode: syncMode,
+    );
     if (token == null) {
       return null;
     }
@@ -26,6 +37,10 @@ class MsGraphService {
   }
 
   Future<List<Map<String, dynamic>>> getCalendars() async {
+    if (!syncMode.allowsPull) {
+      return [];
+    }
+
     final headers = await _authHeaders();
     if (headers == null) {
       return [];
@@ -55,6 +70,10 @@ class MsGraphService {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
+    if (!syncMode.allowsPull) {
+      return (events: const <Map<String, dynamic>>[], deltaLink: null);
+    }
+
     final headers = await _authHeaders();
     if (headers == null) {
       return (events: const <Map<String, dynamic>>[], deltaLink: null);
@@ -88,25 +107,109 @@ class MsGraphService {
     );
   }
 
-  Never _throwWriteDisabled() {
-    throw StateError(
-      'FlowPlan \u5f53\u524d\u4ec5\u5141\u8bb8\u5355\u5411\u8bfb\u53d6 Outlook \u65e5\u5386\uff0c\u7981\u6b62\u5199\u56de\u8fdc\u7aef\u3002',
+  Future<Map<String, String>> _writeHeaders() async {
+    final token = await OutlookAuthService.getValidAccessToken(
+      config,
+      requestedMode: OutlookSyncMode.bidirectional,
     );
+    if (token == null) {
+      throw StateError(
+        '\u5f53\u524d Outlook \u6388\u6743\u4e0d\u8db3\u4ee5\u6267\u884c\u53cc\u5411\u540c\u6b65\uff0c\u8bf7\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u5e76\u91cd\u65b0\u5b8c\u6210\u8ba4\u8bc1\u3002',
+      );
+    }
+    return {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      'Prefer': 'outlook.timezone="$_defaultTimezone"',
+    };
+  }
+
+  void _assertWriteAllowed({
+    required bool isFlowPlanManagedContainer,
+  }) {
+    if (!syncMode.allowsPush) {
+      throw StateError(
+        '\u5f53\u524d Outlook \u540c\u6b65\u6a21\u5f0f\u4e0d\u5141\u8bb8\u5199\u56de\u8fdc\u7aef\uff0c\u8bf7\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u3002',
+      );
+    }
+    if (!isFlowPlanManagedContainer) {
+      throw StateError(
+        'FlowPlan \u51fa\u4e8e\u6570\u636e\u5b89\u5168\u8003\u8651\uff0c\u76ee\u524d\u53ea\u5141\u8bb8\u5199\u5165 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u666e\u901a Outlook \u65e5\u5386\u3002',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> createCalendar({
+    required String name,
+    required bool isFlowPlanManagedContainer,
+  }) async {
+    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    final headers = await _writeHeaders();
+    final uri = Uri.parse('$_baseUrl/me/calendars');
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(<String, dynamic>{
+        'name': name,
+      }),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        '\u521b\u5efa Outlook \u65e5\u5386\u5bb9\u5668\u5931\u8d25\uff1a${response.statusCode} ${response.body}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>?> createEvent(
     Map<String, dynamic> event, {
-    String? calendarId,
+    required String calendarId,
+    required bool isFlowPlanManagedContainer,
   }) async {
-    _throwWriteDisabled();
+    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    final headers = await _writeHeaders();
+    final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events');
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(event),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        '\u521b\u5efa Outlook \u4e8b\u4ef6\u5931\u8d25\uff1a${response.statusCode} ${response.body}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
-  Future<bool> updateEvent(String eventId, Map<String, dynamic> event) async {
-    _throwWriteDisabled();
+  Future<bool> updateEvent({
+    required String calendarId,
+    required String eventId,
+    required Map<String, dynamic> event,
+    required bool isFlowPlanManagedContainer,
+  }) async {
+    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    final headers = await _writeHeaders();
+    final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events/$eventId');
+    final response = await http.patch(
+      uri,
+      headers: headers,
+      body: jsonEncode(event),
+    );
+    return response.statusCode >= 200 && response.statusCode < 300;
   }
 
-  Future<bool> deleteEvent(String eventId) async {
-    _throwWriteDisabled();
+  Future<bool> deleteEvent({
+    required String calendarId,
+    required String eventId,
+    required bool isFlowPlanManagedContainer,
+  }) async {
+    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    final headers = await _writeHeaders();
+    final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events/$eventId');
+    final response = await http.delete(uri, headers: headers);
+    return response.statusCode == 404 ||
+        (response.statusCode >= 200 && response.statusCode < 300);
   }
 
   static bool isDeletedEvent(Map<String, dynamic> graphEvent) {

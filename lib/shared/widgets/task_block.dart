@@ -89,8 +89,11 @@ class _TaskBlockState extends State<TaskBlock> {
             : null,
         onVerticalDragEnd: widget.isDraggable
             ? (_) {
-                setState(() => _isDragging = false);
                 widget.onDragEnd?.call(_currentTop);
+                setState(() {
+                  _isDragging = false;
+                  _currentTop = widget.top;
+                });
               }
             : null,
         child: Stack(
@@ -165,8 +168,11 @@ class _TaskBlockState extends State<TaskBlock> {
                     });
                   },
                   onVerticalDragEnd: (_) {
-                    setState(() => _isResizing = false);
                     widget.onResizeEnd?.call(_currentHeight);
+                    setState(() {
+                      _isResizing = false;
+                      _currentHeight = widget.height;
+                    });
                   },
                   child: Center(
                     child: Container(

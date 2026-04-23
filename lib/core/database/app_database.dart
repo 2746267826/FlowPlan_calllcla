@@ -31,7 +31,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -41,6 +41,9 @@ class AppDatabase extends _$AppDatabase {
           await _ensureAppSettingsTable();
           await _ensureRawActivityLogsTable();
           await _ensureTrackedInputEventsTable();
+          await _ensureTaskScheduleSegmentsTable();
+          await _ensureDataOperationLogsTable();
+          await _ensureActivityRecordDeviceColumns();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -105,8 +108,45 @@ class AppDatabase extends _$AppDatabase {
               'ALTER TABLE tracked_input_events ADD COLUMN token_text TEXT',
             );
           }
+
+          if (from < 9) {
+            await _ensureTaskScheduleSegmentsTable();
+            await _ensureDataOperationLogsTable();
+          }
+
+          if (from < 10) {
+            await _ensureActivityRecordDeviceColumns();
+          }
         },
       );
+
+  Future<void> _ensureActivityRecordDeviceColumns() async {
+    final columns = await customSelect(
+      'PRAGMA table_info(activity_records)',
+    ).get();
+    final names = columns
+        .map((row) => row.read<String>('name'))
+        .toSet();
+
+    if (!names.contains('device_id')) {
+      await customStatement(
+        'ALTER TABLE activity_records ADD COLUMN device_id TEXT',
+      );
+    }
+    if (!names.contains('platform')) {
+      await customStatement(
+        'ALTER TABLE activity_records ADD COLUMN platform TEXT',
+      );
+    }
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS activity_records_device_idx '
+      'ON activity_records(device_id, start_time)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS activity_records_platform_idx '
+      'ON activity_records(platform, start_time)',
+    );
+  }
 
   Future<void> _ensureAppSettingsTable() async {
     await customStatement('''
@@ -193,6 +233,56 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Future<void> _ensureTaskScheduleSegmentsTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS task_schedule_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        segment_index INTEGER NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        plan_run_id TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS task_schedule_segments_task_idx '
+      'ON task_schedule_segments(task_id, start_at)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS task_schedule_segments_time_idx '
+      'ON task_schedule_segments(start_at, end_at)',
+    );
+  }
+
+  Future<void> _ensureDataOperationLogsTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS data_operation_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT,
+        summary TEXT NOT NULL,
+        before_json TEXT,
+        after_json TEXT,
+        metadata_json TEXT
+      )
+    ''');
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS data_operation_logs_time_idx '
+      'ON data_operation_logs(occurred_at)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS data_operation_logs_entity_idx '
+      'ON data_operation_logs(entity_type, entity_id, occurred_at)',
+    );
+  }
+
   Future<String?> getSetting(String key) async {
     final result = await customSelect(
       'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
@@ -215,6 +305,13 @@ class AppDatabase extends _$AppDatabase {
         updated_at = excluded.updated_at
       ''',
       [key, value, nowIso],
+    );
+  }
+
+  Future<void> deleteSetting(String key) async {
+    await customStatement(
+      'DELETE FROM app_settings WHERE setting_key = ?',
+      [key],
     );
   }
 
@@ -244,6 +341,21 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> setBoolSetting(String key, bool value) {
     return setSetting(key, value ? 'true' : 'false');
+  }
+
+  Future<int> getIntSetting(
+    String key, {
+    required int defaultValue,
+  }) async {
+    final raw = await getSetting(key);
+    if (raw == null) {
+      return defaultValue;
+    }
+    return int.tryParse(raw.trim()) ?? defaultValue;
+  }
+
+  Future<void> setIntSetting(String key, int value) {
+    return setSetting(key, value.toString());
   }
 
   Future<String> getDatabasePath() async {
@@ -322,5 +434,5 @@ LazyDatabase _openConnection() {
 }
 
 Future<File> resolveDatabaseFile() async {
-  return resolveAppStorageFile('flowplan.db');
+  return resolvePrimaryDatabaseFile();
 }

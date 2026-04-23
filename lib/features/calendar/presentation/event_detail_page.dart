@@ -32,6 +32,8 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   int? _eventCalendarId;
   bool _saving = false;
   bool _isReadOnly = false;
+  bool _hasUserEditedBlock = false;
+  int _eventCalendarDefaultsRequestVersion = 0;
 
   @override
   void initState() {
@@ -71,6 +73,37 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       _isBlock = event.isBlock;
       _eventCalendarId = event.eventCalendarId;
       _isReadOnly = event.source == 'outlook';
+    });
+  }
+
+  Future<void> _handleEventCalendarSelection(
+    int? eventCalendarId, {
+    bool forceApplyDefaults = false,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _eventCalendarId = eventCalendarId);
+    if (widget.eventId != null || eventCalendarId == null) {
+      return;
+    }
+
+    final requestVersion = ++_eventCalendarDefaultsRequestVersion;
+    final defaults = await ref
+        .read(calendarBooksRepositoryProvider)
+        .getEventCalendarDefaults(eventCalendarId);
+    if (!mounted ||
+        widget.eventId != null ||
+        requestVersion != _eventCalendarDefaultsRequestVersion ||
+        _eventCalendarId != eventCalendarId) {
+      return;
+    }
+
+    setState(() {
+      if (forceApplyDefaults || !_hasUserEditedBlock) {
+        _isBlock = defaults.defaultIsBlock;
+      }
     });
   }
 
@@ -185,11 +218,12 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                               '\u5f53\u524d\u6ca1\u6709\u53ef\u5199\u5165\u7684\u672c\u5730\u65e5\u5386\u672c\u3002\u8bf7\u5148\u5728\u201c\u65e5\u5386\u672c\u201d\u4e2d\u521b\u5efa\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\uff0c\u518d\u521b\u5efa\u6216\u6574\u7406\u672c\u5730\u65e5\u7a0b\u3002',
                         );
                       }
-                      if (_eventCalendarId == null) {
+                      if (isCreating && _eventCalendarId == null) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted) {
-                            setState(
-                              () => _eventCalendarId = selectableCalendars.first.id,
+                            _handleEventCalendarSelection(
+                              selectableCalendars.first.id,
+                              forceApplyDefaults: true,
                             );
                           }
                         });
@@ -197,7 +231,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       return _CalendarSelector(
                         calendars: selectableCalendars,
                         selectedId: _eventCalendarId,
-                        onChanged: (id) => setState(() => _eventCalendarId = id),
+                        onChanged: (id) => _handleEventCalendarSelection(id),
                       );
                     },
                   ),
@@ -285,7 +319,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       '\u5f00\u542f\u540e\u6b64\u65f6\u95f4\u6bb5\u4e0d\u4f1a\u88ab\u81ea\u52a8\u6392\u5165\u4efb\u52a1',
                     ),
                     value: _isBlock,
-                    onChanged: (value) => setState(() => _isBlock = value),
+                    onChanged: (value) => setState(() {
+                      _isBlock = value;
+                      _hasUserEditedBlock = true;
+                    }),
                     activeThumbColor: AppColors.primary,
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -639,11 +676,47 @@ class _CalendarSelector extends StatelessWidget {
                     color: selected ? color : null,
                   ),
                 ),
+                if (calendar.isDefault) ...[
+                  const SizedBox(width: 6),
+                  _SelectorTag(
+                    label: '\u9ed8\u8ba4',
+                    color: selected ? color : AppColors.primary,
+                  ),
+                ],
               ],
             ),
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _SelectorTag extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _SelectorTag({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
     );
   }
 }

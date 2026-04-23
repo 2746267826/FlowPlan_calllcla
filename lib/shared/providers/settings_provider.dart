@@ -1,4 +1,5 @@
 // 设置 Provider：主题模式、工作时间、提醒、时间格式等
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -102,6 +103,237 @@ class WorkEndNotifier extends _$WorkEndNotifier {
 
 final workEndProvider = Provider<TimeOfDay>((ref) {
   return ref.watch(workEndNotifierProvider);
+});
+
+// ── 多组工作时间 ──────────────────────────────────────────────────────────────
+
+class WorkTimeRange {
+  const WorkTimeRange({
+    required this.startMinute,
+    required this.endMinute,
+  });
+
+  final int startMinute;
+  final int endMinute;
+
+  bool get isValid =>
+      startMinute >= 0 && endMinute <= 24 * 60 && startMinute < endMinute;
+
+  int get durationMinutes => endMinute - startMinute;
+
+  Map<String, dynamic> toJson() => {
+        'start': startMinute,
+        'end': endMinute,
+      };
+
+  static WorkTimeRange? fromJson(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    final start = raw['start'];
+    final end = raw['end'];
+    if (start is! num || end is! num) {
+      return null;
+    }
+    final range = WorkTimeRange(
+      startMinute: start.round(),
+      endMinute: end.round(),
+    );
+    return range.isValid ? range : null;
+  }
+
+  String format() => '${_formatMinute(startMinute)}-${_formatMinute(endMinute)}';
+
+  static String _formatMinute(int value) {
+    final hour = (value ~/ 60).toString().padLeft(2, '0');
+    final minute = (value % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class WeeklyWorkSchedule {
+  WeeklyWorkSchedule(Map<int, List<WorkTimeRange>> rangesByWeekday)
+      : rangesByWeekday = {
+          for (var weekday = DateTime.monday;
+              weekday <= DateTime.sunday;
+              weekday++)
+            weekday: _normalize(rangesByWeekday[weekday] ?? const []),
+        };
+
+  final Map<int, List<WorkTimeRange>> rangesByWeekday;
+
+  factory WeeklyWorkSchedule.defaults() {
+    return WeeklyWorkSchedule({
+      for (var weekday = DateTime.monday;
+          weekday <= DateTime.friday;
+          weekday++)
+        weekday: const [
+          WorkTimeRange(startMinute: 9 * 60, endMinute: 12 * 60),
+          WorkTimeRange(startMinute: 13 * 60 + 30, endMinute: 18 * 60),
+          WorkTimeRange(startMinute: 19 * 60 + 30, endMinute: 22 * 60),
+        ],
+      DateTime.saturday: const [
+        WorkTimeRange(startMinute: 10 * 60, endMinute: 12 * 60),
+        WorkTimeRange(startMinute: 14 * 60, endMinute: 18 * 60),
+      ],
+      DateTime.sunday: const <WorkTimeRange>[],
+    });
+  }
+
+  factory WeeklyWorkSchedule.fromJsonString(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return WeeklyWorkSchedule.defaults();
+      }
+      final days = decoded['days'];
+      if (days is! Map) {
+        return WeeklyWorkSchedule.defaults();
+      }
+      return WeeklyWorkSchedule({
+        for (final entry in days.entries)
+          if (int.tryParse(entry.key.toString()) != null)
+            int.parse(entry.key.toString()): entry.value is List
+                ? (entry.value as List)
+                    .map(WorkTimeRange.fromJson)
+                    .whereType<WorkTimeRange>()
+                    .toList()
+                : const <WorkTimeRange>[],
+      });
+    } catch (_) {
+      return WeeklyWorkSchedule.defaults();
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+        'version': 1,
+        'days': {
+          for (final entry in rangesByWeekday.entries)
+            entry.key.toString():
+                entry.value.map((range) => range.toJson()).toList(),
+        },
+      };
+
+  List<WorkTimeRange> rangesForWeekday(int weekday) {
+    return List.unmodifiable(rangesByWeekday[weekday] ?? const []);
+  }
+
+  WeeklyWorkSchedule copyWithDay(
+    int weekday,
+    List<WorkTimeRange> ranges,
+  ) {
+    return WeeklyWorkSchedule({
+      ...rangesByWeekday,
+      weekday: ranges,
+    });
+  }
+
+  int get activeWeekdayCount => rangesByWeekday.values
+      .where((ranges) => ranges.isNotEmpty)
+      .length;
+
+  String summaryForWeekday(int weekday) {
+    final ranges = rangesForWeekday(weekday);
+    if (ranges.isEmpty) {
+      return '休息';
+    }
+    return ranges.map((range) => range.format()).join('，');
+  }
+
+  String get compactSummary {
+    final activeCount = activeWeekdayCount;
+    if (activeCount == 0) {
+      return '所有日期均未设置工作时段';
+    }
+    final monday = summaryForWeekday(DateTime.monday);
+    final tuesday = summaryForWeekday(DateTime.tuesday);
+    final wednesday = summaryForWeekday(DateTime.wednesday);
+    final thursday = summaryForWeekday(DateTime.thursday);
+    final friday = summaryForWeekday(DateTime.friday);
+    if (monday == tuesday &&
+        monday == wednesday &&
+        monday == thursday &&
+        monday == friday) {
+      return '工作日：$monday；已启用 $activeCount 天';
+    }
+    return '已启用 $activeCount 天；今天：${summaryForWeekday(DateTime.now().weekday)}';
+  }
+
+  static List<WorkTimeRange> _normalize(List<WorkTimeRange> input) {
+    final sorted = input.where((range) => range.isValid).toList()
+      ..sort((left, right) => left.startMinute.compareTo(right.startMinute));
+    if (sorted.isEmpty) {
+      return const <WorkTimeRange>[];
+    }
+
+    final merged = <WorkTimeRange>[];
+    for (final range in sorted) {
+      if (merged.isEmpty) {
+        merged.add(range);
+        continue;
+      }
+      final last = merged.last;
+      if (range.startMinute <= last.endMinute) {
+        merged[merged.length - 1] = WorkTimeRange(
+          startMinute: last.startMinute,
+          endMinute: range.endMinute > last.endMinute
+              ? range.endMinute
+              : last.endMinute,
+        );
+      } else {
+        merged.add(range);
+      }
+    }
+    return List.unmodifiable(merged);
+  }
+}
+
+class WeeklyWorkScheduleNotifier extends StateNotifier<WeeklyWorkSchedule> {
+  WeeklyWorkScheduleNotifier(this._ref) : super(WeeklyWorkSchedule.defaults()) {
+    _load();
+  }
+
+  static const _key = 'scheduler.weekly_work_schedule.v1';
+
+  final Ref _ref;
+  int _loadVersion = 0;
+
+  Future<void> _load() async {
+    final version = ++_loadVersion;
+    final db = _ref.read(databaseProvider);
+    final raw = await db.getSetting(_key);
+    if (version != _loadVersion || raw == null || raw.trim().isEmpty) {
+      return;
+    }
+    state = WeeklyWorkSchedule.fromJsonString(raw);
+  }
+
+  Future<void> setSchedule(WeeklyWorkSchedule schedule) async {
+    final normalized = WeeklyWorkSchedule(schedule.rangesByWeekday);
+    state = normalized;
+    final db = _ref.read(databaseProvider);
+    await db.setSetting(_key, jsonEncode(normalized.toJson()));
+  }
+
+  Future<void> setDayRanges(
+    int weekday,
+    List<WorkTimeRange> ranges,
+  ) async {
+    await setSchedule(state.copyWithDay(weekday, ranges));
+  }
+
+  Future<void> resetDefaults() async {
+    await setSchedule(WeeklyWorkSchedule.defaults());
+  }
+}
+
+final weeklyWorkScheduleNotifierProvider =
+    StateNotifierProvider<WeeklyWorkScheduleNotifier, WeeklyWorkSchedule>(
+  (ref) => WeeklyWorkScheduleNotifier(ref),
+);
+
+final weeklyWorkScheduleProvider = Provider<WeeklyWorkSchedule>((ref) {
+  return ref.watch(weeklyWorkScheduleNotifierProvider);
 });
 
 // ── 默认提醒分钟数 ────────────────────────────────────────────────────────────

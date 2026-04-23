@@ -95,6 +95,31 @@ class TaskRepository {
       (_db.select(_db.taskItems)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
 
+  Future<List<TaskItem>> getByIds(Iterable<int> ids) async {
+    final taskIds = ids.toSet();
+    if (taskIds.isEmpty) {
+      return const <TaskItem>[];
+    }
+
+    return (_db.select(_db.taskItems)..where((t) => t.id.isIn(taskIds))).get();
+  }
+
+  Future<List<TaskItem>> getByTaskListIds(Iterable<int> taskListIds) async {
+    final listIds = taskListIds.toSet();
+    if (listIds.isEmpty) {
+      return const <TaskItem>[];
+    }
+
+    final query = _db.select(_db.taskItems)
+      ..where((t) => t.taskListId.isIn(listIds))
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.priorityLocal),
+        (t) => OrderingTerm(expression: t.due, mode: OrderingMode.asc),
+        (t) => OrderingTerm(expression: t.dtstart, mode: OrderingMode.asc),
+      ]);
+    return query.get();
+  }
+
   Future<int> create(TaskItemsCompanion companion) async {
     await _ensureTaskListBinding(companion.taskListId, requirePresent: true);
     return _db.into(_db.taskItems).insert(companion);
@@ -120,6 +145,11 @@ class TaskRepository {
   Future<int> delete(int id) =>
       (_db.delete(_db.taskItems)..where((t) => t.id.equals(id))).go();
 
+  Future<int> deleteByTaskListId(int taskListId) =>
+      (_db.delete(_db.taskItems)
+            ..where((t) => t.taskListId.equals(taskListId)))
+          .go();
+
   Future<void> markCompleted(int id) async {
     await (_db.update(_db.taskItems)..where((t) => t.id.equals(id))).write(
       TaskItemsCompanion(
@@ -139,6 +169,45 @@ class TaskRepository {
             .write(TaskItemsCompanion(dtstart: Value(item.dtstart)));
       }
     });
+  }
+
+  Future<void> batchApplySchedule({
+    required List<({int id, DateTime dtstart})> scheduled,
+    required Iterable<int> clearedTaskIds,
+  }) async {
+    await _db.transaction(() async {
+      for (final id in clearedTaskIds.toSet()) {
+        await (_db.update(_db.taskItems)..where((t) => t.id.equals(id)))
+            .write(const TaskItemsCompanion(dtstart: Value(null)));
+      }
+      for (final item in scheduled) {
+        await (_db.update(_db.taskItems)..where((t) => t.id.equals(item.id)))
+            .write(TaskItemsCompanion(dtstart: Value(item.dtstart)));
+      }
+    });
+  }
+
+  Future<List<TaskItem>> getActiveScheduledForDate(DateTime date) async {
+    final start = DateTime(date.year, date.month, date.day);
+    final end = start.add(const Duration(days: 1));
+    final query = _db.select(_db.taskItems).join([
+      innerJoin(
+        _db.taskLists,
+        _db.taskLists.id.equalsExp(_db.taskItems.taskListId),
+      ),
+    ]);
+    query.where(
+      _db.taskLists.isArchived.equals(false) &
+          _db.taskItems.status.equals('NEEDS-ACTION') &
+          _db.taskItems.dtstart.isBiggerOrEqualValue(start) &
+          _db.taskItems.dtstart.isSmallerThanValue(end),
+    );
+    query.orderBy([
+      OrderingTerm(expression: _db.taskItems.dtstart, mode: OrderingMode.asc),
+      OrderingTerm(expression: _db.taskItems.priorityLocal),
+    ]);
+    final rows = await query.get();
+    return rows.map((row) => row.readTable(_db.taskItems)).toList();
   }
 
   Future<List<TaskItem>> getPendingForSchedule() async {

@@ -153,6 +153,24 @@ void FlutterWindow::ExitFromTray() {
   PostMessage(GetHandle(), WM_CLOSE, 0, 0);
 }
 
+bool FlutterWindow::ShowTrayNotification(const std::wstring& title,
+                                         const std::wstring& body) {
+  EnsureTrayIcon();
+  if (!tray_icon_added_ || GetHandle() == nullptr) {
+    return false;
+  }
+
+  NOTIFYICONDATAW icon_data = {};
+  icon_data.cbSize = sizeof(NOTIFYICONDATAW);
+  icon_data.hWnd = GetHandle();
+  icon_data.uID = kTrayIconId;
+  icon_data.uFlags = NIF_INFO;
+  icon_data.dwInfoFlags = NIIF_INFO | NIIF_LARGE_ICON;
+  wcsncpy_s(icon_data.szInfoTitle, title.c_str(), _TRUNCATE);
+  wcsncpy_s(icon_data.szInfo, body.c_str(), _TRUNCATE);
+  return Shell_NotifyIconW(NIM_MODIFY, &icon_data) == TRUE;
+}
+
 void FlutterWindow::EnsureTrayIcon() {
   if (tray_icon_added_ || GetHandle() == nullptr) {
     return;

@@ -1,9 +1,21 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../reminders/reminder_service.dart';
 import '../../../shared/providers/app_providers.dart';
+import '../calendar/presentation/calendar_books_page.dart';
+import 'ms_graph_service.dart';
 import 'outlook_auth_service.dart';
+import 'outlook_diagnostics_service.dart';
+import 'outlook_managed_container_service.dart';
+import 'outlook_sync_policy.dart';
+import 'outlook_task_list_binding.dart';
+import 'outlook_task_mirror_sync_service.dart';
 import 'sync_engine.dart';
 
 class OutlookSettingsPage extends ConsumerStatefulWidget {
@@ -19,10 +31,14 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   final _authCodeController = TextEditingController();
 
   bool _isAuthenticated = false;
+  bool _hasRequiredPermission = false;
   bool _syncing = false;
+  bool _exportingDiagnostics = false;
   String? _status;
   DateTime? _lastSync;
-  OutlookSyncMode _syncMode = OutlookSyncMode.importOnly;
+  OutlookSyncReport? _lastSyncReport;
+  OutlookSyncMode _syncMode = OutlookSyncMode.readOnly;
+  OutlookSyncMode _grantedMode = OutlookSyncMode.readOnly;
 
   @override
   void initState() {
@@ -40,9 +56,12 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 
   Future<void> _loadState() async {
     final config = await OutlookAuthService.loadConfig();
-    final authed = await OutlookAuthService.isAuthenticated();
+    final token = await OutlookAuthService.loadToken();
     final lastSync = await SyncEngine.getLastSyncTime();
+    final lastSyncReport = await SyncEngine.getLastSyncReport();
     final syncMode = await OutlookAuthService.loadSyncMode();
+    final authed = token != null;
+    final hasRequiredPermission = token?.supportsMode(syncMode) ?? false;
     if (!mounted) return;
 
     setState(() {
@@ -51,23 +70,41 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         _tenantIdController.text = config.tenantId;
       }
       _isAuthenticated = authed;
+      _hasRequiredPermission = hasRequiredPermission;
       _lastSync = lastSync;
+      _lastSyncReport = lastSyncReport;
       _syncMode = syncMode;
+      _grantedMode = token?.grantedMode ?? OutlookSyncMode.readOnly;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final eventCalendarsAsync = ref.watch(allEventCalendarsProvider);
+    final taskListsAsync = ref.watch(allTaskListsProvider);
+    final taskListBindingsAsync = ref.watch(outlookTaskListBindingsProvider);
+    final taskMirrorDiagnosticsAsync =
+        ref.watch(outlookTaskMirrorDiagnosticsProvider);
+    final fieldConflictsAsync =
+        ref.watch(outlookFieldConflictSummariesProvider);
+    final pageWidth = MediaQuery.of(context).size.width;
+    final pagePadding = pageWidth < 600 ? 16.0 : 24.0;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Outlook \u540c\u6b65\u8bbe\u7f6e')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+        padding: EdgeInsets.all(pagePadding),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _StatusCard(
               isAuthenticated: _isAuthenticated,
+              hasRequiredPermission: _hasRequiredPermission,
               syncMode: _syncMode,
+              grantedMode: _grantedMode,
               lastSync: _lastSync,
             ),
             const SizedBox(height: 24),
@@ -79,8 +116,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   TextField(
                     controller: _clientIdController,
                     decoration: const InputDecoration(
-                      labelText: 'Client ID',
-                      hintText: 'Azure AD \u5e94\u7528\u7684 Client ID',
+                      labelText: '\u5ba2\u6237\u7aef ID',
+                      hintText: 'Azure AD \u5e94\u7528\u7684\u5ba2\u6237\u7aef ID',
                       prefixIcon: Icon(Icons.key_outlined, size: 20),
                     ),
                   ),
@@ -88,8 +125,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   TextField(
                     controller: _tenantIdController,
                     decoration: const InputDecoration(
-                      labelText: 'Tenant ID',
-                      hintText: 'Azure AD \u7684 Tenant ID\uff0c\u6216 common',
+                      labelText: '\u79df\u6237 ID',
+                      hintText: 'Azure AD \u7684\u79df\u6237 ID\uff0c\u6216 common',
                       prefixIcon: Icon(Icons.business_outlined, size: 20),
                     ),
                   ),
@@ -112,14 +149,16 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'FlowPlan \u5f53\u524d\u53ea\u7533\u8bf7 Outlook \u65e5\u5386\u53ea\u8bfb\u6743\u9650\uff0c\u4e0d\u4f1a\u5411\u4f60\u7684 Outlook \u65e5\u5386\u5199\u5165\u3001\u4fee\u6539\u6216\u5220\u9664\u4efb\u4f55\u4e8b\u4ef6\u3002',
+                  Text(
+                    _syncMode.authSummary,
                     style: TextStyle(fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   if (!_isAuthenticated) ...[
-                    const Text(
-                      '\u6b65\u9aa4 1\uff1a\u6253\u5f00\u6d4f\u89c8\u5668\u5b8c\u6210 Microsoft \u8d26\u53f7\u767b\u5f55\u4e0e\u6388\u6743\u3002',
+                    Text(
+                      _syncMode == OutlookSyncMode.bidirectional
+                          ? '\u6b65\u9aa4 1\uff1a\u6253\u5f00\u6d4f\u89c8\u5668\u5b8c\u6210 Microsoft \u8d26\u53f7\u767b\u5f55\u4e0e\u6388\u6743\uff08\u672c\u6b21\u4f1a\u7533\u8bf7 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4ec5\u7528\u4e8e FlowPlan \u6258\u7ba1\u7684\u4e13\u5c5e\u65e5\u5386\u672c\uff09\u3002'
+                          : '\u6b65\u9aa4 1\uff1a\u6253\u5f00\u6d4f\u89c8\u5668\u5b8c\u6210 Microsoft \u8d26\u53f7\u767b\u5f55\u4e0e\u6388\u6743\u3002',
                       style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
@@ -128,7 +167,11 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       child: OutlinedButton.icon(
                         onPressed: _startAuth,
                         icon: const Icon(Icons.open_in_browser, size: 18),
-                        label: const Text('\u6253\u5f00\u6d4f\u89c8\u5668\u6388\u6743'),
+                        label: Text(
+                          _syncMode == OutlookSyncMode.bidirectional
+                              ? '\u6253\u5f00\u6d4f\u89c8\u5668\u6388\u6743\uff08\u8bfb\u5199\uff09'
+                              : '\u6253\u5f00\u6d4f\u89c8\u5668\u6388\u6743',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -162,8 +205,16 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.check_circle, color: Color(0xFF43A047)),
-                      title: const Text('\u5f53\u524d\u8d26\u53f7\u5df2\u8ba4\u8bc1'),
-                      subtitle: const Text('\u5982\u9700\u91cd\u65b0\u7533\u8bf7\u53ea\u8bfb\u6743\u9650\uff0c\u53ef\u9000\u51fa\u540e\u91cd\u65b0\u8ba4\u8bc1\u3002'),
+                      title: Text(
+                        _hasRequiredPermission
+                            ? '\u5f53\u524d\u8d26\u53f7\u5df2\u8ba4\u8bc1'
+                            : '\u5f53\u524d\u8d26\u53f7\u5df2\u8fde\u63a5\uff0c\u4f46\u9700\u8981\u91cd\u65b0\u8ba4\u8bc1',
+                      ),
+                      subtitle: Text(
+                        _hasRequiredPermission
+                            ? '\u5f53\u524d\u6388\u6743\uff1a${_authorizationLabel(_grantedMode)}\u3002\u5982\u9700\u5207\u6362\u6743\u9650\u7ea7\u522b\uff0c\u53ef\u9000\u51fa\u540e\u91cd\u65b0\u8ba4\u8bc1\u3002'
+                            : '\u5f53\u524d\u9009\u4e2d\u6a21\u5f0f\u4e3a\u300c${_syncMode.label}\u300d\uff0c\u4f46\u73b0\u6709 Outlook \u6388\u6743\u4ecd\u662f${_authorizationLabel(_grantedMode)}\uff0c\u8bf7\u91cd\u65b0\u8fdb\u884c\u6d4f\u89c8\u5668\u6388\u6743\u3002',
+                      ),
                       trailing: TextButton(
                         onPressed: _logout,
                         child: const Text(
@@ -186,7 +237,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   DropdownButtonFormField<OutlookSyncMode>(
                     initialValue: _syncMode,
                     decoration: const InputDecoration(
-                      labelText: '\u540c\u6b65\u65b9\u5411',
+                      labelText: '\u540c\u6b65\u6a21\u5f0f',
                       prefixIcon: Icon(Icons.swap_horiz_outlined, size: 20),
                     ),
                     items: OutlookSyncMode.values
@@ -213,6 +264,45 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                     ),
                     child: Text(_syncMode.description, style: const TextStyle(fontSize: 13)),
                   ),
+                  if (_isAuthenticated &&
+                      _syncMode.requiresWritePermission &&
+                      !_hasRequiredPermission) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '\u4f60\u5df2\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u73b0\u6709 Outlook \u4ee4\u724c\u4ecd\u662f\u53ea\u8bfb\u6743\u9650\u3002\u8bf7\u91cd\u65b0\u8fdb\u884c\u4e00\u6b21\u6d4f\u89c8\u5668\u6388\u6743\uff0cFlowPlan \u624d\u80fd\u5bf9\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u6267\u884c\u5199\u56de\u3002',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _syncing ? null : _startAuth,
+                            icon: const Icon(
+                              Icons.lock_open_outlined,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              '\u7acb\u5373\u91cd\u65b0\u8fdb\u884c\u8bfb\u5199\u6388\u6743',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.orange.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -231,7 +321,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       label: Text(
                         _syncing
                             ? '\u540c\u6b65\u4e2d...'
-                            : '\u7acb\u5373\u4ece Outlook \u8bfb\u53d6',
+                            : _syncMode.syncActionLabel,
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0078D4),
@@ -251,6 +341,30 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+            _sectionTitle('\u6700\u8fd1\u7ed3\u679c'),
+            const SizedBox(height: 8),
+            _buildLastSyncReportPanel(),
+            const SizedBox(height: 24),
+            _sectionTitle('\u8bca\u65ad\u4e0e\u51b2\u7a81'),
+            const SizedBox(height: 8),
+            _buildDiagnosticsPanel(
+              taskMirrorDiagnosticsAsync,
+              fieldConflictsAsync,
+            ),
+            const SizedBox(height: 24),
+            _sectionTitle('\u5199\u56de\u8fb9\u754c'),
+            const SizedBox(height: 8),
+            _buildControlledWriteScopePanel(),
+            const SizedBox(height: 24),
+            _sectionTitle('\u540c\u6b65\u5bf9\u8c61'),
+            const SizedBox(height: 8),
+            _buildSyncObjectsPanel(
+              eventCalendarsAsync: eventCalendarsAsync,
+              taskListsAsync: taskListsAsync,
+              taskListBindingsAsync: taskListBindingsAsync,
+              taskMirrorDiagnosticsAsync: taskMirrorDiagnosticsAsync,
+            ),
             if (_status != null) ...[
               const SizedBox(height: 24),
               Container(
@@ -268,24 +382,63 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             _Panel(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('\u4f7f\u7528\u8bf4\u660e', style: TextStyle(fontWeight: FontWeight.w600)),
-                  SizedBox(height: 8),
-                  _HelpRow(num: '1.', text: '\u5728 Azure Portal \u6ce8\u518c\u5e94\u7528\uff0c\u83b7\u53d6 Client ID \u548c Tenant ID\u3002'),
-                  _HelpRow(num: '2.', text: '\u5728\u201c\u91cd\u5b9a\u5411 URI\u201d\u4e2d\u6dfb\u52a0\uff1ahttp://localhost:8400/callback'),
-                  _HelpRow(num: '3.', text: '\u5728 API \u6743\u9650\u4e2d\u6dfb\u52a0\uff1aCalendars.Read\u3001User.Read\u3001offline_access\u3002'),
-                  _HelpRow(num: '4.', text: '\u5982\u679c\u4f60\u4e4b\u524d\u7528\u8fc7\u65e7\u7248\u672c\u7684\u8bfb\u5199\u6743\u9650\uff0c\u5efa\u8bae\u9000\u51fa\u767b\u5f55\u540e\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\uff0c\u6539\u6210\u53ea\u8bfb\u6388\u6743\u3002'),
-                  _HelpRow(num: '5.', text: 'Outlook \u65e5\u5386\u4f1a\u5148\u540c\u6b65\u6210 FlowPlan \u7684\u65e5\u5386\u672c\uff0c\u518d\u628a\u4e8b\u4ef6\u540c\u6b65\u5230\u5bf9\u5e94\u65e5\u5386\u672c\u4e0b\u3002'),
+                children: [
+                  const Text(
+                    '\u4f7f\u7528\u8bf4\u660e',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const _HelpRow(
+                    num: '1.',
+                    text:
+                        '\u5728 Azure Portal \u6ce8\u518c\u5e94\u7528\uff0c\u83b7\u53d6\u5ba2\u6237\u7aef ID \u548c\u79df\u6237 ID\u3002',
+                  ),
+                  const _HelpRow(
+                    num: '2.',
+                    text:
+                        '\u5728\u201c\u91cd\u5b9a\u5411 URI\u201d\u4e2d\u6dfb\u52a0\uff1ahttp://localhost:8400/callback',
+                  ),
+                  _HelpRow(num: '3.', text: _permissionHelpText()),
+                  const _HelpRow(
+                    num: '4.',
+                    text:
+                        'Outlook \u666e\u901a\u65e5\u5386\u9ed8\u8ba4\u4fdd\u6301\u53ea\u8bfb\uff0cFlowPlan \u53ea\u4f1a\u5bf9\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u6267\u884c\u5199\u56de\u3002',
+                  ),
+                  const _HelpRow(
+                    num: '5.',
+                    text:
+                        'Outlook \u65e5\u5386\u4f1a\u5148\u540c\u6b65\u6210 FlowPlan \u7684\u65e5\u5386\u672c\uff0c\u540e\u7eed\u5bf9\u5e94\u7684\u53cc\u5411\u5199\u56de\u4ec5\u4f1a\u9488\u5bf9 FlowPlan \u4e13\u5c5e\u5bb9\u5668\u9010\u6b65\u5f00\u653e\u3002',
+                  ),
                 ],
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  bool get _canSync => _isAuthenticated && _syncMode != OutlookSyncMode.disabled;
+  bool get _canSync =>
+      _isAuthenticated && _syncMode.allowsPull && _hasRequiredPermission;
+
+  String _authorizationLabel(OutlookSyncMode mode) {
+    switch (mode) {
+      case OutlookSyncMode.paused:
+      case OutlookSyncMode.readOnly:
+        return '\u53ea\u8bfb\u6388\u6743';
+      case OutlookSyncMode.bidirectional:
+        return '\u8bfb\u5199\u6388\u6743';
+    }
+  }
+
+  String _permissionHelpText() {
+    if (_syncMode.requiresWritePermission) {
+      return '\u5728 API \u6743\u9650\u4e2d\u6dfb\u52a0\uff1aCalendars.ReadWrite\u3001User.Read\u3001offline_access\u3002\u5982\u679c\u4ece\u53ea\u8bfb\u5207\u6362\u5230\u53cc\u5411\u540c\u6b65\uff0c\u8bf7\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\u3002';
+    }
+    return '\u5728 API \u6743\u9650\u4e2d\u6dfb\u52a0\uff1aCalendars.Read\u3001User.Read\u3001offline_access\u3002';
+  }
 
   Widget _sectionTitle(String title) {
     return Text(
@@ -299,27 +452,1033 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     );
   }
 
+  Widget _buildLastSyncReportPanel() {
+    final report = _lastSyncReport;
+    if (report == null) {
+      return const _Panel(
+        child: _InlineStateHint(
+          icon: Icons.history_outlined,
+          message:
+              '\u5f53\u524d\u8fd8\u6ca1\u6709\u6700\u8fd1\u540c\u6b65\u7ed3\u679c\u3002\u5b8c\u6210\u4e00\u6b21\u5b9e\u9645\u540c\u6b65\u540e\uff0c\u8fd9\u91cc\u4f1a\u4fdd\u7559\u6700\u8fd1\u4e00\u6b21\u6210\u529f\u6216\u5931\u8d25\u7684\u6458\u8981\uff0c\u65b9\u4fbf\u56de\u770b\u548c\u6392\u67e5\u3002',
+        ),
+      );
+    }
+
+    final accentColor = report.success
+        ? const Color(0xFF43A047)
+        : const Color(0xFFE53935);
+    final detail = report.success
+        ? report.mode == OutlookSyncMode.bidirectional
+            ? '\u540c\u6b65\u65f6\u95f4\uff1a${_formatDateTime(report.attemptedAt)}\n\u540c\u6b65\u6a21\u5f0f\uff1a${report.mode.label}\n\u540c\u6b65\u65e5\u5386\u672c\uff1a${report.calendarBooks} \u4e2a\n\u66f4\u65b0\u65e5\u7a0b\uff1a${report.downloaded} \u6761\n\u4efb\u52a1\u955c\u50cf\uff1a\u65b0\u589e ${report.mirroredCreated} / \u66f4\u65b0 ${report.mirroredUpdated} / \u5220\u9664 ${report.mirroredDeleted} / \u51b2\u7a81 ${report.mirroredConflicted}'
+            : '\u540c\u6b65\u65f6\u95f4\uff1a${_formatDateTime(report.attemptedAt)}\n\u540c\u6b65\u6a21\u5f0f\uff1a${report.mode.label}\n\u540c\u6b65\u65e5\u5386\u672c\uff1a${report.calendarBooks} \u4e2a\n\u66f4\u65b0\u65e5\u7a0b\uff1a${report.downloaded} \u6761\n\u672c\u6b21\u672a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u6570\u636e\u3002'
+        : '\u5c1d\u8bd5\u65f6\u95f4\uff1a${_formatDateTime(report.attemptedAt)}\n\u540c\u6b65\u6a21\u5f0f\uff1a${report.mode.label}\n\u9519\u8bef\u4fe1\u606f\uff1a${report.errorMessage ?? '\u672a\u77e5\u9519\u8bef'}';
+    final actionPresentation = _buildLastSyncActionPresentation(report);
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SyncScopeTile(
+            icon: report.success
+                ? Icons.check_circle_outline
+                : Icons.error_outline,
+            accentColor: accentColor,
+            title: report.success
+                ? '\u6700\u8fd1\u4e00\u6b21\u540c\u6b65\u5df2\u5b8c\u6210'
+                : '\u6700\u8fd1\u4e00\u6b21\u540c\u6b65\u5931\u8d25',
+            status: report.success
+                ? '\u6700\u8fd1\u7ed3\u679c\u5df2\u5199\u5165\u672c\u5730\uff0c\u53ef\u968f\u65f6\u56de\u770b'
+                : '\u6700\u8fd1\u4e00\u6b21\u5c1d\u8bd5\u672a\u5b8c\u6210\uff0c\u8bf7\u6839\u636e\u9519\u8bef\u4fe1\u606f\u7ee7\u7eed\u6392\u67e5',
+            detail: detail,
+            actionLabel: actionPresentation.label,
+            actionIcon: actionPresentation.icon,
+            onAction: actionPresentation.onAction,
+          ),
+          if (report.success) ...[
+            const SizedBox(height: 12),
+            _buildLastSyncCalendarBreakdown(report),
+            if (report.mode == OutlookSyncMode.bidirectional) ...[
+              const SizedBox(height: 12),
+              _buildLastSyncTaskMirrorBreakdown(report),
+            ],
+          ],
+          if (report.success && report.mode == OutlookSyncMode.bidirectional) ...[
+            const SizedBox(height: 12),
+            const _InlineStateHint(
+              icon: Icons.shield_outlined,
+              iconColor: Color(0xFF43A047),
+              message:
+                  '\u5373\u4fbf\u5728\u53cc\u5411\u540c\u6b65\u4e0b\uff0cFlowPlan \u4e5f\u53ea\u4f1a\u5199\u5165\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u666e\u901a Outlook \u65e5\u5386\u4ecd\u4fdd\u6301\u53ea\u8bfb\u3002',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLastSyncCalendarBreakdown(OutlookSyncReport report) {
+    final changedDetails = report.calendarDetails
+        .where((detail) => detail.downloaded > 0)
+        .toList();
+    changedDetails.sort((left, right) {
+      final downloadedCompare = right.downloaded.compareTo(left.downloaded);
+      if (downloadedCompare != 0) {
+        return downloadedCompare;
+      }
+      return left.calendarName.compareTo(right.calendarName);
+    });
+    final visibleDetails = changedDetails.take(6).toList(growable: false);
+    final unchangedCount = report.calendarDetails.length - changedDetails.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '\u65e5\u5386\u672c\u7ea7\u6458\u8981',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (report.calendarDetails.isEmpty)
+          const _InlineStateHint(
+            icon: Icons.event_busy_outlined,
+            message:
+                '\u672c\u6b21\u6ca1\u6709\u8bb0\u5f55\u5230 Outlook \u65e5\u5386\u672c\u660e\u7ec6\u3002',
+          )
+        else if (changedDetails.isEmpty)
+          _InlineStateHint(
+            icon: Icons.event_note_outlined,
+            iconColor: Colors.blueGrey,
+            message:
+                '\u672c\u6b21\u5171\u68c0\u67e5 ${report.calendarDetails.length} \u4e2a Outlook \u65e5\u5386\uff0c\u4f46\u672c\u8f6e\u6ca1\u6709\u53d1\u73b0\u9700\u8981\u66f4\u65b0\u7684\u65e5\u7a0b\u3002',
+          )
+        else ...[
+          ...visibleDetails.map(
+            (detail) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SyncScopeTile(
+                icon: Icons.event_note_outlined,
+                accentColor: const Color(0xFF0078D4),
+                title: detail.calendarName,
+                status:
+                    '\u5df2\u62c9\u53d6 ${detail.downloaded} \u6761\u65e5\u7a0b\u66f4\u65b0',
+                detail:
+                    '\u5df2\u540c\u6b65\u8fdb FlowPlan \u672c\u5730\u65e5\u5386\u672c ID\uff1a${detail.localCalendarId}\u3002',
+              ),
+            ),
+          ),
+          if (changedDetails.length > visibleDetails.length)
+            _InlineStateHint(
+              icon: Icons.more_horiz,
+              message:
+                  '\u5176\u4f59 ${changedDetails.length - visibleDetails.length} \u4e2a\u6709\u66f4\u65b0\u7684 Outlook \u65e5\u5386\u4e5f\u5df2\u88ab\u8bb0\u5f55\u5230\u6700\u8fd1\u540c\u6b65\u7ed3\u679c\u4e2d\u3002',
+            ),
+          if (unchangedCount > 0)
+            _InlineStateHint(
+              icon: Icons.remove_red_eye_outlined,
+              message:
+                  '\u53e6\u6709 $unchangedCount \u4e2a Outlook \u65e5\u5386\u5df2\u5b8c\u6210\u68c0\u67e5\uff0c\u4f46\u672c\u6b21\u6ca1\u6709\u53d8\u66f4\u3002',
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildLastSyncTaskMirrorBreakdown(OutlookSyncReport report) {
+    final details = report.taskMirrorDetails
+        .where((detail) => detail.changedCount > 0)
+        .toList();
+    details.sort((left, right) {
+      final changedCompare = right.changedCount.compareTo(left.changedCount);
+      if (changedCompare != 0) {
+        return changedCompare;
+      }
+      return left.taskListName.compareTo(right.taskListName);
+    });
+    final visibleDetails = details.take(6).toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '\u4efb\u52a1\u955c\u50cf\u7ea7\u6458\u8981',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        if (details.isEmpty)
+          const _InlineStateHint(
+            icon: Icons.task_alt_outlined,
+            message:
+                '\u672c\u6b21\u672a\u53d1\u751f\u4efb\u52a1\u955c\u50cf\u5199\u56de\u53d8\u66f4\u3002',
+          )
+        else ...[
+          ...visibleDetails.map(
+            (detail) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SyncScopeTile(
+                icon: Icons.task_alt_outlined,
+                accentColor: const Color(0xFF8E24AA),
+                title: detail.taskListName,
+                status:
+                    '\u65b0\u589e ${detail.created} / \u66f4\u65b0 ${detail.updated} / \u5220\u9664 ${detail.deleted} / \u51b2\u7a81 ${detail.conflicted}',
+                detail:
+                    '\u955c\u50cf\u5199\u5165\u5bb9\u5668\uff1a${detail.remoteCalendarName}',
+              ),
+            ),
+          ),
+          if (details.length > visibleDetails.length)
+            _InlineStateHint(
+              icon: Icons.more_horiz,
+              message:
+                  '\u5176\u4f59 ${details.length - visibleDetails.length} \u4e2a\u53d1\u751f\u53d8\u66f4\u7684\u4efb\u52a1\u672c\u4e5f\u5df2\u88ab\u8bb0\u5f55\u5230\u6700\u8fd1\u540c\u6b65\u7ed3\u679c\u4e2d\u3002',
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDiagnosticsPanel(
+    AsyncValue<OutlookTaskMirrorDiagnostics> taskMirrorDiagnosticsAsync,
+    AsyncValue<List<OutlookFieldConflictSummary>> fieldConflictsAsync,
+  ) {
+    final diagnostics = taskMirrorDiagnosticsAsync.asData?.value;
+    final pendingCleanup = diagnostics?.pendingCleanup ?? 0;
+    final localChanged = diagnostics?.localChangedSinceLastMirror ?? 0;
+    final conflictHint = pendingCleanup > 0 || localChanged > 0
+        ? '\u5df2\u53d1\u73b0 $pendingCleanup \u6761\u5f85\u6e05\u7406\u955c\u50cf\u7d22\u5f15\uff0c$localChanged \u6761\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u5f85\u5199\u56de\u3002\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab FlowPlan \u9759\u9ed8\u8986\u76d6\uff0c\u8bf7\u4f18\u5148\u5bfc\u51fa\u62a5\u544a\u68c0\u67e5\u3002'
+        : '\u5f53\u524d\u672a\u53d1\u73b0\u5f85\u6e05\u7406\u955c\u50cf\u7d22\u5f15\u6216\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u51b2\u7a81\u5019\u9009\u3002';
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SyncScopeTile(
+            icon: pendingCleanup > 0 || localChanged > 0
+                ? Icons.warning_amber_rounded
+                : Icons.fact_check_outlined,
+            accentColor: pendingCleanup > 0 || localChanged > 0
+                ? const Color(0xFFFB8C00)
+                : const Color(0xFF43A047),
+            title: '\u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009',
+            status: pendingCleanup > 0 || localChanged > 0
+                ? '\u9700\u8981\u68c0\u67e5'
+                : '\u6682\u65e0\u51b2\u7a81\u5019\u9009',
+            detail:
+                '$conflictHint\n\n\u5b89\u5168\u7b56\u7565\uff1a\u666e\u901a Outlook \u65e5\u5386\u59cb\u7ec8\u53ea\u8bfb\uff1b\u4efb\u52a1\u955c\u50cf\u5199\u56de\u5931\u8d25\u65f6\u8bb0\u4e3a\u51b2\u7a81\uff0c\u4e0d\u518d\u9759\u9ed8\u5220\u9664\u540e\u91cd\u5efa\u8fdc\u7aef\u4e8b\u4ef6\u3002',
+          ),
+          const SizedBox(height: 12),
+          _buildFieldConflictList(fieldConflictsAsync),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed:
+                  _exportingDiagnostics ? null : _exportDiagnosticsReport,
+              icon: _exportingDiagnostics
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.description_outlined, size: 18),
+              label: Text(
+                _exportingDiagnostics
+                    ? '\u6b63\u5728\u751f\u6210\u8bca\u65ad\u62a5\u544a...'
+                    : '\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldConflictList(
+    AsyncValue<List<OutlookFieldConflictSummary>> fieldConflictsAsync,
+  ) {
+    return fieldConflictsAsync.when(
+      loading: () => const _InlineStateHint(
+        icon: Icons.sync,
+        message: '\u6b63\u5728\u68c0\u67e5\u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009...',
+      ),
+      error: (error, _) => _InlineStateHint(
+        icon: Icons.error_outline,
+        iconColor: Colors.redAccent,
+        message: '\u68c0\u67e5\u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009\u5931\u8d25\uff1a$error',
+      ),
+      data: (conflicts) {
+        if (conflicts.isEmpty) {
+          return const _InlineStateHint(
+            icon: Icons.check_circle_outline,
+            iconColor: Color(0xFF43A047),
+            message:
+                '\u5f53\u524d\u6ca1\u6709\u9700\u8981\u4eba\u5de5\u68c0\u67e5\u7684\u5b57\u6bb5\u7ea7\u51b2\u7a81\u5019\u9009\u3002',
+          );
+        }
+
+        final visibleConflicts = conflicts.take(5).toList(growable: false);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '\u5b57\u6bb5\u53d8\u66f4\u5019\u9009',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            ...visibleConflicts.map(
+              (conflict) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _SyncScopeTile(
+                  icon: Icons.rule_folder_outlined,
+                  accentColor: const Color(0xFFFB8C00),
+                  title: conflict.taskSummary,
+                  status:
+                      '\u5f85\u5199\u56de\u5b57\u6bb5\uff1a${conflict.changedFields.join('、')}',
+                  detail:
+                      '\u4efb\u52a1\u672c\uff1a${conflict.taskListName}\nOutlook \u955c\u50cf\u5bb9\u5668\uff1a${conflict.remoteCalendarName}\nFlowPlan \u4f1a\u5728\u53cc\u5411\u540c\u6b65\u65f6\u5c1d\u8bd5\u5199\u56de\u8fd9\u4e9b\u672c\u5730\u5b57\u6bb5\uff1b\u5982\u679c\u8fdc\u7aef\u62d2\u7edd\u6216\u5df2\u88ab\u5220\u9664\uff0c\u5c06\u8bb0\u4e3a\u51b2\u7a81\u800c\u4e0d\u9759\u9ed8\u8986\u76d6\u3002',
+                ),
+              ),
+            ),
+            if (conflicts.length > visibleConflicts.length)
+              _InlineStateHint(
+                icon: Icons.more_horiz,
+                message:
+                    '\u8fd8\u6709 ${conflicts.length - visibleConflicts.length} \u6761\u5b57\u6bb5\u53d8\u66f4\u5019\u9009\uff0c\u53ef\u5bfc\u51fa\u8bca\u65ad\u62a5\u544a\u67e5\u770b\u5b8c\u6574\u660e\u7ec6\u3002',
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildControlledWriteScopePanel() {
+    final managedContainerStatus =
+        _syncMode == OutlookSyncMode.bidirectional && _hasRequiredPermission
+            ? '\u5df2\u6ee1\u8db3\u53cc\u5411\u5199\u56de\u524d\u7f6e\u6761\u4ef6'
+            : '\u5f53\u524d\u5c1a\u672a\u6ee1\u8db3\u53cc\u5411\u5199\u56de\u524d\u7f6e\u6761\u4ef6';
+    final currentModeHint = _buildControlledWriteModeHint();
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'FlowPlan \u5bf9 Outlook \u7684\u5199\u56de\u59cb\u7ec8\u53d7\u5230\u53d7\u63a7\u8303\u56f4\u9650\u5236\uff0c\u4e0d\u4f1a\u76f4\u63a5\u6539\u52a8\u4f60\u7684\u666e\u901a Outlook \u65e5\u5386\u3002',
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          const _SyncScopeTile(
+            icon: Icons.calendar_month_outlined,
+            accentColor: Colors.blueGrey,
+            title: '\u666e\u901a Outlook \u65e5\u5386',
+            status: '\u59cb\u7ec8\u53ea\u8bfb',
+            detail:
+                '\u65e0\u8bba\u5f53\u524d\u540c\u6b65\u6a21\u5f0f\u5982\u4f55\uff0cFlowPlan \u90fd\u53ea\u4f1a\u628a\u5b83\u4eec\u62c9\u53d6\u8fdb\u672c\u5730\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u3001\u8986\u76d6\u6216\u5220\u9664\u8fd9\u4e9b\u539f\u751f\u65e5\u5386\u6570\u636e\u3002',
+          ),
+          const SizedBox(height: 12),
+          _SyncScopeTile(
+            icon: Icons.shield_outlined,
+            accentColor: const Color(0xFF0078D4),
+            title: 'FlowPlan \u6258\u7ba1\u65e5\u5386\u5bb9\u5668',
+            status: managedContainerStatus,
+            detail:
+                '\u53ea\u6709\u5728\u540c\u6b65\u6a21\u5f0f\u4e3a\u201c\u53cc\u5411\u540c\u6b65\u201d\u4e14\u5f53\u524d\u4ee4\u724c\u5177\u5907\u8bfb\u5199\u6388\u6743\u65f6\uff0cFlowPlan \u624d\u80fd\u5199\u56de\u81ea\u5df1\u521b\u5efa\u6216\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002',
+          ),
+          const SizedBox(height: 12),
+          const _SyncScopeTile(
+            icon: Icons.task_alt_outlined,
+            accentColor: Color(0xFF8E24AA),
+            title: '\u4efb\u52a1\u672c\u955c\u50cf\u5bb9\u5668',
+            status: '\u4ec5\u9650\u5df2\u7ed1\u5b9a\u4efb\u52a1\u672c',
+            detail:
+                '\u4efb\u52a1\u4e0d\u4f1a\u76f4\u63a5\u6563\u843d\u5199\u5165 Outlook\u3002\u53ea\u6709\u660e\u786e\u7ed1\u5b9a\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u7684\u4efb\u52a1\u672c\uff0c\u624d\u4f1a\u5728\u53cc\u5411\u540c\u6b65\u65f6\u751f\u6210\u5bf9\u5e94\u955c\u50cf\u4e8b\u4ef6\u3002',
+          ),
+          const SizedBox(height: 12),
+          _InlineStateHint(
+            icon: Icons.info_outline,
+            iconColor: AppColors.primary,
+            message: currentModeHint,
+          ),
+        ],
+      ),
+    );
+  }
+
+  ({
+    String? label,
+    IconData? icon,
+    Future<void> Function()? onAction,
+  }) _buildLastSyncActionPresentation(OutlookSyncReport report) {
+    if (_syncing) {
+      return (
+        label: null,
+        icon: null,
+        onAction: null,
+      );
+    }
+
+    if (!report.success &&
+        _syncMode == OutlookSyncMode.bidirectional &&
+        !_hasRequiredPermission) {
+      return (
+        label: '\u91cd\u65b0\u8fdb\u884c\u8bfb\u5199\u6388\u6743',
+        icon: Icons.lock_open_outlined,
+        onAction: _startAuth,
+      );
+    }
+
+    if (_canSync) {
+      return (
+        label: report.success
+            ? '\u518d\u6b21\u540c\u6b65'
+            : '\u91cd\u8bd5\u540c\u6b65',
+        icon: Icons.sync,
+        onAction: _performSync,
+      );
+    }
+
+    return (
+      label: null,
+      icon: null,
+      onAction: null,
+    );
+  }
+
+  String _formatDateTime(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$year/$month/$day $hour:$minute';
+  }
+
+  String _formatReportFileDate(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$year$month$day-$hour$minute';
+  }
+
+  String _buildControlledWriteModeHint() {
+    if (_syncMode == OutlookSyncMode.paused) {
+      return '\u5f53\u524d\u4e3a\u201c\u6682\u505c\u540c\u6b65\u201d\uff0cFlowPlan \u4e0d\u4f1a\u4e0e Outlook \u53d1\u751f\u4efb\u4f55\u8bfb\u5199\u3002';
+    }
+    if (_syncMode == OutlookSyncMode.readOnly) {
+      return '\u5f53\u524d\u4e3a\u201c\u53ea\u8bfb\u540c\u6b65\u201d\uff0cFlowPlan \u53ea\u4f1a\u8bfb\u53d6 Outlook \u6570\u636e\uff0c\u4e0d\u4f1a\u5411\u8fdc\u7aef\u5199\u5165\u3002';
+    }
+    if (!_hasRequiredPermission) {
+      return '\u5f53\u524d\u5df2\u5207\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743\uff0cFlowPlan \u4f9d\u7136\u4e0d\u4f1a\u6267\u884c\u8fdc\u7aef\u5199\u56de\u3002';
+    }
+    return '\u5f53\u524d\u5df2\u6ee1\u8db3\u53cc\u5411\u540c\u6b65\u4e0e\u6388\u6743\u6761\u4ef6\uff0cFlowPlan \u53ea\u4f1a\u5728\u53d7\u63a7\u5bb9\u5668\u5185\u6267\u884c\u5199\u56de\u3002';
+  }
+
+  Widget _buildSyncObjectsPanel({
+    required AsyncValue<List<EventCalendar>> eventCalendarsAsync,
+    required AsyncValue<List<TaskList>> taskListsAsync,
+    required AsyncValue<Map<int, OutlookTaskListBinding>> taskListBindingsAsync,
+    required AsyncValue<OutlookTaskMirrorDiagnostics> taskMirrorDiagnosticsAsync,
+  }) {
+    final summary = _buildSyncObjectsSummary(
+      eventCalendarsAsync: eventCalendarsAsync,
+      taskListsAsync: taskListsAsync,
+      taskListBindingsAsync: taskListBindingsAsync,
+    );
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            summary,
+            style: const TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _openBooksManager,
+                icon: const Icon(Icons.folder_open_outlined, size: 18),
+                label: const Text('\u7ba1\u7406\u65e5\u5386\u672c\u4e0e\u4efb\u52a1\u672c'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '\u5df2\u63a5\u5165\u7684 Outlook \u65e5\u5386\u672c',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          _buildOutlookCalendarsList(eventCalendarsAsync),
+          const SizedBox(height: 16),
+          const Text(
+            '\u4efb\u52a1\u672c\u955c\u50cf\u7ed1\u5b9a',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          _buildTaskMirrorBindingsList(
+            taskListsAsync: taskListsAsync,
+            taskListBindingsAsync: taskListBindingsAsync,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '\u955c\u50cf\u7d22\u5f15\u5065\u5eb7\u5ea6',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          _buildMirrorDiagnosticsPanel(taskMirrorDiagnosticsAsync),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMirrorDiagnosticsPanel(
+    AsyncValue<OutlookTaskMirrorDiagnostics> taskMirrorDiagnosticsAsync,
+  ) {
+    return taskMirrorDiagnosticsAsync.when(
+      loading: () => const _InlineStateHint(
+        icon: Icons.sync,
+        message: '\u6b63\u5728\u68c0\u67e5 Outlook \u4efb\u52a1\u955c\u50cf\u7d22\u5f15...',
+      ),
+      error: (error, _) => _InlineStateHint(
+        icon: Icons.error_outline,
+        iconColor: Colors.redAccent,
+        message:
+            '\u68c0\u67e5 Outlook \u4efb\u52a1\u955c\u50cf\u7d22\u5f15\u5931\u8d25\uff1a$error',
+      ),
+      data: (diagnostics) {
+        if (diagnostics.totalBindings == 0) {
+          return const _InlineStateHint(
+            icon: Icons.inventory_2_outlined,
+            message:
+                '\u5f53\u524d\u8fd8\u6ca1\u6709\u4efb\u52a1\u955c\u50cf\u7d22\u5f15\u3002\u7ed1\u5b9a\u4efb\u52a1\u672c\u5e76\u5b8c\u6210\u4e00\u6b21\u53cc\u5411\u540c\u6b65\u540e\uff0c\u8fd9\u91cc\u4f1a\u5f00\u59cb\u51fa\u73b0\u5065\u5eb7\u72b6\u6001\u3002',
+          );
+        }
+
+        if (!diagnostics.hasPendingCleanup) {
+          return _SyncScopeTile(
+            icon: Icons.verified_outlined,
+            accentColor: const Color(0xFF43A047),
+            title: '\u955c\u50cf\u7d22\u5f15\u72b6\u6001\u826f\u597d',
+            status:
+                '\u5171 ${diagnostics.totalBindings} \u6761\u955c\u50cf\u7d22\u5f15\uff0c\u5168\u90e8\u5904\u4e8e\u6b63\u5e38\u53ef\u8ffd\u8e2a\u72b6\u6001',
+            detail:
+                '\u6b63\u5e38\u955c\u50cf\uff1a${diagnostics.activeBindings} \u6761\n\u5f53\u524d\u4e0d\u5b58\u5728\u5f85\u6e05\u7406\u6216\u5931\u914d\u7684 Outlook \u4efb\u52a1\u955c\u50cf\u7d22\u5f15\u3002',
+          );
+        }
+
+        final actionPresentation = _buildMirrorCleanupActionPresentation();
+        return _SyncScopeTile(
+          icon: Icons.warning_amber_rounded,
+          accentColor: const Color(0xFFFB8C00),
+          title: '\u6709\u90e8\u5206\u955c\u50cf\u7d22\u5f15\u7b49\u5f85\u6e05\u7406',
+          status:
+              '\u5171 ${diagnostics.totalBindings} \u6761\u955c\u50cf\u7d22\u5f15\uff0c\u5176\u4e2d ${diagnostics.pendingCleanup} \u6761\u4ecd\u5728\u7b49\u5f85\u4e0b\u6b21\u53cc\u5411\u540c\u6b65\u6536\u53e3',
+            detail:
+                '\u6b63\u5e38\u955c\u50cf\uff1a${diagnostics.activeBindings} \u6761\n\u672c\u5730\u4efb\u52a1\u5df2\u4e0d\u5b58\u5728\uff1a${diagnostics.missingTasks} \u6761\n\u4efb\u52a1\u672c\u5df2\u89e3\u9664\u7ed1\u5b9a\uff1a${diagnostics.unboundTaskLists} \u6761\n\u955c\u50cf\u76ee\u6807\u5df2\u53d1\u751f\u53d8\u66f4\uff1a${diagnostics.movedTargets} \u6761\n\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u5f85\u5199\u56de\uff1a${diagnostics.localChangedSinceLastMirror} \u6761\n${actionPresentation.hint}',
+          actionLabel: actionPresentation.label,
+          actionIcon: actionPresentation.icon,
+          onAction: actionPresentation.onAction,
+        );
+      },
+    );
+  }
+
+  ({
+    String label,
+    IconData icon,
+    String hint,
+    Future<void> Function()? onAction,
+  }) _buildMirrorCleanupActionPresentation() {
+    if (_syncing) {
+      return (
+        label: '\u6b63\u5728\u5904\u7406',
+        icon: Icons.sync,
+        hint:
+            '\u5f53\u524d\u6b63\u5728\u6267\u884c Outlook \u7ef4\u62a4\u64cd\u4f5c\uff0c\u8fd9\u4e9b\u5f85\u6e05\u7406\u7684\u955c\u50cf\u7d22\u5f15\u4f1a\u5728\u64cd\u4f5c\u7ed3\u675f\u540e\u91cd\u65b0\u8bc4\u4f30\u3002',
+        onAction: null,
+      );
+    }
+
+    if (_syncMode != OutlookSyncMode.bidirectional) {
+      return (
+        label: '\u5207\u6362\u4e3a\u53cc\u5411\u540c\u6b65',
+        icon: Icons.swap_horiz_outlined,
+        hint:
+            '\u8981\u8ba9 FlowPlan \u628a\u8fd9\u4e9b\u65e7\u7684 Outlook \u955c\u50cf\u4e00\u5e76\u6536\u53e3\uff0c\u9700\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u6a21\u5f0f\u3002',
+        onAction: () => _updateSyncMode(OutlookSyncMode.bidirectional),
+      );
+    }
+
+    if (!_hasRequiredPermission) {
+      return (
+        label: '\u91cd\u65b0\u8fdb\u884c\u8bfb\u5199\u6388\u6743',
+        icon: Icons.lock_open_outlined,
+        hint:
+            '\u5f53\u524d\u5df2\u5728\u53cc\u5411\u6a21\u5f0f\uff0c\u4f46 Outlook \u6388\u6743\u4ecd\u662f\u53ea\u8bfb\u3002\u8bf7\u5148\u5b8c\u6210\u8bfb\u5199\u6388\u6743\uff0c\u624d\u80fd\u7ee7\u7eed\u6536\u53e3\u8fd9\u4e9b\u955c\u50cf\u7d22\u5f15\u3002',
+        onAction: _startAuth,
+      );
+    }
+
+    return (
+      label: '\u7acb\u5373\u6e05\u7406\u5931\u6548\u955c\u50cf',
+      icon: Icons.cleaning_services_outlined,
+      hint:
+          '\u5f53\u524d\u5df2\u6ee1\u8db3\u53cc\u5411\u540c\u6b65\u4e0e\u8bfb\u5199\u6388\u6743\u6761\u4ef6\uff0c\u53ef\u4ee5\u76f4\u63a5\u5220\u9664\u8fd9\u4e9b\u5df2\u5931\u6548\u7684 Outlook \u4efb\u52a1\u955c\u50cf\u7d22\u5f15\uff0c\u800c\u4e0d\u5fc5\u5148\u6267\u884c\u4e00\u6574\u8f6e\u540c\u6b65\u3002',
+      onAction: _performMirrorCleanup,
+    );
+  }
+
+  String _buildSyncObjectsSummary({
+    required AsyncValue<List<EventCalendar>> eventCalendarsAsync,
+    required AsyncValue<List<TaskList>> taskListsAsync,
+    required AsyncValue<Map<int, OutlookTaskListBinding>> taskListBindingsAsync,
+  }) {
+    final eventCalendars = eventCalendarsAsync.asData?.value;
+    final taskLists = taskListsAsync.asData?.value;
+    final taskBindings = taskListBindingsAsync.asData?.value;
+
+    if (eventCalendars == null || taskLists == null || taskBindings == null) {
+      return '\u8fd9\u91cc\u4f1a\u96c6\u4e2d\u5217\u51fa\u5f53\u524d\u53c2\u4e0e Outlook \u540c\u6b65\u7684\u65e5\u5386\u672c\uff0c\u4ee5\u53ca\u5df2\u7ed1\u5b9a Outlook \u4e13\u5c5e\u4efb\u52a1\u955c\u50cf\u5bb9\u5668\u7684\u4efb\u52a1\u672c\u3002';
+    }
+
+    final outlookCalendars =
+        eventCalendars.where((calendar) => calendar.source == 'outlook').toList();
+    final managedCalendars = outlookCalendars
+        .where(
+          (calendar) =>
+              OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name),
+        )
+        .length;
+
+    return '\u5f53\u524d\u5171\u63a5\u5165 ${outlookCalendars.length} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u5176\u4e2d $managedCalendars \u4e2a\u4e3a FlowPlan \u6258\u7ba1\u5bb9\u5668\uff1b\u5df2\u7ed1\u5b9a ${taskBindings.length} / ${taskLists.length} \u4e2a\u4efb\u52a1\u672c\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u3002';
+  }
+
+  Widget _buildOutlookCalendarsList(
+    AsyncValue<List<EventCalendar>> eventCalendarsAsync,
+  ) {
+    return eventCalendarsAsync.when(
+      loading: () => const _InlineStateHint(
+        icon: Icons.sync,
+        message: '\u6b63\u5728\u8bfb\u53d6 Outlook \u65e5\u5386\u672c...',
+      ),
+      error: (error, _) => _InlineStateHint(
+        icon: Icons.error_outline,
+        iconColor: Colors.redAccent,
+        message: '\u8bfb\u53d6 Outlook \u65e5\u5386\u672c\u5931\u8d25\uff1a$error',
+      ),
+      data: (eventCalendars) {
+        final outlookCalendars = eventCalendars
+            .where((calendar) => calendar.source == 'outlook')
+            .toList(growable: false);
+        if (outlookCalendars.isEmpty) {
+          return const _InlineStateHint(
+            icon: Icons.calendar_today_outlined,
+            message:
+                '\u5f53\u524d\u8fd8\u6ca1\u6709\u63a5\u5165\u4efb\u4f55 Outlook \u65e5\u5386\u672c\u3002\u5b8c\u6210\u4e00\u6b21\u624b\u52a8\u540c\u6b65\u540e\uff0c\u8fd9\u91cc\u4f1a\u51fa\u73b0\u5df2\u5bfc\u5165\u7684\u65e5\u5386\u672c\u3002',
+          );
+        }
+
+        return Column(
+          children: outlookCalendars.map((calendar) {
+            final presentation = _describeOutlookCalendar(calendar);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SyncScopeTile(
+                icon: presentation.icon,
+                accentColor: presentation.color,
+                title: calendar.name,
+                status: presentation.status,
+                detail:
+                    '\u5728 FlowPlan \u4e2d\uff1a${calendar.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}\n${presentation.detail}',
+                actionLabel:
+                    calendar.isVisible ? '\u9690\u85cf' : '\u663e\u793a',
+                actionIcon: calendar.isVisible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                onAction: () => _toggleOutlookCalendarVisibility(calendar),
+              ),
+            );
+          }).toList(growable: false),
+        );
+      },
+    );
+  }
+
+  Widget _buildTaskMirrorBindingsList({
+    required AsyncValue<List<TaskList>> taskListsAsync,
+    required AsyncValue<Map<int, OutlookTaskListBinding>> taskListBindingsAsync,
+  }) {
+    if (taskListsAsync.isLoading || taskListBindingsAsync.isLoading) {
+      return const _InlineStateHint(
+        icon: Icons.sync,
+        message: '\u6b63\u5728\u8bfb\u53d6\u4efb\u52a1\u672c\u955c\u50cf\u7ed1\u5b9a...',
+      );
+    }
+
+    if (taskListsAsync.hasError) {
+      return _InlineStateHint(
+        icon: Icons.error_outline,
+        iconColor: Colors.redAccent,
+        message:
+            '\u8bfb\u53d6\u4efb\u52a1\u672c\u5931\u8d25\uff1a${taskListsAsync.error}',
+      );
+    }
+
+    if (taskListBindingsAsync.hasError) {
+      return _InlineStateHint(
+        icon: Icons.error_outline,
+        iconColor: Colors.redAccent,
+        message:
+            '\u8bfb\u53d6 Outlook \u7ed1\u5b9a\u72b6\u6001\u5931\u8d25\uff1a${taskListBindingsAsync.error}',
+      );
+    }
+
+    final taskLists = taskListsAsync.asData?.value ?? const <TaskList>[];
+    final bindings = taskListBindingsAsync.asData?.value ??
+        const <int, OutlookTaskListBinding>{};
+
+    if (taskLists.isEmpty) {
+      return const _InlineStateHint(
+        icon: Icons.task_alt_outlined,
+        message: '\u5f53\u524d\u8fd8\u6ca1\u6709\u4efb\u52a1\u672c\u3002',
+      );
+    }
+
+    final sortedTaskLists = taskLists.toList(growable: false)
+      ..sort((left, right) => left.name.compareTo(right.name));
+
+    return Column(
+      children: sortedTaskLists.map((taskList) {
+        final binding = bindings[taskList.id];
+        final presentation = _describeTaskMirrorBinding(taskList, binding);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _SyncScopeTile(
+            icon: presentation.icon,
+            accentColor: presentation.color,
+            title: taskList.name,
+            status: presentation.status,
+            detail: presentation.detail,
+            actionLabel: binding == null ? '\u7ed1\u5b9a\u955c\u50cf' : '\u89e3\u9664\u7ed1\u5b9a',
+            actionIcon: binding == null
+                ? Icons.link_outlined
+                : Icons.link_off_outlined,
+            onAction: () {
+              if (binding == null) {
+                return _bindTaskListToOutlook(taskList);
+              }
+              return _unbindTaskListFromOutlook(taskList, binding);
+            },
+          ),
+        );
+      }).toList(growable: false),
+    );
+  }
+
+  ({
+    IconData icon,
+    Color color,
+    String status,
+    String detail,
+  }) _describeOutlookCalendar(EventCalendar calendar) {
+    final isManaged =
+        OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name);
+
+    if (!isManaged) {
+      return (
+        icon: Icons.cloud_download_outlined,
+        color: const Color(0xFF546E7A),
+        status: '\u5916\u90e8 Outlook \u65e5\u5386\uff0c\u4ec5\u53ea\u8bfb\u5bfc\u5165',
+        detail:
+            '\u8fd9\u7c7b\u65e5\u5386\u672c\u4e0d\u4f1a\u88ab FlowPlan \u5199\u56de\uff0c\u53ea\u4f1a\u4f5c\u4e3a\u5916\u90e8\u53c2\u8003\u6570\u636e\u540c\u6b65\u8fdb\u6765\u3002',
+      );
+    }
+
+    if (_syncMode == OutlookSyncMode.paused) {
+      return (
+        icon: Icons.pause_circle_outline,
+        color: Colors.orange,
+        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u5df2\u6682\u505c\u540c\u6b65',
+        detail:
+            '\u6620\u5c04\u5173\u7cfb\u4ecd\u4f1a\u4fdd\u7559\uff0c\u4f46\u76ee\u524d\u4e0d\u4f1a\u7ee7\u7eed\u62c9\u53d6\u6216\u5199\u56de\u3002',
+      );
+    }
+
+    if (_syncMode == OutlookSyncMode.bidirectional && _hasRequiredPermission) {
+      return (
+        icon: Icons.cloud_done_outlined,
+        color: const Color(0xFF43A047),
+        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u53ef\u53d7\u63a7\u5199\u56de',
+        detail:
+            '\u53ea\u6709\u8fd9\u7c7b\u6807\u8bb0\u4e3a FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u624d\u5141\u8bb8\u5728\u53cc\u5411\u6a21\u5f0f\u4e0b\u88ab\u5199\u56de\u3002',
+      );
+    }
+
+    if (_syncMode == OutlookSyncMode.bidirectional && !_hasRequiredPermission) {
+      return (
+        icon: Icons.lock_clock_outlined,
+        color: const Color(0xFFFB8C00),
+        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u4f46\u5f53\u524d\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743',
+        detail:
+            '\u5728\u91cd\u65b0\u5b8c\u6210 Outlook \u8bfb\u5199\u6388\u6743\u524d\uff0c\u8fd9\u4e9b\u5bb9\u5668\u4ecd\u53ea\u4f1a\u6309\u53ea\u8bfb\u903b\u8f91\u5904\u7406\u3002',
+      );
+    }
+
+    return (
+      icon: Icons.shield_outlined,
+      color: AppColors.primary,
+      status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u4ecd\u6309\u53ea\u8bfb\u5904\u7406',
+      detail:
+          '\u867d\u7136\u8fd9\u662f FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u4f46\u53ea\u8bfb\u6a21\u5f0f\u4e0b\u4f9d\u7136\u4e0d\u4f1a\u5bf9\u5b83\u5199\u56de\u3002',
+    );
+  }
+
+  ({
+    IconData icon,
+    Color color,
+    String status,
+    String detail,
+  }) _describeTaskMirrorBinding(
+    TaskList taskList,
+    OutlookTaskListBinding? binding,
+  ) {
+    final localVisibility =
+        '\u5728 FlowPlan \u4e2d\uff1a${taskList.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}';
+
+    if (binding == null) {
+      return (
+        icon: Icons.link_off_outlined,
+        color: const Color(0xFF9E9E9E),
+        status: '\u672a\u7ed1\u5b9a Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668',
+        detail:
+            '$localVisibility\n\u8fd9\u4e2a\u4efb\u52a1\u672c\u76ee\u524d\u53ea\u5728 FlowPlan \u672c\u5730\u5de5\u4f5c\uff0c\u4e0d\u4f1a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u4efb\u52a1\u955c\u50cf\u3002',
+      );
+    }
+
+    final linkedAt = _formatBindingDateTime(binding.linkedAt);
+    if (_syncMode == OutlookSyncMode.paused) {
+      return (
+        icon: Icons.pause_circle_outline,
+        color: Colors.orange,
+        status: '\u5df2\u7ed1\u5b9a\uff0c\u4f46\u5f53\u524d\u5904\u4e8e\u6682\u505c\u540c\u6b65',
+        detail:
+            '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u7ed1\u5b9a\u65f6\u95f4\uff1a$linkedAt',
+      );
+    }
+
+    if (_syncMode == OutlookSyncMode.bidirectional && _hasRequiredPermission) {
+      return (
+        icon: Icons.task_alt_outlined,
+        color: const Color(0xFF43A047),
+        status: '\u5df2\u7ed1\u5b9a\uff0c\u53ef\u5199\u56de Outlook \u955c\u50cf\u5bb9\u5668',
+        detail:
+            '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u7ed1\u5b9a\u65f6\u95f4\uff1a$linkedAt',
+      );
+    }
+
+    if (_syncMode == OutlookSyncMode.bidirectional && !_hasRequiredPermission) {
+      return (
+        icon: Icons.lock_clock_outlined,
+        color: const Color(0xFFFB8C00),
+        status: '\u5df2\u7ed1\u5b9a\uff0c\u4f46\u5f53\u524d\u8fd8\u6ca1\u6709\u8bfb\u5199\u6388\u6743',
+        detail:
+            '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u8bf7\u91cd\u65b0\u5b8c\u6210 Outlook \u8ba4\u8bc1\u540e\u518d\u5199\u56de\uff0c\u7ed1\u5b9a\u65f6\u95f4\uff1a$linkedAt',
+      );
+    }
+
+    return (
+      icon: Icons.visibility_outlined,
+      color: AppColors.primary,
+      status: '\u5df2\u7ed1\u5b9a\uff0c\u4f46\u5f53\u524d\u4ecd\u662f\u53ea\u8bfb\u6a21\u5f0f',
+      detail:
+          '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u6620\u5c04\u4f1a\u88ab\u4fdd\u7559\uff0c\u4f46 FlowPlan \u6682\u4e0d\u4f1a\u5199\u56de\u8fd9\u4e2a\u4efb\u52a1\u955c\u50cf\u5bb9\u5668\u3002',
+    );
+  }
+
+  String _formatBindingDateTime(DateTime value) {
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$month/$day $hour:$minute';
+  }
+
+  Future<void> _openBooksManager() async {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 700) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+          child: const SizedBox(
+            width: 520,
+            child: CalendarBooksPage(),
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const CalendarBooksPage(),
+      ),
+    );
+  }
+
+  Future<void> _toggleOutlookCalendarVisibility(EventCalendar calendar) async {
+    final nextValue = !calendar.isVisible;
+    await ref
+        .read(calendarBooksRepositoryProvider)
+        .toggleEventCalendarVisible(calendar.id, nextValue);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          nextValue
+              ? '\u5df2\u5728 FlowPlan \u4e2d\u663e\u793a\u300c${calendar.name}\u300d'
+              : '\u5df2\u5728 FlowPlan \u4e2d\u9690\u85cf\u300c${calendar.name}\u300d',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _bindTaskListToOutlook(TaskList taskList) async {
+    final config = await OutlookAuthService.loadConfig();
+    if (config == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '\u8bf7\u5148\u5728 Outlook \u540c\u6b65\u8bbe\u7f6e\u4e2d\u4fdd\u5b58 OAuth \u914d\u7f6e\u5e76\u5b8c\u6210 Outlook \u767b\u5f55\u3002',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final service = OutlookManagedContainerService(
+      config: config,
+      bindingsRepository: ref.read(outlookSyncBindingsRepositoryProvider),
+    );
+
+    try {
+      final binding = await service.ensureTaskListMirrorBinding(taskList);
+      final refreshNotifier =
+          ref.read(outlookBindingRefreshTickProvider.notifier);
+      refreshNotifier.state = refreshNotifier.state + 1;
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u5df2\u7ed1\u5b9a Outlook \u4e13\u5c5e\u5bb9\u5668\uff1a${binding.remoteCalendarName}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('\u7ed1\u5b9a Outlook \u5bb9\u5668\u5931\u8d25\uff1a$error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _unbindTaskListFromOutlook(
+    TaskList taskList,
+    OutlookTaskListBinding binding,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('\u89e3\u9664 Outlook \u7ed1\u5b9a'),
+        content: Text(
+          '\u786e\u5b9a\u8981\u89e3\u9664\u4efb\u52a1\u672c\u201c${taskList.name}\u201d\u4e0e\u300c${binding.remoteCalendarName}\u300d\u7684\u5bf9\u5e94\u5173\u7cfb\u5417\uff1f\u8fd9\u53ea\u4f1a\u89e3\u9664 FlowPlan \u4e2d\u7684\u6620\u5c04\uff0c\u4e0d\u4f1a\u76f4\u63a5\u5220\u6389 Outlook \u8fdc\u7aef\u5bb9\u5668\u3002',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('\u53d6\u6d88'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              '\u89e3\u9664',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await ref
+        .read(outlookSyncBindingsRepositoryProvider)
+        .removeTaskListBinding(taskList.id);
+    final refreshNotifier = ref.read(outlookBindingRefreshTickProvider.notifier);
+    refreshNotifier.state = refreshNotifier.state + 1;
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u5df2\u89e3\u9664 Outlook \u7ed1\u5b9a',
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveConfig() async {
     final clientId = _clientIdController.text.trim();
     final tenantId = _tenantIdController.text.trim();
     if (clientId.isEmpty || tenantId.isEmpty) {
-      setState(() => _status = '\u8bf7\u586b\u5199\u5b8c\u6574\u7684 Client ID \u548c Tenant ID\u3002');
+      setState(() => _status = '\u8bf7\u586b\u5199\u5b8c\u6574\u7684\u5ba2\u6237\u7aef ID \u548c\u79df\u6237 ID\u3002');
       return;
     }
 
     await OutlookAuthService.saveConfig(clientId, tenantId);
     if (!mounted) return;
     setState(() {
-      _status = '\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u540e\u7eed\u8ba4\u8bc1\u5c06\u53ea\u7533\u8bf7 Outlook \u65e5\u5386\u53ea\u8bfb\u6743\u9650\u3002';
+      _status = _syncMode.requiresWritePermission
+          ? '\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u540e\u7eed\u8ba4\u8bc1\u5c06\u7533\u8bf7 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4ec5\u7528\u4e8e FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002'
+          : '\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u540e\u7eed\u8ba4\u8bc1\u5c06\u7533\u8bf7 Outlook \u65e5\u5386\u53ea\u8bfb\u6743\u9650\u3002';
     });
   }
 
   Future<void> _updateSyncMode(OutlookSyncMode mode) async {
     await OutlookAuthService.saveSyncMode(mode);
+    final hasRequiredPermission =
+        await OutlookAuthService.isAuthorizedForMode(mode);
     if (!mounted) return;
     setState(() {
       _syncMode = mode;
-      _status = '\u540c\u6b65\u65b9\u5411\u5df2\u66f4\u65b0\u4e3a\u201c${mode.label}\u201d\u3002';
+      _hasRequiredPermission = _isAuthenticated && hasRequiredPermission;
+      _status = !_isAuthenticated
+          ? '\u540c\u6b65\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\u201c${mode.label}\u201d\u3002\u540e\u7eed\u767b\u5f55 Outlook \u65f6\uff0cFlowPlan \u4f1a\u6309\u8be5\u6a21\u5f0f\u7533\u8bf7\u6743\u9650\u3002'
+          : hasRequiredPermission
+              ? '\u540c\u6b65\u6a21\u5f0f\u5df2\u66f4\u65b0\u4e3a\u201c${mode.label}\u201d\u3002'
+              : '\u540c\u6b65\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\u201c${mode.label}\u201d\uff0c\u4f46\u5f53\u524d Outlook \u6388\u6743\u4ecd\u4e3a${_authorizationLabel(_grantedMode)}\uff0c\u8bf7\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\u3002';
     });
   }
 
@@ -330,7 +1489,10 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return;
     }
 
-    final launched = await OutlookAuthService.launchAuth(config);
+    final launched = await OutlookAuthService.launchAuth(
+      config,
+      requestedMode: _syncMode,
+    );
     if (!launched && mounted) {
       setState(() => _status = '\u65e0\u6cd5\u6253\u5f00\u6d4f\u89c8\u5668\uff0c\u8bf7\u68c0\u67e5\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u8bbe\u7f6e\u3002');
     }
@@ -349,13 +1511,21 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return;
     }
 
-    final token = await OutlookAuthService.exchangeCode(config, code);
+    final token = await OutlookAuthService.exchangeCode(
+      config,
+      code,
+      requestedMode: _syncMode,
+    );
     if (!mounted) return;
 
     if (token != null) {
       setState(() {
         _isAuthenticated = true;
-        _status = '\u8ba4\u8bc1\u6210\u529f\u3002FlowPlan \u73b0\u5728\u53ea\u4f1a\u4ece Outlook \u5355\u5411\u8bfb\u53d6\u65e5\u5386\u6570\u636e\u3002';
+        _grantedMode = token.grantedMode;
+        _hasRequiredPermission = token.supportsMode(_syncMode);
+        _status = token.grantedMode == OutlookSyncMode.bidirectional
+            ? '\u8ba4\u8bc1\u6210\u529f\u3002FlowPlan \u73b0\u5728\u5df2\u5177\u5907 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4f46\u8fdc\u7aef\u5199\u5165\u4ecd\u53ea\u4f1a\u9488\u5bf9 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002'
+            : '\u8ba4\u8bc1\u6210\u529f\u3002FlowPlan \u73b0\u5728\u4f1a\u4ece Outlook \u5355\u5411\u8bfb\u53d6\u65e5\u5386\u6570\u636e\u3002';
       });
       return;
     }
@@ -368,13 +1538,23 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     if (!mounted) return;
     setState(() {
       _isAuthenticated = false;
+      _hasRequiredPermission = false;
+      _grantedMode = OutlookSyncMode.readOnly;
       _status = '\u5df2\u9000\u51fa\u767b\u5f55\u3002';
     });
   }
 
   Future<void> _performSync() async {
-    if (_syncMode == OutlookSyncMode.disabled) {
-      setState(() => _status = '\u5f53\u524d\u5df2\u5173\u95ed Outlook \u540c\u6b65\u3002');
+    if (!_syncMode.allowsPull) {
+      setState(() => _status = '\u5f53\u524d Outlook \u540c\u6b65\u5904\u4e8e\u6682\u505c\u72b6\u6001\u3002');
+      return;
+    }
+
+    if (!_hasRequiredPermission) {
+      setState(
+        () => _status =
+            '\u5f53\u524d\u6a21\u5f0f\u9700\u8981${_authorizationLabel(_syncMode)}\uff0c\u8bf7\u91cd\u65b0\u8fdb\u884c Outlook \u8ba4\u8bc1\u3002',
+      );
       return;
     }
 
@@ -386,30 +1566,156 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 
     setState(() {
       _syncing = true;
-      _status = '\u6b63\u5728\u4ece Outlook \u8bfb\u53d6\u65e5\u5386\u672c\u548c\u4e8b\u4ef6...';
+      _status = _syncMode == OutlookSyncMode.bidirectional
+          ? '\u6b63\u5728\u540c\u6b65 Outlook \u65e5\u5386\u672c\u548c\u4e8b\u4ef6...'
+          : '\u6b63\u5728\u4ece Outlook \u8bfb\u53d6\u65e5\u5386\u672c\u548c\u4e8b\u4ef6...';
     });
 
     try {
       final engine = SyncEngine(
         ref.read(eventRepositoryProvider),
         ref.read(calendarBooksRepositoryProvider),
+        ref.read(taskRepositoryProvider),
+        ref.read(outlookSyncBindingsRepositoryProvider),
+        ref.read(outlookTaskMirrorRepositoryProvider),
         config,
       );
       final result = await engine.sync();
+      await ref.read(reminderServiceProvider).rebuildSystemSchedule();
+      ref.invalidate(reminderSystemStatusProvider);
+      final refreshNotifier = ref.read(outlookBindingRefreshTickProvider.notifier);
+      refreshNotifier.state = refreshNotifier.state + 1;
       final lastSync = await SyncEngine.getLastSyncTime();
+      final lastSyncReport = await SyncEngine.getLastSyncReport();
       if (!mounted) return;
 
       setState(() {
         _syncing = false;
         _lastSync = lastSync;
-        _status =
-            '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\u3002FlowPlan \u6ca1\u6709\u5411 Outlook \u5199\u5165\u4efb\u4f55\u6570\u636e\u3002';
+        _lastSyncReport = lastSyncReport;
+        _status = _syncMode == OutlookSyncMode.bidirectional
+            ? '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\uff0c\u4efb\u52a1\u955c\u50cf\u65b0\u5efa ${result.mirroredCreated} \u6761\uff0c\u66f4\u65b0 ${result.mirroredUpdated} \u6761\uff0c\u5220\u9664 ${result.mirroredDeleted} \u6761\uff0c\u51b2\u7a81 ${result.mirroredConflicted} \u6761\u3002\u8fd9\u4e9b\u5199\u56de\u4ecd\u53ea\u4f1a\u53d1\u751f\u5728 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\u4e2d\uff1b\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab\u9759\u9ed8\u8986\u76d6\u3002'
+            : '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\u3002FlowPlan \u6ca1\u6709\u5411 Outlook \u5199\u5165\u4efb\u4f55\u6570\u636e\u3002';
       });
     } catch (error) {
+      final lastSyncReport = await SyncEngine.getLastSyncReport();
       if (!mounted) return;
       setState(() {
         _syncing = false;
+        _lastSyncReport = lastSyncReport;
         _status = '\u540c\u6b65\u5931\u8d25\uff1a$error';
+      });
+    }
+  }
+
+  Future<void> _performMirrorCleanup() async {
+    if (_syncMode != OutlookSyncMode.bidirectional) {
+      setState(() => _status = '\u8bf7\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u6a21\u5f0f\u3002');
+      return;
+    }
+
+    if (!_hasRequiredPermission) {
+      setState(
+        () => _status =
+            '\u5f53\u524d\u8fd8\u6ca1\u6709 Outlook \u8bfb\u5199\u6388\u6743\uff0c\u8bf7\u5148\u91cd\u65b0\u5b8c\u6210\u8ba4\u8bc1\u3002',
+      );
+      return;
+    }
+
+    final config = await OutlookAuthService.loadConfig();
+    if (config == null) {
+      setState(() => _status = '\u8bf7\u5148\u914d\u7f6e OAuth \u51ed\u636e\u3002');
+      return;
+    }
+
+    setState(() {
+      _syncing = true;
+      _status = '\u6b63\u5728\u6e05\u7406\u5df2\u5931\u6548\u7684 Outlook \u4efb\u52a1\u955c\u50cf\u7d22\u5f15...';
+    });
+
+    try {
+      final result = await OutlookTaskMirrorSyncService(
+        graphService: MsGraphService(config, syncMode: _syncMode),
+        taskRepository: ref.read(taskRepositoryProvider),
+        calendarBooksRepository: ref.read(calendarBooksRepositoryProvider),
+        taskListBindingsRepository: ref.read(outlookSyncBindingsRepositoryProvider),
+        taskMirrorRepository: ref.read(outlookTaskMirrorRepositoryProvider),
+      ).cleanupStaleTaskMirrors();
+
+      final refreshNotifier = ref.read(outlookBindingRefreshTickProvider.notifier);
+      refreshNotifier.state = refreshNotifier.state + 1;
+
+      if (!mounted) {
+        return;
+      }
+
+      final affectedTaskLists = result.taskListDetails.length;
+      setState(() {
+        _syncing = false;
+        _status = result.deleted > 0
+            ? '\u955c\u50cf\u6e05\u7406\u5b8c\u6210\uff1a\u5df2\u5220\u9664 ${result.deleted} \u6761\u5931\u6548 Outlook \u4efb\u52a1\u955c\u50cf\uff0c\u6d89\u53ca $affectedTaskLists \u4e2a\u4efb\u52a1\u672c\u3002'
+            : '\u955c\u50cf\u6e05\u7406\u5b8c\u6210\uff1a\u5f53\u524d\u6ca1\u6709\u53ef\u5b89\u5168\u5220\u9664\u7684\u5931\u6548 Outlook \u4efb\u52a1\u955c\u50cf\u3002';
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncing = false;
+        _status = '\u955c\u50cf\u6e05\u7406\u5931\u8d25\uff1a$error';
+      });
+    }
+  }
+
+  Future<void> _exportDiagnosticsReport() async {
+    setState(() {
+      _exportingDiagnostics = true;
+      _status = '\u6b63\u5728\u751f\u6210 Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a...';
+    });
+
+    try {
+      final outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: '\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a',
+        fileName:
+            'flowplan-outlook-diagnostics-${_formatReportFileDate(DateTime.now())}.md',
+        type: FileType.custom,
+        allowedExtensions: const ['md', 'txt'],
+      );
+
+      if (outputPath == null || outputPath.trim().isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _exportingDiagnostics = false;
+          _status = '\u5df2\u53d6\u6d88\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a\u3002';
+        });
+        return;
+      }
+
+      final report = await OutlookDiagnosticsService(
+        calendarBooksRepository: ref.read(calendarBooksRepositoryProvider),
+        taskRepository: ref.read(taskRepositoryProvider),
+        taskListBindingsRepository:
+            ref.read(outlookSyncBindingsRepositoryProvider),
+        taskMirrorRepository: ref.read(outlookTaskMirrorRepositoryProvider),
+      ).buildMarkdownReport();
+
+      await File(outputPath).writeAsString(report);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exportingDiagnostics = false;
+        _status = '\u5df2\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a\uff1a$outputPath';
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exportingDiagnostics = false;
+        _status = '\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a\u5931\u8d25\uff1a$error';
       });
     }
   }
@@ -419,6 +1725,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     if (!mounted) return;
     setState(() {
       _lastSync = null;
+      _lastSyncReport = null;
       _status = '\u540c\u6b65\u72b6\u6001\u5df2\u91cd\u7f6e\u3002\u4e0b\u6b21\u540c\u6b65\u4f1a\u91cd\u65b0\u62c9\u53d6 Outlook \u6570\u636e\u3002';
     });
   }
@@ -427,18 +1734,26 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 class _StatusCard extends StatelessWidget {
   const _StatusCard({
     required this.isAuthenticated,
+    required this.hasRequiredPermission,
     required this.syncMode,
+    required this.grantedMode,
     required this.lastSync,
   });
 
   final bool isAuthenticated;
+  final bool hasRequiredPermission;
   final OutlookSyncMode syncMode;
+  final OutlookSyncMode grantedMode;
   final DateTime? lastSync;
 
   @override
   Widget build(BuildContext context) {
-    final enabled = syncMode != OutlookSyncMode.disabled;
-    final color = isAuthenticated && enabled ? const Color(0xFF43A047) : Colors.orange;
+    final enabled = isAuthenticated && syncMode.allowsPull && hasRequiredPermission;
+    final color = enabled
+        ? const Color(0xFF43A047)
+        : syncMode == OutlookSyncMode.paused
+            ? Colors.orange
+            : const Color(0xFFFB8C00);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -451,7 +1766,7 @@ class _StatusCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isAuthenticated && enabled ? Icons.cloud_done : Icons.cloud_off,
+            enabled ? Icons.cloud_done : Icons.cloud_off,
             color: color,
             size: 28,
           ),
@@ -461,9 +1776,7 @@ class _StatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isAuthenticated
-                      ? '\u5df2\u8fde\u63a5 Outlook\uff08\u53ea\u8bfb\uff09'
-                      : '\u5c1a\u672a\u8fde\u63a5 Outlook',
+                  _titleText(),
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                 ),
                 const SizedBox(height: 4),
@@ -471,11 +1784,25 @@ class _StatusCard extends StatelessWidget {
                   '\u5f53\u524d\u6a21\u5f0f\uff1a${syncMode.label}',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
+                if (isAuthenticated) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '\u5f53\u524d\u6388\u6743\uff1a${_permissionLabel(grantedMode)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Text(
                   syncMode.description,
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
+                if (isAuthenticated && !hasRequiredPermission) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    '\u5f53\u524d\u6a21\u5f0f\u4e0e\u6388\u6743\u4e0d\u5339\u914d\uff0c\u8bf7\u91cd\u65b0\u8fdb\u884c Outlook \u8ba4\u8bc1\u3002',
+                    style: TextStyle(fontSize: 12, color: Color(0xFFFB8C00)),
+                  ),
+                ],
                 if (lastSync != null) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -489,6 +1816,29 @@ class _StatusCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _titleText() {
+    if (!isAuthenticated) {
+      return '\u5c1a\u672a\u8fde\u63a5 Outlook';
+    }
+    if (!hasRequiredPermission) {
+      return '\u5df2\u8fde\u63a5 Outlook\uff08\u9700\u8981\u91cd\u65b0\u8ba4\u8bc1\uff09';
+    }
+    if (grantedMode == OutlookSyncMode.bidirectional) {
+      return '\u5df2\u8fde\u63a5 Outlook\uff08\u8bfb\u5199\u6388\u6743\uff09';
+    }
+    return '\u5df2\u8fde\u63a5 Outlook\uff08\u53ea\u8bfb\u6388\u6743\uff09';
+  }
+
+  String _permissionLabel(OutlookSyncMode mode) {
+    switch (mode) {
+      case OutlookSyncMode.paused:
+      case OutlookSyncMode.readOnly:
+        return '\u53ea\u8bfb\u6388\u6743';
+      case OutlookSyncMode.bidirectional:
+        return '\u8bfb\u5199\u6388\u6743';
+    }
   }
 
   String _formatDateTime(DateTime value) {
@@ -545,6 +1895,142 @@ class _HelpRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(text, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineStateHint extends StatelessWidget {
+  const _InlineStateHint({
+    required this.icon,
+    required this.message,
+    this.iconColor = Colors.grey,
+  });
+
+  final IconData icon;
+  final String message;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: iconColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncScopeTile extends StatelessWidget {
+  const _SyncScopeTile({
+    required this.icon,
+    required this.accentColor,
+    required this.title,
+    required this.status,
+    required this.detail,
+    this.actionLabel,
+    this.actionIcon,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final Color accentColor;
+  final String title;
+  final String status;
+  final String detail;
+  final String? actionLabel;
+  final IconData? actionIcon;
+  final Future<void> Function()? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accentColor.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: accentColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (onAction != null && actionLabel != null) ...[
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await onAction!.call();
+                        },
+                        icon: Icon(
+                          actionIcon ?? Icons.open_in_new,
+                          size: 16,
+                        ),
+                        label: Text(actionLabel!),
+                        style: TextButton.styleFrom(
+                          foregroundColor: accentColor,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const Size(0, 32),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: accentColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         ],
       ),
