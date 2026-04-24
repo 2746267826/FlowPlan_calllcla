@@ -84,7 +84,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
-                    value: effectiveProcess,
+                    key: ValueKey<String?>(effectiveProcess),
+                    initialValue: effectiveProcess,
                     decoration: const InputDecoration(
                       labelText: '\u5e94\u7528\u7a0b\u5e8f',
                       border: OutlineInputBorder(),

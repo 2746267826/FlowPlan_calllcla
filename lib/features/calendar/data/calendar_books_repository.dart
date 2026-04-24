@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../audit/data_operation_log_repository.dart';
 import '../../sync/outlook_sync_bindings_repository.dart';
 
 class EventCalendarDefaults {
@@ -43,7 +44,8 @@ class CalendarBooksRepository {
       'task_list.default_reminder_minutes.v1.';
 
   final AppDatabase _db;
-  CalendarBooksRepository(this._db);
+  final DataOperationLogRepository? _operationLogRepository;
+  CalendarBooksRepository(this._db, [this._operationLogRepository]);
 
   String _eventCalendarDefaultBlockKey(int id) =>
       '$_eventCalendarDefaultBlockPrefix$id';
@@ -76,7 +78,14 @@ class CalendarBooksRepository {
       (_db.select(_db.eventCalendars)..where((c) => c.id.equals(id)))
           .getSingleOrNull();
 
-  Future<int> createEventCalendar(EventCalendarsCompanion companion) async {
+  Future<int> createEventCalendar(
+    EventCalendarsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'create',
+    String? summary,
+    Object? metadata,
+  }) async {
     final source = companion.source.present ? companion.source.value : 'local';
     final requestedDefault =
         companion.isDefault.present ? companion.isDefault.value : false;
@@ -100,11 +109,53 @@ class CalendarBooksRepository {
       );
     }
 
+    if (audit) {
+      final created = await getEventCalendarById(id);
+      if (created != null) {
+        await _recordContainerOperation(
+          actor: actor,
+          action: action,
+          entityType: 'event_calendar',
+          entityId: created.id.toString(),
+          summary: summary ?? '\u521b\u5efa\u65e5\u5386\u672c\u300c${created.name}\u300d',
+          after: await _eventCalendarSnapshot(created),
+          metadata: metadata,
+        );
+      }
+    }
+
     return id;
   }
 
-  Future<bool> updateEventCalendar(EventCalendarsCompanion companion) =>
-      _db.update(_db.eventCalendars).replace(companion);
+  Future<bool> updateEventCalendar(
+    EventCalendarsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'update',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final id = companion.id.present ? companion.id.value : null;
+    final before = id == null ? null : await _eventCalendarSnapshotById(id);
+    final updated = await _db.update(_db.eventCalendars).replace(companion);
+    if (audit && updated && id != null) {
+      final after = await _eventCalendarSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u65e5\u5386\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: id.toString(),
+        summary: summary ?? '\u66f4\u65b0\u65e5\u5386\u672c\u300c$name\u300d',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
+    return updated;
+  }
 
   Future<int> countEventsInCalendar(int id) async {
     final countExpression = _db.calendarEvents.id.count();
@@ -126,32 +177,84 @@ class CalendarBooksRepository {
   Future<void> saveEventCalendarDefaults({
     required int id,
     required bool defaultIsBlock,
+    bool audit = true,
+    String actor = 'user',
+    String action = 'update_defaults',
+    String? summary,
+    Object? metadata,
   }) async {
+    final before = audit ? await _eventCalendarSnapshotById(id) : null;
     await _db.setBoolSetting(
       _eventCalendarDefaultBlockKey(id),
       defaultIsBlock,
     );
+    if (audit) {
+      final after = await _eventCalendarSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u65e5\u5386\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: id.toString(),
+        summary: summary ?? '\u66f4\u65b0\u65e5\u5386\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
-  Future<void> setDefaultEventCalendar(int id) async {
+  Future<void> setDefaultEventCalendar(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'set_default',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final before = audit ? await _eventCalendarSnapshotById(id) : null;
     final calendar = await getEventCalendarById(id);
     if (calendar == null) {
       return;
     }
     if (calendar.source != 'local') {
-      throw StateError('只有本地日历本可以设为默认日历本。');
+      throw StateError('\u53ea\u6709\u672c\u5730\u65e5\u5386\u672c\u53ef\u4ee5\u8bbe\u4e3a\u9ed8\u8ba4\u65e5\u5386\u672c\u3002');
     }
 
     await _normalizeLocalEventCalendarDefault(preferredId: id);
+    if (audit) {
+      final after = await _eventCalendarSnapshotById(id);
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: id.toString(),
+        summary: summary ?? '\u5c06\u65e5\u5386\u672c\u300c${calendar.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
-  Future<int> deleteEventCalendar(int id) async {
+  Future<int> deleteEventCalendar(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'delete',
+    String? summary,
+    Object? metadata,
+  }) async {
     final calendar = await getEventCalendarById(id);
     if (calendar == null) {
       return 0;
     }
+    final before = audit ? await _eventCalendarSnapshot(calendar) : null;
+    final eventCount = await countEventsInCalendar(id);
 
-    return _db.transaction(() async {
+    final deleted = await _db.transaction(() async {
       int? fallbackId;
       if (calendar.source == 'local') {
         fallbackId = await getOrCreateWritableEventCalendarId(
@@ -181,11 +284,52 @@ class CalendarBooksRepository {
 
       return deleted;
     });
+    if (audit && deleted > 0) {
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: id.toString(),
+        summary: summary ?? '\u5220\u9664\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        before: before,
+        metadata: <String, Object?>{
+          'event_count': eventCount,
+          'source': calendar.source,
+          if (metadata != null) 'extra': metadata,
+        },
+      );
+    }
+    return deleted;
   }
 
-  Future<void> toggleEventCalendarVisible(int id, bool visible) async {
+  Future<void> toggleEventCalendarVisible(
+    int id,
+    bool visible, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'toggle_visible',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final before = audit ? await _eventCalendarSnapshotById(id) : null;
     await (_db.update(_db.eventCalendars)..where((c) => c.id.equals(id)))
         .write(EventCalendarsCompanion(isVisible: Value(visible)));
+    if (audit) {
+      final after = await _eventCalendarSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u65e5\u5386\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: id.toString(),
+        summary: summary ?? '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u65e5\u5386\u672c\u300c$name\u300d',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
   Future<int> getOrCreateWritableEventCalendarId({
@@ -213,6 +357,10 @@ class CalendarBooksRepository {
     required String name,
     required String colorHex,
     String? description,
+    bool audit = true,
+    String actor = 'sync',
+    String action = 'upsert_synced',
+    Object? metadata,
   }) async {
     final matches = await (_db.select(_db.eventCalendars)
           ..where((c) => c.source.equals(source) & c.syncUrl.equals(remoteId)))
@@ -245,11 +393,20 @@ class CalendarBooksRepository {
           syncUrl: Value(remoteId),
           createdAt: DateTime.now(),
         ),
+        audit: audit,
+        actor: actor,
+        action: action,
+        summary: '\u540c\u6b65\u63a5\u5165 Outlook \u65e5\u5386\u672c\u300c$name\u300d',
+        metadata: <String, Object?>{
+          'source': source,
+          'remote_id': remoteId,
+          if (metadata != null) 'extra': metadata,
+        },
       );
     }
 
-    await (_db.update(_db.eventCalendars)..where((c) => c.id.equals(existing.id)))
-        .write(
+    final before = audit ? await _eventCalendarSnapshot(existing) : null;
+    await (_db.update(_db.eventCalendars)..where((c) => c.id.equals(existing.id))).write(
       EventCalendarsCompanion(
         name: Value(name),
         colorHex: Value(colorHex),
@@ -258,6 +415,23 @@ class CalendarBooksRepository {
         syncUrl: Value(remoteId),
       ),
     );
+    if (audit) {
+      final after = await _eventCalendarSnapshotById(existing.id);
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'event_calendar',
+        entityId: existing.id.toString(),
+        summary: '\u66f4\u65b0\u540c\u6b65\u65e5\u5386\u672c\u300c$name\u300d',
+        before: before,
+        after: after,
+        metadata: <String, Object?>{
+          'source': source,
+          'remote_id': remoteId,
+          if (metadata != null) 'extra': metadata,
+        },
+      );
+    }
 
     return existing.id;
   }
@@ -289,7 +463,14 @@ class CalendarBooksRepository {
       (_db.select(_db.taskLists)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
 
-  Future<int> createTaskList(TaskListsCompanion companion) async {
+  Future<int> createTaskList(
+    TaskListsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'create',
+    String? summary,
+    Object? metadata,
+  }) async {
     final isArchived =
         companion.isArchived.present ? companion.isArchived.value : false;
     final requestedDefault =
@@ -312,11 +493,54 @@ class CalendarBooksRepository {
       );
     }
 
+    if (audit) {
+      final created = await getTaskListById(id);
+      if (created != null) {
+        await _recordContainerOperation(
+          actor: actor,
+          action: action,
+          entityType: 'task_list',
+          entityId: created.id.toString(),
+          summary: summary ?? '\u521b\u5efa\u4efb\u52a1\u672c\u300c${created.name}\u300d',
+          after: await _taskListSnapshot(created),
+          metadata: metadata,
+        );
+      }
+    }
+
     return id;
   }
 
-  Future<bool> updateTaskList(TaskListsCompanion companion) =>
-      _db.update(_db.taskLists).replace(companion);
+  Future<bool> updateTaskList(
+    TaskListsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'update',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final id = companion.id.present ? companion.id.value : null;
+    final before = id == null ? null : await _taskListSnapshotById(id);
+    final updated = _db.update(_db.taskLists).replace(companion);
+    final result = await updated;
+    if (audit && result && id != null) {
+      final after = await _taskListSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u4efb\u52a1\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u66f4\u65b0\u4efb\u52a1\u672c\u300c$name\u300d',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
+    return result;
+  }
 
   Future<int> countTasksInTaskList(int id) async {
     final countExpression = _db.taskItems.id.count();
@@ -349,7 +573,13 @@ class CalendarBooksRepository {
     required int id,
     required bool defaultIsAutoScheduled,
     required int defaultReminderMinutesBefore,
+    bool audit = true,
+    String actor = 'user',
+    String action = 'update_defaults',
+    String? summary,
+    Object? metadata,
   }) async {
+    final before = audit ? await _taskListSnapshotById(id) : null;
     await _db.setBoolSetting(
       _taskListDefaultAutoScheduledKey(id),
       defaultIsAutoScheduled,
@@ -358,27 +588,73 @@ class CalendarBooksRepository {
       _taskListDefaultReminderKey(id),
       defaultReminderMinutesBefore,
     );
+    if (audit) {
+      final after = await _taskListSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u4efb\u52a1\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u66f4\u65b0\u4efb\u52a1\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
-  Future<void> setDefaultTaskList(int id) async {
+  Future<void> setDefaultTaskList(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'set_default',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final before = audit ? await _taskListSnapshotById(id) : null;
     final taskList = await getTaskListById(id);
     if (taskList == null) {
       return;
     }
     if (taskList.isArchived) {
-      throw StateError('已归档任务本不能设为默认任务本。');
+      throw StateError('\u5df2\u5f52\u6863\u4efb\u52a1\u672c\u4e0d\u80fd\u8bbe\u4e3a\u9ed8\u8ba4\u4efb\u52a1\u672c\u3002');
     }
 
     await _normalizeActiveTaskListDefault(preferredId: id);
+    if (audit) {
+      final after = await _taskListSnapshotById(id);
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u5c06\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
-  Future<void> archiveTaskList(int id) async {
+  Future<void> archiveTaskList(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'archive',
+    String? summary,
+    Object? metadata,
+  }) async {
     final existing = await (_db.select(_db.taskLists)
           ..where((t) => t.id.equals(id)))
         .getSingleOrNull();
     if (existing == null || existing.isArchived) {
       return;
     }
+    final before = audit ? await _taskListSnapshot(existing) : null;
+    final taskCount = await countTasksInTaskList(id);
 
     await _db.transaction(() async {
       final fallbackId = await getOrCreateActiveTaskListId(excludingId: id);
@@ -397,13 +673,37 @@ class CalendarBooksRepository {
         preferredId: existing.isDefault ? fallbackId : null,
       );
     });
+    if (audit) {
+      final after = await _taskListSnapshotById(id);
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u5f52\u6863\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        before: before,
+        after: after,
+        metadata: <String, Object?>{
+          'task_count': taskCount,
+          if (metadata != null) 'extra': metadata,
+        },
+      );
+    }
   }
 
-  Future<void> unarchiveTaskList(int id) async {
+  Future<void> unarchiveTaskList(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'restore',
+    String? summary,
+    Object? metadata,
+  }) async {
     final existing = await getTaskListById(id);
     if (existing == null || !existing.isArchived) {
       return;
     }
+    final before = audit ? await _taskListSnapshot(existing) : null;
 
     await (_db.update(_db.taskLists)..where((t) => t.id.equals(id))).write(
       const TaskListsCompanion(
@@ -412,15 +712,37 @@ class CalendarBooksRepository {
       ),
     );
     await _normalizeActiveTaskListDefault();
+    if (audit) {
+      final after = await _taskListSnapshotById(id);
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u6062\u590d\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
-  Future<int> deleteTaskList(int id) async {
+  Future<int> deleteTaskList(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'delete',
+    String? summary,
+    Object? metadata,
+  }) async {
     final existing = await getTaskListById(id);
     if (existing == null) {
       return 0;
     }
+    final before = audit ? await _taskListSnapshot(existing) : null;
+    final taskCount = await countTasksInTaskList(id);
 
-    return _db.transaction(() async {
+    final deleted = await _db.transaction(() async {
       final fallbackId = await getOrCreateActiveTaskListId(excludingId: id);
       await (_db.update(_db.taskItems)..where((t) => t.taskListId.equals(id)))
           .write(TaskItemsCompanion(taskListId: Value(fallbackId)));
@@ -436,11 +758,51 @@ class CalendarBooksRepository {
       );
       return deleted;
     });
+    if (audit && deleted > 0) {
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '\u5220\u9664\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        before: before,
+        metadata: <String, Object?>{
+          'task_count': taskCount,
+          if (metadata != null) 'extra': metadata,
+        },
+      );
+    }
+    return deleted;
   }
 
-  Future<void> toggleTaskListVisible(int id, bool visible) async {
+  Future<void> toggleTaskListVisible(
+    int id,
+    bool visible, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'toggle_visible',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final before = audit ? await _taskListSnapshotById(id) : null;
     await (_db.update(_db.taskLists)..where((t) => t.id.equals(id)))
         .write(TaskListsCompanion(isVisible: Value(visible)));
+    if (audit) {
+      final after = await _taskListSnapshotById(id);
+      final name = (after?['name'] as String?) ??
+          (before?['name'] as String?) ??
+          '\u672a\u547d\u540d\u4efb\u52a1\u672c';
+      await _recordContainerOperation(
+        actor: actor,
+        action: action,
+        entityType: 'task_list',
+        entityId: id.toString(),
+        summary: summary ?? '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u4efb\u52a1\u672c\u300c$name\u300d',
+        before: before,
+        after: after,
+        metadata: metadata,
+      );
+    }
   }
 
   Future<int> getOrCreateActiveTaskListId({
@@ -597,4 +959,79 @@ class CalendarBooksRepository {
     await (_db.update(_db.taskLists)..where((t) => t.id.equals(targetId)))
         .write(const TaskListsCompanion(isDefault: Value(true)));
   }
+
+  Future<Map<String, Object?>?> _eventCalendarSnapshotById(int id) async {
+    final calendar = await getEventCalendarById(id);
+    if (calendar == null) {
+      return null;
+    }
+    return _eventCalendarSnapshot(calendar);
+  }
+
+  Future<Map<String, Object?>> _eventCalendarSnapshot(
+    EventCalendar calendar,
+  ) async {
+    final defaults = await getEventCalendarDefaults(calendar.id);
+    return <String, Object?>{
+      'id': calendar.id,
+      'name': calendar.name,
+      'color_hex': calendar.colorHex,
+      'description': calendar.description,
+      'source': calendar.source,
+      'sync_url': calendar.syncUrl,
+      'is_visible': calendar.isVisible,
+      'is_default': calendar.isDefault,
+      'default_is_block': defaults.defaultIsBlock,
+    };
+  }
+
+  Future<Map<String, Object?>?> _taskListSnapshotById(int id) async {
+    final taskList = await getTaskListById(id);
+    if (taskList == null) {
+      return null;
+    }
+    return _taskListSnapshot(taskList);
+  }
+
+  Future<Map<String, Object?>> _taskListSnapshot(TaskList taskList) async {
+    final defaults = await getTaskListDefaults(taskList.id);
+    return <String, Object?>{
+      'id': taskList.id,
+      'name': taskList.name,
+      'color_hex': taskList.colorHex,
+      'emoji': taskList.emoji,
+      'is_visible': taskList.isVisible,
+      'is_default': taskList.isDefault,
+      'is_archived': taskList.isArchived,
+      'default_is_auto_scheduled': defaults.defaultIsAutoScheduled,
+      'default_reminder_minutes_before': defaults.defaultReminderMinutesBefore,
+    };
+  }
+
+  Future<void> _recordContainerOperation({
+    required String actor,
+    required String action,
+    required String entityType,
+    required String entityId,
+    required String summary,
+    Object? before,
+    Object? after,
+    Object? metadata,
+  }) async {
+    final operationLogs = _operationLogRepository;
+    if (operationLogs == null) {
+      return;
+    }
+    await operationLogs.record(
+      actor: actor,
+      action: action,
+      entityType: entityType,
+      entityId: entityId,
+      summary: summary,
+      before: before,
+      after: after,
+      metadata: metadata,
+    );
+  }
 }
+

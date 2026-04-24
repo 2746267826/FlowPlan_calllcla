@@ -51,7 +51,7 @@ class _TrackerLogHistoryPageState extends ConsumerState<TrackerLogHistoryPage> {
       firstDate: days.last.date,
       lastDate: days.first.date,
     );
-    if (picked == null || !mounted) {
+    if (picked == null || !context.mounted) {
       return;
     }
 

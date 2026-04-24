@@ -233,7 +233,7 @@ class AndroidUsageImportService {
             current.packageName == packageName &&
             _sameText(current.className, event.className);
         if (hasSameActivePackage) {
-          current = current!.copyWith(
+          current = current.copyWith(
             className: event.className ?? current.className,
             appLabel: event.appLabel ?? current.appLabel,
           );

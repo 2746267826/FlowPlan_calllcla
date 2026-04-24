@@ -61,7 +61,7 @@ class OutlookManagedContainerService {
       isFlowPlanManagedContainer: true,
     );
 
-    final remoteCalendarId = MsGraphService.calendarIdOf(managedCalendar!);
+    final remoteCalendarId = MsGraphService.calendarIdOf(managedCalendar);
     if (remoteCalendarId.isEmpty) {
       throw StateError(
         'Outlook \u5df2\u8fd4\u56de\u7ed3\u679c\uff0c\u4f46\u7f3a\u5c11\u53ef\u7528\u7684\u65e5\u5386\u5bb9\u5668 ID\u3002',

@@ -9,8 +9,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../reminders/reminder_service.dart';
 import '../calendar/presentation/calendar_books_page.dart';
+import 'outlook_calendar_service.dart';
 import 'ms_graph_service.dart';
 import 'outlook_auth_service.dart';
+import 'outlook_oauth_config.dart';
 import 'outlook_diagnostics_service.dart';
 import 'outlook_managed_container_service.dart';
 import 'outlook_sync_policy.dart';
@@ -28,11 +30,11 @@ class OutlookSettingsPage extends ConsumerStatefulWidget {
 
 class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   final _clientIdController = TextEditingController();
-  final _tenantIdController = TextEditingController();
   final _authCodeController = TextEditingController();
 
   bool _isAuthenticated = false;
   bool _hasRequiredPermission = false;
+  bool _refreshingToken = false;
   bool _syncing = false;
   bool _exportingDiagnostics = false;
   String? _status;
@@ -50,32 +52,57 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   @override
   void dispose() {
     _clientIdController.dispose();
-    _tenantIdController.dispose();
     _authCodeController.dispose();
     super.dispose();
   }
 
   Future<void> _loadState() async {
     final config = await OutlookAuthService.loadConfig();
-    final token = await OutlookAuthService.loadToken();
+    var token = await OutlookAuthService.loadToken();
     final lastSync = await SyncEngine.getLastSyncTime();
     final lastSyncReport = await SyncEngine.getLastSyncReport();
     final syncMode = await OutlookAuthService.loadSyncMode();
+    String? statusMessage;
+
+    if (config != null &&
+        token != null &&
+        token.isExpired &&
+        (token.refreshToken?.trim().isNotEmpty ?? false)) {
+      if (mounted) {
+        setState(() {
+          _refreshingToken = true;
+          _status = 'Outlook token 已过期，正在刷新。';
+        });
+      }
+      try {
+        token = await OutlookAuthService.refreshAccessToken(config);
+        statusMessage = token == null ? '未找到可刷新的 Outlook token。' : 'Outlook token 刷新成功。';
+      } on OutlookAuthException catch (error) {
+        statusMessage = error.userMessage;
+      } catch (error) {
+        statusMessage = 'Outlook token 刷新失败：$error';
+      }
+    }
+
     final authed = token != null;
-    final hasRequiredPermission = token?.supportsMode(syncMode) ?? false;
+    final hasRequiredPermission =
+        syncMode == OutlookSyncMode.paused || (token?.supportsMode(syncMode) ?? false);
     if (!mounted) return;
 
     setState(() {
       if (config != null) {
         _clientIdController.text = config.clientId;
-        _tenantIdController.text = config.tenantId;
       }
       _isAuthenticated = authed;
       _hasRequiredPermission = hasRequiredPermission;
+      _refreshingToken = false;
       _lastSync = lastSync;
       _lastSyncReport = lastSyncReport;
       _syncMode = syncMode;
-      _grantedMode = token?.grantedMode ?? OutlookSyncMode.readOnly;
+      _grantedMode = token?.grantedMode ?? OutlookSyncMode.bidirectional;
+      if (statusMessage != null) {
+        _status = statusMessage;
+      }
     });
   }
 
@@ -107,29 +134,41 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
               syncMode: _syncMode,
               grantedMode: _grantedMode,
               lastSync: _lastSync,
+              isRefreshingToken: _refreshingToken,
+              lastSyncFailed: _lastSyncReport?.success == false,
             ),
             const SizedBox(height: 24),
             _sectionTitle('\u914d\u7f6e'),
             const SizedBox(height: 8),
             _Panel(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
                     controller: _clientIdController,
                     decoration: const InputDecoration(
                       labelText: '\u5ba2\u6237\u7aef ID',
-                      hintText: 'Azure AD \u5e94\u7528\u7684\u5ba2\u6237\u7aef ID',
+                      hintText: 'Microsoft Entra \u5e94\u7528\u7684\u5ba2\u6237\u7aef ID',
                       prefixIcon: Icon(Icons.key_outlined, size: 20),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _tenantIdController,
-                    decoration: const InputDecoration(
-                      labelText: '\u79df\u6237 ID',
-                      hintText: 'Azure AD \u7684\u79df\u6237 ID\uff0c\u6216 common',
-                      prefixIcon: Icon(Icons.business_outlined, size: 20),
-                    ),
+                  _StaticConfigTile(
+                    icon: Icons.account_tree_outlined,
+                    title: 'Authority',
+                    value: OutlookOAuthPlatformConfig.authority,
+                  ),
+                  const SizedBox(height: 12),
+                  _StaticConfigTile(
+                    icon: Icons.link_outlined,
+                    title: 'Redirect URI',
+                    value: OutlookOAuthPlatformConfig.redirectUri,
+                  ),
+                  const SizedBox(height: 12),
+                  _StaticConfigTile(
+                    icon: Icons.shield_outlined,
+                    title: 'Scope',
+                    value: OutlookOAuthPlatformConfig.scopeString,
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -157,10 +196,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   const SizedBox(height: 12),
                   if (!_isAuthenticated) ...[
                     Text(
-                      _syncMode == OutlookSyncMode.bidirectional
-                          ? '\u6b65\u9aa4 1\uff1a\u6253\u5f00\u6d4f\u89c8\u5668\u5b8c\u6210 Microsoft \u8d26\u53f7\u767b\u5f55\u4e0e\u6388\u6743\uff08\u672c\u6b21\u4f1a\u7533\u8bf7 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4ec5\u7528\u4e8e FlowPlan \u6258\u7ba1\u7684\u4e13\u5c5e\u65e5\u5386\u672c\uff09\u3002'
-                          : '\u6b65\u9aa4 1\uff1a\u6253\u5f00\u6d4f\u89c8\u5668\u5b8c\u6210 Microsoft \u8d26\u53f7\u767b\u5f55\u4e0e\u6388\u6743\u3002',
-                      style: TextStyle(fontSize: 13),
+                      '步骤 1：点击下方按钮后，FlowPlan 会按 Microsoft identity platform Authorization Code Flow + PKCE 打开浏览器登录个人 Outlook 账号。',
+                      style: const TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -168,24 +205,25 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       child: OutlinedButton.icon(
                         onPressed: _startAuth,
                         icon: const Icon(Icons.open_in_browser, size: 18),
-                        label: Text(
-                          _syncMode == OutlookSyncMode.bidirectional
-                              ? '\u6253\u5f00\u6d4f\u89c8\u5668\u6388\u6743\uff08\u8bfb\u5199\uff09'
-                              : '\u6253\u5f00\u6d4f\u89c8\u5668\u6388\u6743',
-                        ),
+                        label: const Text('连接 Outlook 日历'),
                       ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      '\u6b65\u9aa4 2\uff1a\u767b\u5f55\u5b8c\u6210\u540e\uff0c\u628a\u56de\u8c03\u5730\u5740\u91cc\u7684 code \u53c2\u6570\u7c98\u8d34\u5230\u4e0b\u65b9\u3002',
+                      '登录完成后，请复制浏览器地址栏中 code= 后面的授权码，粘贴回这里。',
                       style: TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      '为了安全校验 state，推荐直接粘贴浏览器完整地址栏内容，系统会自动解析 code 和 state。',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _authCodeController,
                       decoration: const InputDecoration(
-                        labelText: '\u6388\u6743\u7801\uff08code\uff09',
-                        hintText: '\u7c98\u8d34\u56de\u8c03 URL \u4e2d\u7684 code \u53c2\u6570',
+                        labelText: '粘贴授权码',
+                        hintText: '可粘贴完整回调地址，或包含 code 与 state 的查询串',
                         prefixIcon: Icon(Icons.vpn_key_outlined, size: 20),
                       ),
                     ),
@@ -195,7 +233,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       child: ElevatedButton.icon(
                         onPressed: _exchangeCode,
                         icon: const Icon(Icons.login, size: 18),
-                        label: const Text('\u5b8c\u6210\u8ba4\u8bc1'),
+                        label: const Text('提交授权码'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0078D4),
                           foregroundColor: Colors.white,
@@ -208,18 +246,18 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       leading: const Icon(Icons.check_circle, color: Color(0xFF43A047)),
                       title: Text(
                         _hasRequiredPermission
-                            ? '\u5f53\u524d\u8d26\u53f7\u5df2\u8ba4\u8bc1'
-                            : '\u5f53\u524d\u8d26\u53f7\u5df2\u8fde\u63a5\uff0c\u4f46\u9700\u8981\u91cd\u65b0\u8ba4\u8bc1',
+                            ? '当前 Outlook 已连接'
+                            : '当前 Outlook 已连接，但建议重新认证',
                       ),
                       subtitle: Text(
                         _hasRequiredPermission
-                            ? '\u5f53\u524d\u6388\u6743\uff1a${_authorizationLabel(_grantedMode)}\u3002\u5982\u9700\u5207\u6362\u6743\u9650\u7ea7\u522b\uff0c\u53ef\u9000\u51fa\u540e\u91cd\u65b0\u8ba4\u8bc1\u3002'
-                            : '\u5f53\u524d\u9009\u4e2d\u6a21\u5f0f\u4e3a\u300c${_syncMode.label}\u300d\uff0c\u4f46\u73b0\u6709 Outlook \u6388\u6743\u4ecd\u662f${_authorizationLabel(_grantedMode)}\uff0c\u8bf7\u91cd\u65b0\u8fdb\u884c\u6d4f\u89c8\u5668\u6388\u6743\u3002',
+                            ? '当前授权：${_authorizationLabel(_grantedMode)}。是否写回 Outlook 取决于你选择的同步模式，而不是令牌本身。'
+                            : '当前选择的同步模式为“${_syncMode.label}”，请重新完成一次 Microsoft 登录，确保新的浏览器会话与当前配置一致。',
                       ),
                       trailing: TextButton(
                         onPressed: _logout,
                         child: const Text(
-                          '\u9000\u51fa\u767b\u5f55',
+                          '断开 Outlook 连接',
                           style: TextStyle(color: Colors.redAccent),
                         ),
                       ),
@@ -322,7 +360,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       label: Text(
                         _syncing
                             ? '\u540c\u6b65\u4e2d...'
-                            : _syncMode.syncActionLabel,
+                            : '手动同步 Outlook 日历',
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0078D4),
@@ -392,23 +430,23 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   const _HelpRow(
                     num: '1.',
                     text:
-                        '\u5728 Azure Portal \u6ce8\u518c\u5e94\u7528\uff0c\u83b7\u53d6\u5ba2\u6237\u7aef ID \u548c\u79df\u6237 ID\u3002',
+                        '在 Microsoft Entra 中注册 Public Client 应用，记录客户端 ID，不要填写 client_secret。',
                   ),
                   const _HelpRow(
                     num: '2.',
                     text:
-                        '\u5728\u201c\u91cd\u5b9a\u5411 URI\u201d\u4e2d\u6dfb\u52a0\uff1ahttp://localhost:8400/callback',
+                        '重定向 URI 必须固定为：https://login.microsoftonline.com/common/oauth2/nativeclient',
                   ),
                   _HelpRow(num: '3.', text: _permissionHelpText()),
                   const _HelpRow(
                     num: '4.',
                     text:
-                        'Outlook \u666e\u901a\u65e5\u5386\u9ed8\u8ba4\u4fdd\u6301\u53ea\u8bfb\uff0cFlowPlan \u53ea\u4f1a\u5bf9\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u6267\u884c\u5199\u56de\u3002',
+                        'Authority 固定使用 https://login.microsoftonline.com/consumers，不要使用学校域名、organizations 或具体 tenant ID。',
                   ),
                   const _HelpRow(
                     num: '5.',
                     text:
-                        'Outlook \u65e5\u5386\u4f1a\u5148\u540c\u6b65\u6210 FlowPlan \u7684\u65e5\u5386\u672c\uff0c\u540e\u7eed\u5bf9\u5e94\u7684\u53cc\u5411\u5199\u56de\u4ec5\u4f1a\u9488\u5bf9 FlowPlan \u4e13\u5c5e\u5bb9\u5668\u9010\u6b65\u5f00\u653e\u3002',
+                        'Outlook 普通日历默认保持只读，FlowPlan 只会对自己托管的 Outlook 专属日历本执行写回。',
                   ),
                 ],
               ),
@@ -428,17 +466,14 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     switch (mode) {
       case OutlookSyncMode.paused:
       case OutlookSyncMode.readOnly:
-        return '\u53ea\u8bfb\u6388\u6743';
+        return '只读授权';
       case OutlookSyncMode.bidirectional:
-        return '\u8bfb\u5199\u6388\u6743';
+        return '读写授权';
     }
   }
 
   String _permissionHelpText() {
-    if (_syncMode.requiresWritePermission) {
-      return '\u5728 API \u6743\u9650\u4e2d\u6dfb\u52a0\uff1aCalendars.ReadWrite\u3001User.Read\u3001offline_access\u3002\u5982\u679c\u4ece\u53ea\u8bfb\u5207\u6362\u5230\u53cc\u5411\u540c\u6b65\uff0c\u8bf7\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\u3002';
-    }
-    return '\u5728 API \u6743\u9650\u4e2d\u6dfb\u52a0\uff1aCalendars.Read\u3001User.Read\u3001offline_access\u3002';
+    return '当前实现固定申请 openid、profile、offline_access、User.Read、Calendars.ReadWrite，并通过 FlowPlan 内部同步模式控制只读 / 双向 / 暂停。';
   }
 
   Widget _sectionTitle(String title) {
@@ -925,40 +960,6 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
           ),
       ],
     );
-  }
-
-  IconData _conflictIcon(OutlookFieldConflictSummary conflict) {
-    switch (conflict.conflictState) {
-      case OutlookTaskMirrorConflictState.pendingLocalPush:
-        return Icons.upload_file_outlined;
-      case OutlookTaskMirrorConflictState.remoteDeleted:
-        return Icons.delete_outline;
-      case OutlookTaskMirrorConflictState.remoteChanged:
-        return Icons.compare_arrows_outlined;
-      case OutlookTaskMirrorConflictState.divergent:
-        return Icons.call_split_outlined;
-      case OutlookTaskMirrorConflictState.writeFailed:
-        return Icons.error_outline;
-      case OutlookTaskMirrorConflictState.none:
-        return Icons.rule_folder_outlined;
-    }
-  }
-
-  Color _conflictColor(OutlookFieldConflictSummary conflict) {
-    switch (conflict.conflictState) {
-      case OutlookTaskMirrorConflictState.pendingLocalPush:
-        return const Color(0xFF0078D4);
-      case OutlookTaskMirrorConflictState.remoteDeleted:
-        return const Color(0xFFE53935);
-      case OutlookTaskMirrorConflictState.remoteChanged:
-        return const Color(0xFFFB8C00);
-      case OutlookTaskMirrorConflictState.divergent:
-        return const Color(0xFF8E24AA);
-      case OutlookTaskMirrorConflictState.writeFailed:
-        return const Color(0xFFE53935);
-      case OutlookTaskMirrorConflictState.none:
-        return const Color(0xFF43A047);
-    }
   }
 
   Future<void> _confirmAndRunConflictAction({
@@ -1812,18 +1813,16 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 
   Future<void> _saveConfig() async {
     final clientId = _clientIdController.text.trim();
-    final tenantId = _tenantIdController.text.trim();
-    if (clientId.isEmpty || tenantId.isEmpty) {
-      setState(() => _status = '\u8bf7\u586b\u5199\u5b8c\u6574\u7684\u5ba2\u6237\u7aef ID \u548c\u79df\u6237 ID\u3002');
+    if (clientId.isEmpty) {
+      setState(() => _status = '请填写完整的客户端 ID。');
       return;
     }
 
-    await OutlookAuthService.saveConfig(clientId, tenantId);
+    await OutlookAuthService.saveConfig(clientId);
     if (!mounted) return;
     setState(() {
-      _status = _syncMode.requiresWritePermission
-          ? '\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u540e\u7eed\u8ba4\u8bc1\u5c06\u7533\u8bf7 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4ec5\u7528\u4e8e FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002'
-          : '\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002\u540e\u7eed\u8ba4\u8bc1\u5c06\u7533\u8bf7 Outlook \u65e5\u5386\u53ea\u8bfb\u6743\u9650\u3002';
+      _status =
+          'OAuth 配置已保存。后续会固定使用 consumers + nativeclient + PKCE 方式连接个人 Outlook。';
     });
   }
 
@@ -1836,7 +1835,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       _syncMode = mode;
       _hasRequiredPermission = _isAuthenticated && hasRequiredPermission;
       _status = !_isAuthenticated
-          ? '\u540c\u6b65\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\u201c${mode.label}\u201d\u3002\u540e\u7eed\u767b\u5f55 Outlook \u65f6\uff0cFlowPlan \u4f1a\u6309\u8be5\u6a21\u5f0f\u7533\u8bf7\u6743\u9650\u3002'
+          ? '同步模式已切换为“${mode.label}”。连接 Outlook 后，FlowPlan 会按该模式决定是否写回。'
           : hasRequiredPermission
               ? '\u540c\u6b65\u6a21\u5f0f\u5df2\u66f4\u65b0\u4e3a\u201c${mode.label}\u201d\u3002'
               : '\u540c\u6b65\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\u201c${mode.label}\u201d\uff0c\u4f46\u5f53\u524d Outlook \u6388\u6743\u4ecd\u4e3a${_authorizationLabel(_grantedMode)}\uff0c\u8bf7\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\u3002';
@@ -1844,64 +1843,90 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   }
 
   Future<void> _startAuth() async {
-    final config = await OutlookAuthService.loadConfig();
-    if (config == null) {
-      setState(() => _status = '\u8bf7\u5148\u4fdd\u5b58 OAuth \u914d\u7f6e\u3002');
-      return;
-    }
-
-    final launched = await OutlookAuthService.launchAuth(
-      config,
-      requestedMode: _syncMode,
-    );
-    if (!launched && mounted) {
-      setState(() => _status = '\u65e0\u6cd5\u6253\u5f00\u6d4f\u89c8\u5668\uff0c\u8bf7\u68c0\u67e5\u7cfb\u7edf\u9ed8\u8ba4\u6d4f\u89c8\u5668\u8bbe\u7f6e\u3002');
-    }
+    await _connectOutlookCalendar();
   }
 
   Future<void> _exchangeCode() async {
-    final code = _authCodeController.text.trim();
-    if (code.isEmpty) {
-      setState(() => _status = '\u8bf7\u8f93\u5165\u6388\u6743\u7801\u3002');
+    await _submitOutlookAuthorization();
+  }
+
+  Future<void> _logout() async {
+    await _disconnectOutlookCalendar();
+  }
+
+  Future<void> _connectOutlookCalendar() async {
+    final config = await OutlookAuthService.loadConfig();
+    if (config == null) {
+      setState(() => _status = '请先保存 OAuth 配置。');
+      return;
+    }
+
+    final launched = await OutlookCalendarService(config).signInWithMicrosoft(
+      requestedMode: _syncMode,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _status = launched
+          ? '浏览器已打开。登录完成后，请复制浏览器地址栏中 code= 后面的授权码并粘贴回来；为了校验 state，推荐直接粘贴完整地址栏内容。'
+          : '无法打开浏览器，请检查系统默认浏览器设置。';
+    });
+  }
+
+  Future<void> _submitOutlookAuthorization() async {
+    final rawInput = _authCodeController.text.trim();
+    if (rawInput.isEmpty) {
+      setState(() => _status = '请输入授权码或完整回调地址。');
       return;
     }
 
     final config = await OutlookAuthService.loadConfig();
     if (config == null) {
-      setState(() => _status = '\u8bf7\u5148\u4fdd\u5b58 OAuth \u914d\u7f6e\u3002');
+      setState(() => _status = '请先保存 OAuth 配置。');
       return;
     }
 
-    final token = await OutlookAuthService.exchangeCode(
-      config,
-      code,
-      requestedMode: _syncMode,
-    );
-    if (!mounted) return;
-
-    if (token != null) {
+    try {
+      final token = await OutlookCalendarService(config).exchangeCodeForToken(
+        rawInput,
+        requestedMode: _syncMode,
+      );
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _isAuthenticated = true;
         _grantedMode = token.grantedMode;
-        _hasRequiredPermission = token.supportsMode(_syncMode);
-        _status = token.grantedMode == OutlookSyncMode.bidirectional
-            ? '\u8ba4\u8bc1\u6210\u529f\u3002FlowPlan \u73b0\u5728\u5df2\u5177\u5907 Outlook \u8bfb\u5199\u6743\u9650\uff0c\u4f46\u8fdc\u7aef\u5199\u5165\u4ecd\u53ea\u4f1a\u9488\u5bf9 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002'
-            : '\u8ba4\u8bc1\u6210\u529f\u3002FlowPlan \u73b0\u5728\u4f1a\u4ece Outlook \u5355\u5411\u8bfb\u53d6\u65e5\u5386\u6570\u636e\u3002';
+        _hasRequiredPermission =
+            _syncMode == OutlookSyncMode.paused || token.supportsMode(_syncMode);
+        _status =
+            '认证成功。FlowPlan 已连接个人 Outlook 账号，并会在 access_token 过期后自动使用 refresh_token 刷新。';
       });
-      return;
+    } on OutlookAuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _status = error.userMessage);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _status = '认证失败：$error');
     }
-
-    setState(() => _status = '\u8ba4\u8bc1\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u6388\u6743\u7801\u662f\u5426\u6b63\u786e\u3002');
   }
 
-  Future<void> _logout() async {
+  Future<void> _disconnectOutlookCalendar() async {
     await OutlookAuthService.logout();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _isAuthenticated = false;
       _hasRequiredPermission = false;
-      _grantedMode = OutlookSyncMode.readOnly;
-      _status = '\u5df2\u9000\u51fa\u767b\u5f55\u3002';
+      _grantedMode = OutlookSyncMode.bidirectional;
+      _authCodeController.clear();
+      _status = '已断开 Outlook 连接，本地保存的令牌已清除。';
     });
   }
 
@@ -1940,6 +1965,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         ref.read(outlookSyncBindingsRepositoryProvider),
         ref.read(outlookTaskMirrorRepositoryProvider),
         config,
+        ref.read(dataOperationLogRepositoryProvider),
       );
       final result = await engine.sync();
       await ref.read(reminderServiceProvider).rebuildSystemSchedule();
@@ -2100,6 +2126,8 @@ class _StatusCard extends StatelessWidget {
     required this.syncMode,
     required this.grantedMode,
     required this.lastSync,
+    required this.isRefreshingToken,
+    required this.lastSyncFailed,
   });
 
   final bool isAuthenticated;
@@ -2107,11 +2135,17 @@ class _StatusCard extends StatelessWidget {
   final OutlookSyncMode syncMode;
   final OutlookSyncMode grantedMode;
   final DateTime? lastSync;
+  final bool isRefreshingToken;
+  final bool lastSyncFailed;
 
   @override
   Widget build(BuildContext context) {
     final enabled = isAuthenticated && syncMode.allowsPull && hasRequiredPermission;
-    final color = enabled
+    final color = isRefreshingToken
+        ? const Color(0xFF1E88E5)
+        : lastSyncFailed
+            ? const Color(0xFFE53935)
+            : enabled
         ? const Color(0xFF43A047)
         : syncMode == OutlookSyncMode.paused
             ? Colors.orange
@@ -2142,6 +2176,15 @@ class _StatusCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                 ),
                 const SizedBox(height: 4),
+                Text(
+                  '当前连接状态：${_connectionStatusLabel()}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   '\u5f53\u524d\u6a21\u5f0f\uff1a${syncMode.label}',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -2181,8 +2224,14 @@ class _StatusCard extends StatelessWidget {
   }
 
   String _titleText() {
+    if (isRefreshingToken) {
+      return 'Outlook 连接仍可继续，正在刷新 token';
+    }
     if (!isAuthenticated) {
       return '\u5c1a\u672a\u8fde\u63a5 Outlook';
+    }
+    if (lastSyncFailed) {
+      return 'Outlook 已连接，但最近一次同步失败';
     }
     if (!hasRequiredPermission) {
       return '\u5df2\u8fde\u63a5 Outlook\uff08\u9700\u8981\u91cd\u65b0\u8ba4\u8bc1\uff09';
@@ -2191,6 +2240,19 @@ class _StatusCard extends StatelessWidget {
       return '\u5df2\u8fde\u63a5 Outlook\uff08\u8bfb\u5199\u6388\u6743\uff09';
     }
     return '\u5df2\u8fde\u63a5 Outlook\uff08\u53ea\u8bfb\u6388\u6743\uff09';
+  }
+
+  String _connectionStatusLabel() {
+    if (isRefreshingToken) {
+      return 'token 已过期，正在刷新';
+    }
+    if (!isAuthenticated) {
+      return '未连接';
+    }
+    if (lastSyncFailed) {
+      return '同步失败';
+    }
+    return '已连接';
   }
 
   String _permissionLabel(OutlookSyncMode mode) {
@@ -2226,6 +2288,57 @@ class _Panel extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,
+    );
+  }
+}
+
+class _StaticConfigTile extends StatelessWidget {
+  const _StaticConfigTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

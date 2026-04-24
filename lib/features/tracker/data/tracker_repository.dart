@@ -283,7 +283,7 @@ class TrackerRepository {
         ActivityHeatmapBucket(
           start: bucketStart,
           end: bucketWindows[month - 1].end,
-          shortLabel: '${month}\u6708',
+          shortLabel: '$month\u6708',
           longLabel: '${anchorDate.year}\u5e74$month\u6708',
           completedCount: counter.completedCount,
           totalMinutes: counter.totalMinutes,

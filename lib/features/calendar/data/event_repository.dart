@@ -1,10 +1,12 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../audit/data_operation_log_repository.dart';
 
 class EventRepository {
   final AppDatabase _db;
-  EventRepository(this._db);
+  final DataOperationLogRepository? _operationLogRepository;
+  EventRepository(this._db, [this._operationLogRepository]);
 
   Stream<List<CalendarEvent>> _watchEventsInRange({
     required DateTime start,
@@ -36,7 +38,8 @@ class EventRepository {
     query.orderBy([OrderingTerm.asc(_db.calendarEvents.dtstart)]);
 
     return query.watch().map(
-          (rows) => rows.map((row) => row.readTable(_db.calendarEvents)).toList(),
+          (rows) =>
+              rows.map((row) => row.readTable(_db.calendarEvents)).toList(),
         );
   }
 
@@ -114,7 +117,9 @@ class EventRepository {
             ..orderBy([(e) => OrderingTerm(expression: e.dtstart)]))
           .get();
 
-  Future<List<CalendarEvent>> getByCalendarIds(Iterable<int> calendarIds) async {
+  Future<List<CalendarEvent>> getByCalendarIds(
+    Iterable<int> calendarIds,
+  ) async {
     final ids = calendarIds.toSet().toList(growable: false);
     if (ids.isEmpty) {
       return const <CalendarEvent>[];
@@ -129,20 +134,66 @@ class EventRepository {
   Future<List<CalendarEvent>> getAllByUid(String uid) =>
       (_db.select(_db.calendarEvents)..where((e) => e.uid.equals(uid))).get();
 
-  Future<int> create(CalendarEventsCompanion companion) async {
+  Future<int> create(
+    CalendarEventsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'create',
+    String? summary,
+    Object? metadata,
+  }) async {
     await _ensureEventCalendarBinding(
       companion.eventCalendarId,
       requirePresent: true,
     );
-    return _db.into(_db.calendarEvents).insert(companion);
+    final id = await _db.into(_db.calendarEvents).insert(companion);
+    if (audit) {
+      final created = await getById(id);
+      if (created != null) {
+        await _recordEventOperation(
+          actor: actor,
+          action: action,
+          event: created,
+          summary:
+              summary ?? '\u521b\u5efa\u65e5\u7a0b\u300c${created.summary}\u300d',
+          after: created.toJson(),
+          metadata: metadata,
+        );
+      }
+    }
+    return id;
   }
 
-  Future<bool> update(CalendarEventsCompanion companion) async {
+  Future<bool> update(
+    CalendarEventsCompanion companion, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'update',
+    String? summary,
+    Object? metadata,
+  }) async {
     await _ensureEventCalendarBinding(
       companion.eventCalendarId,
       requirePresent: false,
     );
-    return _db.update(_db.calendarEvents).replace(companion);
+    final id = companion.id.present ? companion.id.value : null;
+    final before = id == null ? null : await getById(id);
+    final updated = await _db.update(_db.calendarEvents).replace(companion);
+    if (audit && updated && id != null) {
+      final after = await getById(id);
+      final label =
+          after?.summary ?? before?.summary ?? '\u672a\u547d\u540d\u65e5\u7a0b';
+      await _recordEventOperation(
+        actor: actor,
+        action: action,
+        event: after ?? before,
+        summary: summary ?? '\u66f4\u65b0\u65e5\u7a0b\u300c$label\u300d',
+        before: before?.toJson(),
+        after: after?.toJson(),
+        metadata: metadata,
+      );
+    }
+    return updated;
   }
 
   Future<void> updateTimes(int id, DateTime dtstart, DateTime dtend) =>
@@ -153,8 +204,31 @@ class EventRepository {
             ),
           );
 
-  Future<int> delete(int id) =>
-      (_db.delete(_db.calendarEvents)..where((e) => e.id.equals(id))).go();
+  Future<int> delete(
+    int id, {
+    bool audit = true,
+    String actor = 'user',
+    String action = 'delete',
+    String? summary,
+    Object? metadata,
+  }) async {
+    final before = audit ? await getById(id) : null;
+    final deleted = await (_db.delete(_db.calendarEvents)
+          ..where((e) => e.id.equals(id)))
+        .go();
+    if (audit && deleted > 0 && before != null) {
+      await _recordEventOperation(
+        actor: actor,
+        action: action,
+        event: before,
+        summary:
+            summary ?? '\u5220\u9664\u65e5\u7a0b\u300c${before.summary}\u300d',
+        before: before.toJson(),
+        metadata: metadata,
+      );
+    }
+    return deleted;
+  }
 
   Future<int> deleteByCalendarId(int calendarId) =>
       (_db.delete(_db.calendarEvents)
@@ -198,9 +272,7 @@ class EventRepository {
   }) async {
     await (_db.delete(_db.calendarEvents)
           ..where(
-            (e) =>
-                e.source.equals(source) &
-                e.eventCalendarId.equals(calendarId),
+            (e) => e.source.equals(source) & e.eventCalendarId.equals(calendarId),
           ))
         .go();
   }
@@ -226,8 +298,7 @@ class EventRepository {
     if (matches.length > 1) {
       final duplicateIds = matches.skip(1).map((event) => event.id).toList();
       if (duplicateIds.isNotEmpty) {
-        await (_db.delete(_db.calendarEvents)
-              ..where((e) => e.id.isIn(duplicateIds)))
+        await (_db.delete(_db.calendarEvents)..where((e) => e.id.isIn(duplicateIds)))
             .go();
       }
     }
@@ -287,9 +358,10 @@ class EventRepository {
           _db.calendarEvents.dtstart.isBiggerOrEqualValue(start) &
           _db.calendarEvents.dtstart.isSmallerThanValue(end),
     );
-    return query
-        .get()
-        .then((rows) => rows.map((row) => row.readTable(_db.calendarEvents)).toList());
+    return query.get().then(
+          (rows) =>
+              rows.map((row) => row.readTable(_db.calendarEvents)).toList(),
+        );
   }
 
   Future<List<CalendarEvent>> getEventsForDate(DateTime date) {
@@ -306,8 +378,34 @@ class EventRepository {
           _db.calendarEvents.dtstart.isSmallerThanValue(end),
     );
     query.orderBy([OrderingTerm.asc(_db.calendarEvents.dtstart)]);
-    return query
-        .get()
-        .then((rows) => rows.map((row) => row.readTable(_db.calendarEvents)).toList());
+    return query.get().then(
+          (rows) =>
+              rows.map((row) => row.readTable(_db.calendarEvents)).toList(),
+        );
+  }
+
+  Future<void> _recordEventOperation({
+    required String actor,
+    required String action,
+    required CalendarEvent? event,
+    required String summary,
+    Object? before,
+    Object? after,
+    Object? metadata,
+  }) async {
+    final operationLogs = _operationLogRepository;
+    if (operationLogs == null || event == null) {
+      return;
+    }
+    await operationLogs.record(
+      actor: actor,
+      action: action,
+      entityType: 'calendar_event',
+      entityId: event.id.toString(),
+      summary: summary,
+      before: before,
+      after: after,
+      metadata: metadata,
+    );
   }
 }

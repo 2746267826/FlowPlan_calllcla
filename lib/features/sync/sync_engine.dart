@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../audit/data_operation_log_repository.dart';
 import '../calendar/data/calendar_books_repository.dart';
 import '../calendar/data/event_repository.dart';
 import '../task/data/task_repository.dart';
@@ -135,6 +136,7 @@ class SyncEngine {
   final OutlookSyncBindingsRepository _taskListBindingsRepo;
   final OutlookTaskMirrorRepository _taskMirrorRepo;
   final OutlookConfig _config;
+  final DataOperationLogRepository? _operationLogRepository;
   late MsGraphService _graphService;
 
   static const _deltaLinkKeyPrefix = 'outlook_sync_delta_link.';
@@ -167,7 +169,7 @@ class SyncEngine {
     this._taskListBindingsRepo,
     this._taskMirrorRepo,
     this._config,
-  );
+    [this._operationLogRepository]);
 
   Future<
       ({
@@ -267,6 +269,27 @@ class SyncEngine {
         ),
         prefsInstance: prefs,
       );
+      await _operationLogRepository?.record(
+        actor: 'user',
+        action: 'outlook_sync',
+        entityType: 'outlook_sync',
+        summary: '\u5df2\u5b8c\u6210 Outlook \u540c\u6b65',
+        metadata: <String, Object?>{
+          'mode': syncMode.name,
+          'calendar_books': calendars.length,
+          'downloaded': downloaded,
+          'mirrored_created': mirroredCreated,
+          'mirrored_updated': mirroredUpdated,
+          'mirrored_deleted': mirroredDeleted,
+          'mirrored_conflicted': mirroredConflicted,
+          'calendar_details': calendarDetails
+              .map((detail) => detail.toJson())
+              .toList(growable: false),
+          'task_mirror_details': taskMirrorDetails
+              .map((detail) => detail.toJson())
+              .toList(growable: false),
+        },
+      );
 
       return (
         calendarBooks: calendars.length,
@@ -347,7 +370,16 @@ class SyncEngine {
         source: 'outlook',
         calendarId: calendar.id,
       );
-      await _calendarBooksRepo.deleteEventCalendar(calendar.id);
+      await _calendarBooksRepo.deleteEventCalendar(
+        calendar.id,
+        actor: 'sync',
+        action: 'delete_stale_synced_calendar',
+        summary: '\u79fb\u9664\u5df2\u5931\u6548\u7684 Outlook \u540c\u6b65\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        metadata: <String, Object?>{
+          'remote_id': remoteId,
+          'source': 'outlook',
+        },
+      );
       await prefs.remove('$_deltaLinkKeyPrefix$remoteId');
     }
   }

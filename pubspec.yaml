@@ -2,7 +2,7 @@ name: flowplan
 description: AI 智能排程日历 — 跨平台本地优先任务管理
 
 publish_to: 'none'
-version: 1.3.1+131
+version: 1.4.0+140
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -55,6 +55,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   file_picker: ^10.3.10
   http: ^1.6.0
+  crypto: ^3.0.5
   url_launcher: ^6.3.2
 
 dev_dependencies:
@@ -82,6 +83,6 @@ msix_config:
   display_name: FlowPlan
   publisher_display_name: FlowPlan
   identity_name: com.flowplan
-  msix_version: 1.2.1.121
+  msix_version: 1.4.0.140
   logo_path: windows/runner/resources/app_icon_512.png
   trim_logo: false

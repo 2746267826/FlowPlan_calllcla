@@ -3,10 +3,11 @@
 import 'package:http/http.dart' as http;
 
 import 'outlook_auth_service.dart';
+import 'outlook_oauth_config.dart';
 
 class MsGraphService {
   static const _baseUrl = 'https://graph.microsoft.com/v1.0';
-  static const _defaultTimezone = 'Asia/Shanghai';
+  static const _defaultTimezone = OutlookOAuthPlatformConfig.preferTimezone;
   static const _defaultOutlookColor = '#0078D4';
 
   MsGraphService(
@@ -275,7 +276,7 @@ class MsGraphService {
   }) {
     return {
       'subject': subject,
-      'body': body != null ? {'contentType': 'Text', 'content': body} : null,
+      'body': body != null ? {'contentType': 'HTML', 'content': body} : null,
       'start': {
         'dateTime': start.toIso8601String(),
         'timeZone': _defaultTimezone,

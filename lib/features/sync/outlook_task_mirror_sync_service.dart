@@ -606,7 +606,7 @@ class OutlookTaskMirrorSyncService {
       task: context.task,
       snapshot: remoteSnapshot,
     );
-    await taskRepository.update(updatedTask);
+    await taskRepository.update(updatedTask, audit: false);
 
     final refreshedTask = await taskRepository.getById(taskId);
     if (refreshedTask == null) {

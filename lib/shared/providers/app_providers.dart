@@ -30,19 +30,22 @@ import '../../features/sync/outlook_task_mirror_snapshot.dart';
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  return TaskRepository(db);
-}, dependencies: [databaseProvider]);
+  final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
+  return TaskRepository(db, operationLogs);
+}, dependencies: [databaseProvider, dataOperationLogRepositoryProvider]);
 
 final eventRepositoryProvider = Provider<EventRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  return EventRepository(db);
-}, dependencies: [databaseProvider]);
+  final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
+  return EventRepository(db, operationLogs);
+}, dependencies: [databaseProvider, dataOperationLogRepositoryProvider]);
 
 final calendarBooksRepositoryProvider =
     Provider<CalendarBooksRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  return CalendarBooksRepository(db);
-}, dependencies: [databaseProvider]);
+  final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
+  return CalendarBooksRepository(db, operationLogs);
+}, dependencies: [databaseProvider, dataOperationLogRepositoryProvider]);
 
 final dataOperationLogRepositoryProvider =
     Provider<DataOperationLogRepository>((ref) {

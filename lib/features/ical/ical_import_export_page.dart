@@ -26,22 +26,22 @@ extension _IcsImportModeX on _IcsImportMode {
   String get label {
     switch (this) {
       case _IcsImportMode.smartMerge:
-        return '智能合并';
+        return '\u667a\u80fd\u5408\u5e76';
       case _IcsImportMode.appendOnly:
-        return '仅追加';
+        return '\u4ec5\u8ffd\u52a0';
       case _IcsImportMode.replaceCalendar:
-        return '清空后导入';
+        return '\u6e05\u7a7a\u540e\u5bfc\u5165';
     }
   }
 
   String get description {
     switch (this) {
       case _IcsImportMode.smartMerge:
-        return '同 UID 的日程会覆盖更新；标题与起止时间完全一致的本地日程会自动跳过。适合日常重复导入。';
+        return '\u540c UID \u65e5\u7a0b\u4f1a\u66f4\u65b0\uff0c\u91cd\u590d\u9879\u4f1a\u81ea\u52a8\u8df3\u8fc7\u3002';
       case _IcsImportMode.appendOnly:
-        return '不会改写已有日程；遇到重复项只跳过，其他内容直接追加到当前日历本。';
+        return '\u4e0d\u4f1a\u6539\u5199\u5df2\u6709\u65e5\u7a0b\uff0c\u53ea\u8ffd\u52a0\u65b0\u5185\u5bb9\u3002';
       case _IcsImportMode.replaceCalendar:
-        return '会先清空当前本地日历本中的所有日程，再导入新文件。适合完整重建某个日历本。';
+        return '\u4f1a\u5148\u6e05\u7a7a\u5f53\u524d\u65e5\u5386\u672c\uff0c\u518d\u5bfc\u5165\u65b0\u6587\u4ef6\u3002';
     }
   }
 }
@@ -55,18 +55,18 @@ extension _IcsExportScopeX on _IcsExportScope {
   String get label {
     switch (this) {
       case _IcsExportScope.selectedCalendar:
-        return '当前日历本';
+        return '\u5f53\u524d\u65e5\u5386\u672c';
       case _IcsExportScope.allLocalCalendars:
-        return '全部本地日历本';
+        return '\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c';
     }
   }
 
   String get description {
     switch (this) {
       case _IcsExportScope.selectedCalendar:
-        return '只导出当前选中的本地日历本。适合单个课程表、单个项目日历单独备份。';
+        return '\u53ea\u5bfc\u51fa\u5f53\u524d\u9009\u4e2d\u7684\u672c\u5730\u65e5\u5386\u672c\u3002';
       case _IcsExportScope.allLocalCalendars:
-        return '会把全部本地日历本中的日程合并导出到一个 .ics 文件中，不保留日历本边界。';
+        return '\u4f1a\u628a\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u4e2d\u7684\u65e5\u7a0b\u5408\u5e76\u5bfc\u51fa\u5230\u4e00\u4e2a .ics \u6587\u4ef6\u4e2d\uff0c\u4e0d\u4fdd\u7559\u65e5\u5386\u672c\u8fb9\u754c\u3002';
     }
   }
 }
@@ -147,7 +147,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             error: (error, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('加载任务本失败：$error'),
+                child: Text('闂備礁鎲″缁樻叏閹灐褰掑炊閵娧屾祫闁荤姴娲﹁ぐ鍐綖閵堝鐓涢柛顐亜婢ь噣鏌曢崶銊ョ仼闁瑰嘲缍婃俊鐑筋敍濠婂懐宕?error'),
               ),
             ),
             data: (taskLists) {
@@ -221,7 +221,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                       if (localCalendars.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         const Text(
-                          '导入策略',
+                          '\u5bfc\u5165\u7b56\u7565',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -251,7 +251,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                         ),
                         const SizedBox(height: 16),
                         const Text(
-                          '导出范围',
+                          '\u5bfc\u51fa\u8303\u56f4',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -281,7 +281,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                           localCalendars.length <= 1 &&
                                   _exportScope ==
                                       _IcsExportScope.allLocalCalendars
-                              ? '当前只有一个本地日历本，“全部本地日历本”导出与“当前日历本”效果一致。'
+                              ? '\u5f53\u524d\u53ea\u6709\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\uff0c\u201c\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u201d\u5bfc\u51fa\u4e0e\u201c\u5f53\u524d\u65e5\u5386\u672c\u201d\u6548\u679c\u4e00\u81f4\u3002'
                               : _exportScope.description,
                           style: const TextStyle(
                             fontSize: 12,
@@ -503,11 +503,11 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                       ),
                       _InfoRow(
                         icon: Icons.storage_outlined,
-                        text: '如需要保留日历本 / 任务本边界、容器默认规则和项目归属关系，请优先使用“FlowPlan 结构化容器归档”。',
+                        text: '\u5982\u9700\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u548c\u9879\u76ee\u5f52\u5c5e\u5173\u7cfb\uff0c\u8bf7\u4f18\u5148\u4f7f\u7528\u201cFlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u201d\u3002',
                       ),
                       _InfoRow(
                         icon: Icons.fact_check_outlined,
-                        text: '结构化归档导入会先展示差异预览，并在写入前自动生成数据库回滚备份。',
+                        text: '\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u4f1a\u5148\u5c55\u793a\u5dee\u5f02\u9884\u89c8\uff0c\u5e76\u5728\u5199\u5165\u524d\u81ea\u52a8\u751f\u6210\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\u3002',
                       ),
                       _InfoRow(
                         icon: Icons.restore_outlined,
@@ -645,7 +645,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'FlowPlan 结构化容器归档',
+                      'FlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
@@ -653,7 +653,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      '保留日历本 / 任务本边界、容器默认规则、日程和任务归属关系，适合跨设备迁移或选择性备份。',
+                      '\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u3001\u65e5\u7a0b\u548c\u4efb\u52a1\u5f52\u5c5e\u5173\u7cfb\uff0c\u9002\u5408\u8de8\u8bbe\u5907\u8fc1\u79fb\u6216\u9009\u62e9\u6027\u5907\u4efd\u3002',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
@@ -668,8 +668,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           const SizedBox(height: 16),
           Text(
             hasSelection
-                ? '已选择 $selectedCalendarCount 个日历本、$selectedTaskListCount 个任务本。'
-                : '请至少选择一个日历本或任务本。',
+                ? '\u5df2\u9009\u62e9 $selectedCalendarCount \u4e2a\u65e5\u5386\u672c\u3001$selectedTaskListCount \u4e2a\u4efb\u52a1\u672c\u3002'
+                : '\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u4e2a\u65e5\u5386\u672c\u6216\u4efb\u52a1\u672c\u3002',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -688,8 +688,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_upload_outlined, size: 18),
                 label: Text(
                   _exportingStructuredArchive
-                      ? '导出中...'
-                      : '导出结构化归档',
+                      ? '闂佽娴烽弫鎼佸储瑜斿畷鐢割敇閻旇　鏋?..'
+                      : '\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
               OutlinedButton.icon(
@@ -699,8 +699,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_download_outlined, size: 18),
                 label: Text(
                   _importingStructuredArchive
-                      ? '导入中...'
-                      : '导入结构化归档',
+                      ? '闂佽娴烽弫鎼佸储瑜斿畷锝夊幢濡皷鏋?..'
+                      : '\u5bfc\u5165\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
             ],
@@ -718,7 +718,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           children: [
             const Expanded(
               child: Text(
-                '选择日历本',
+                '\u9009\u62e9\u65e5\u5386\u672c',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
@@ -731,7 +731,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                             localCalendars.map((calendar) => calendar.id).toSet();
                       });
                     },
-              child: const Text('全选'),
+              child: const Text('\u5168\u9009'),
             ),
             TextButton(
               onPressed: _selectedStructuredCalendarIds.isEmpty
@@ -741,14 +741,14 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                         _selectedStructuredCalendarIds = <int>{};
                       });
                     },
-              child: const Text('清空'),
+              child: const Text('\u6e05\u7a7a'),
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (localCalendars.isEmpty)
           const Text(
-            '暂无本地日历本可导出。',
+            '\u6682\u65e0\u672c\u5730\u65e5\u5386\u672c\u53ef\u5bfc\u51fa\u3002',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           )
         else
@@ -788,7 +788,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           children: [
             const Expanded(
               child: Text(
-                '选择任务本',
+                '\u9009\u62e9\u4efb\u52a1\u672c',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
@@ -801,7 +801,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                             taskLists.map((taskList) => taskList.id).toSet();
                       });
                     },
-              child: const Text('全选'),
+              child: const Text('\u5168\u9009'),
             ),
             TextButton(
               onPressed: _selectedStructuredTaskListIds.isEmpty
@@ -811,14 +811,14 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                         _selectedStructuredTaskListIds = <int>{};
                       });
                     },
-              child: const Text('清空'),
+              child: const Text('\u6e05\u7a7a'),
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (taskLists.isEmpty)
           const Text(
-            '暂无任务本可导出。',
+            '\u6682\u65e0\u4efb\u52a1\u672c\u53ef\u5bfc\u51fa\u3002',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           )
         else
@@ -916,7 +916,29 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       calendarBooksRepository: ref.read(calendarBooksRepositoryProvider),
       eventRepository: ref.read(eventRepositoryProvider),
       taskRepository: ref.read(taskRepositoryProvider),
+      operationLogRepository: ref.read(dataOperationLogRepositoryProvider),
     );
+  }
+
+  Future<void> _recordAudit({
+    required String action,
+    required String entityType,
+    required String summary,
+    String? entityId,
+    Object? before,
+    Object? after,
+    Object? metadata,
+  }) {
+    return ref.read(dataOperationLogRepositoryProvider).record(
+          actor: 'user',
+          action: action,
+          entityType: entityType,
+          entityId: entityId,
+          summary: summary,
+          before: before,
+          after: after,
+          metadata: metadata,
+        );
   }
 
   Future<void> _exportStructuredArchive() async {
@@ -931,13 +953,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (archive.calendars.isEmpty && archive.taskLists.isEmpty) {
         setState(() {
           _exportingStructuredArchive = false;
-          _lastMessage = '没有可导出的日历本或任务本。';
+          _lastMessage = '\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u65e5\u5386\u672c\u6216\u4efb\u52a1\u672c\u3002';
         });
         return;
       }
 
       final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '导出 FlowPlan 结构化容器归档',
+        dialogTitle: '\u5bfc\u51fa FlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
         fileName: 'flowplan-containers-${_formatDate(DateTime.now())}.flowplan.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
@@ -946,16 +968,28 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (outputPath == null || outputPath.trim().isEmpty) {
         setState(() {
           _exportingStructuredArchive = false;
-          _lastMessage = '已取消导出结构化归档。';
+          _lastMessage = '\u5df2\u53d6\u6d88\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863\u3002';
         });
         return;
       }
 
       await File(outputPath).writeAsString(archive.toPrettyJson());
+      await _recordAudit(
+        action: 'export_structured_archive',
+        entityType: 'flowplan_archive',
+        summary: '\u5df2\u5bfc\u51fa FlowPlan \u7ed3\u6784\u5316\u5f52\u6863',
+        metadata: <String, Object?>{
+          'output_path': outputPath,
+          'calendar_ids': _selectedStructuredCalendarIds.toList(growable: false),
+          'task_list_ids': _selectedStructuredTaskListIds.toList(growable: false),
+          'calendar_count': archive.calendars.length,
+          'task_list_count': archive.taskLists.length,
+        },
+      );
       setState(() {
         _exportingStructuredArchive = false;
         _lastMessage =
-            '已导出结构化归档到 $outputPath：${archive.calendars.length} 个日历本、${archive.taskLists.length} 个任务本。';
+            '\u5df2\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863\u5230 $outputPath\uff0c\u5305\u542b ${archive.calendars.length} \u4e2a\u65e5\u5386\u672c\u3001${archive.taskLists.length} \u4e2a\u4efb\u52a1\u672c\u3002';
       });
     } catch (error) {
       if (!mounted) {
@@ -963,7 +997,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _exportingStructuredArchive = false;
-        _lastMessage = '导出结构化归档失败：$error';
+        _lastMessage = '闂佽娴烽弫鎼佸储瑜斿畷鐢割敇閻樼數锛滈梺瑙勫劤椤曨參鍩€椤掑鐏︾€规洜濞€瀵€燁槾缂佸鍎ゆ穱濠偽旂€ｎ剙鍩岄梺闈涙处閸ㄥ綊骞忚ぐ鎺懳ㄦい鏍ㄧ矌閻?error';
       });
     }
   }
@@ -981,7 +1015,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (result == null || result.files.isEmpty) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '未选择结构化归档文件。';
+          _lastMessage = '\u672a\u9009\u62e9\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u3002';
         });
         return;
       }
@@ -995,7 +1029,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       } else {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '无法读取结构化归档文件内容。';
+          _lastMessage = '\u65e0\u6cd5\u8bfb\u53d6\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u5185\u5bb9\u3002';
         });
         return;
       }
@@ -1009,7 +1043,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (mode == null) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '已取消结构化归档导入。';
+          _lastMessage = '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
         });
         return;
       }
@@ -1026,7 +1060,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (confirmed != true) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '已取消结构化归档导入。';
+          _lastMessage = '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
         });
         return;
       }
@@ -1034,6 +1068,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       final importResult = await _archiveService().importArchive(
         archive: archive,
         mode: mode,
+        sourcePath: file.path,
       );
       ref.invalidate(allEventCalendarsProvider);
       ref.invalidate(allTaskListsProvider);
@@ -1051,7 +1086,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _importingStructuredArchive = false;
-        _lastMessage = '导入结构化归档失败：$error';
+        _lastMessage = '闂佽娴烽弫鎼佸储瑜斿畷锝夊幢濞嗘垹锛滈梺瑙勫劤椤曨參鍩€椤掑鐏︾€规洜濞€瀵€燁槾缂佸鍎ゆ穱濠偽旂€ｎ剙鍩岄梺闈涙处閸ㄥ綊骞忚ぐ鎺懳ㄦい鏍ㄧ矌閻?error';
       });
     }
   }
@@ -1063,35 +1098,37 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('选择结构化导入策略'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: FlowPlanArchiveImportMode.values.map((mode) {
-                  return RadioListTile<FlowPlanArchiveImportMode>(
-                    value: mode,
-                    groupValue: selectedMode,
-                    onChanged: (value) {
-                      if (value == null) {
-                        return;
-                      }
-                      setDialogState(() => selectedMode = value);
-                    },
-                    title: Text(mode.label),
-                    subtitle: Text(mode.description),
-                  );
-                }).toList(growable: false),
+            return RadioGroup<FlowPlanArchiveImportMode>(
+              groupValue: selectedMode,
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setDialogState(() => selectedMode = value);
+              },
+              child: AlertDialog(
+                title: const Text('\u9009\u62e9\u7ed3\u6784\u5316\u5bfc\u5165\u7b56\u7565'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: FlowPlanArchiveImportMode.values.map((mode) {
+                    return RadioListTile<FlowPlanArchiveImportMode>(
+                      value: mode,
+                      title: Text(mode.label),
+                      subtitle: Text(mode.description),
+                    );
+                  }).toList(growable: false),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('\u53d6\u6d88'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(selectedMode),
+                    child: const Text('\u67e5\u770b\u5bfc\u5165\u9884\u89c8'),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(selectedMode),
-                  child: const Text('查看导入预览'),
-                ),
-              ],
             );
           },
         );
@@ -1106,7 +1143,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('确认结构化导入预览'),
+          title: const Text('\u786e\u8ba4\u7ed3\u6784\u5316\u5bfc\u5165\u9884\u89c8'),
           content: SizedBox(
             width: 560,
             child: Column(
@@ -1114,23 +1151,23 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '导入策略：${preview.mode.label}',
+                  '\u5bfc\u5165\u7b56\u7565\uff1a${preview.mode.label}',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '将新建 ${preview.createdContainers} 个容器，合并 ${preview.mergedContainers} 个同名容器；新增 ${preview.createdItems} 项，更新 ${preview.updatedItems} 项，跳过 ${preview.skippedItems} 项。',
+                  '\u5c06\u65b0\u5efa ${preview.createdContainers} \u4e2a\u5bb9\u5668\uff0c\u5408\u5e76 ${preview.mergedContainers} \u4e2a\u540c\u540d\u5bb9\u5668\uff1b\u65b0\u589e ${preview.createdItems} \u9879\uff0c\u66f4\u65b0 ${preview.updatedItems} \u9879\uff0c\u8df3\u8fc7 ${preview.skippedItems} \u9879\u3002',
                 ),
                 if (preview.removedBeforeImportItems > 0) ...[
                   const SizedBox(height: 8),
                   Text(
-                    '替换导入会先移除 ${preview.removedBeforeImportItems} 个同名容器内的旧项目。导入前会自动生成数据库回滚备份。',
+                    '\u66ff\u6362\u5bfc\u5165\u4f1a\u5148\u79fb\u9664 ${preview.removedBeforeImportItems} \u4e2a\u540c\u540d\u5bb9\u5668\u5185\u7684\u65e7\u9879\u76ee\u3002\u5bfc\u5165\u524d\u4f1a\u81ea\u52a8\u751f\u6210\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\u3002',
                     style: const TextStyle(color: Colors.red),
                   ),
                 ] else ...[
                   const SizedBox(height: 8),
                   const Text(
-                    '导入前会自动生成数据库回滚备份，可在需要时通过完整数据库恢复功能回退。',
+                    '\u5bfc\u5165\u524d\u4f1a\u81ea\u52a8\u751f\u6210\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\uff0c\u53ef\u5728\u9700\u8981\u65f6\u901a\u8fc7\u5b8c\u6574\u6570\u636e\u5e93\u6062\u590d\u529f\u80fd\u56de\u9000\u3002',
                     style: TextStyle(color: Colors.grey),
                   ),
                 ],
@@ -1144,13 +1181,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(
-                            container.kindLabel == '日历本'
+                            container.kindLabel == '\u65e5\u5386\u672c'
                                 ? Icons.calendar_month_outlined
                                 : Icons.checklist_outlined,
                           ),
-                          title: Text('${container.kindLabel}：${container.name}'),
+                          title: Text('${container.kindLabel}闂?{container.name}'),
                           subtitle: Text(
-                            '${container.actionLabel}，新增 ${container.createCount}，更新 ${container.updateCount}，跳过 ${container.skipCount}，移除 ${container.removeBeforeImportCount}',
+                            '${container.actionLabel}闂備焦瀵х粙鎴﹀嫉椤掑嫬钃熷┑鐘插暞濞?${container.createCount}闂備焦瀵х粙鎴﹀嫉椤掆偓鐓ら柛褎顨呭Λ?${container.updateCount}闂備焦瀵х粙鎴︽儗娓氣偓閹粓鏁傞懞銉ゆ唉?${container.skipCount}闂備焦瀵х粙鎴︽儔闂傚鏄傞梻?${container.removeBeforeImportCount}',
                           ),
                         );
                       }).toList(growable: false),
@@ -1163,11 +1200,11 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
+              child: const Text('\u53d6\u6d88'),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('生成备份并导入'),
+              child: const Text('\u751f\u6210\u5907\u4efd\u5e76\u5bfc\u5165'),
             ),
           ],
         );
@@ -1178,10 +1215,10 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   String _buildStructuredImportResultMessage(
     FlowPlanArchiveImportResult result,
   ) {
-    return '结构化归档导入完成：新建日历本 ${result.createdCalendars} 个，合并日历本 ${result.mergedCalendars} 个，新建任务本 ${result.createdTaskLists} 个，合并任务本 ${result.mergedTaskLists} 个；'
-        '日程新增 ${result.createdEvents} 条、更新 ${result.updatedEvents} 条、跳过 ${result.skippedEvents} 条、移除 ${result.removedEvents} 条；'
-        '任务新增 ${result.createdTasks} 条、更新 ${result.updatedTasks} 条、跳过 ${result.skippedTasks} 条、移除 ${result.removedTasks} 条。'
-        '\n\n导入前数据库回滚备份：${result.backupPath}';
+    return '\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u5b8c\u6210\uff1a\u65b0\u5efa\u65e5\u5386\u672c ${result.createdCalendars} \u4e2a\uff0c\u5408\u5e76\u65e5\u5386\u672c ${result.mergedCalendars} \u4e2a\uff0c\u65b0\u5efa\u4efb\u52a1\u672c ${result.createdTaskLists} \u4e2a\uff0c\u5408\u5e76\u4efb\u52a1\u672c ${result.mergedTaskLists} \u4e2a\uff1b'
+        '\u65e5\u7a0b\u65b0\u589e ${result.createdEvents} \u6761\u3001\u66f4\u65b0 ${result.updatedEvents} \u6761\u3001\u8df3\u8fc7 ${result.skippedEvents} \u6761\u3001\u79fb\u9664 ${result.removedEvents} \u6761\uff1b'
+        '\u4efb\u52a1\u65b0\u589e ${result.createdTasks} \u6761\u3001\u66f4\u65b0 ${result.updatedTasks} \u6761\u3001\u8df3\u8fc7 ${result.skippedTasks} \u6761\u3001\u79fb\u9664 ${result.removedTasks} \u6761\u3002'
+        '\n\n\u5bfc\u5165\u524d\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\uff1a${result.backupPath}';
   }
 
   Future<void> _importIcs(EventCalendar calendar) async {
@@ -1260,6 +1297,19 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           companions: importCompanions,
         );
         final createdCount = importCompanions.length;
+        await _recordAudit(
+          action: 'import_ics',
+          entityType: 'calendar_event_import',
+          summary: '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u66ff\u6362\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+          metadata: <String, Object?>{
+            'calendar_id': calendar.id,
+            'calendar_name': calendar.name,
+            'mode': importMode.name,
+            'source_path': file.path,
+            'deleted_count': deletedCount,
+            'created_count': createdCount,
+          },
+        );
 
         if (!mounted) {
           return;
@@ -1309,6 +1359,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           if (importMode == _IcsImportMode.smartMerge) {
             await repo.update(
               targetCompanion.copyWith(id: Value(existingId)),
+              audit: false,
             );
             existingSignatures.add(signature);
             updatedCount++;
@@ -1323,7 +1374,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           continue;
         }
 
-        final createdId = await repo.create(targetCompanion);
+        final createdId = await repo.create(targetCompanion, audit: false);
         if (uid.isNotEmpty) {
           existingIdsByUid[uid] = createdId;
         }
@@ -1334,6 +1385,21 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (!mounted) {
         return;
       }
+
+      await _recordAudit(
+        action: 'import_ics',
+        entityType: 'calendar_event_import',
+        summary: '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        metadata: <String, Object?>{
+          'calendar_id': calendar.id,
+          'calendar_name': calendar.name,
+          'mode': importMode.name,
+          'source_path': file.path,
+          'created_count': createdCount,
+          'updated_count': updatedCount,
+          'skipped_count': skippedCount,
+        },
+      );
 
       setState(() {
         _importing = false;
@@ -1386,7 +1452,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           : 'flowplan_all_local_calendars_${_formatDate(DateTime.now())}.ics';
       final calendarName = exportScope == _IcsExportScope.selectedCalendar
           ? 'FlowPlan - ${selectedCalendar.name}'
-          : 'FlowPlan - 全部本地日历本';
+          : 'FlowPlan - \u5168\u90e8\u672c\u5730\u65e5\u5386\u672c';
 
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u4fdd\u5b58 .ics \u6587\u4ef6',
@@ -1409,6 +1475,21 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           exportable,
           calendarName: calendarName,
         ),
+      );
+      await _recordAudit(
+        action: 'export_ics',
+        entityType: 'calendar_event_export',
+        summary: exportScope == _IcsExportScope.selectedCalendar
+            ? '\u5df2\u5bfc\u51fa\u65e5\u5386\u672c\u300c${selectedCalendar.name}\u300d\u7684 .ics \u6587\u4ef6'
+            : '\u5df2\u5bfc\u51fa\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u7684 .ics \u6587\u4ef6',
+        metadata: <String, Object?>{
+          'scope': exportScope.name,
+          'output_path': file.path,
+          'selected_calendar_id': selectedCalendar.id,
+          'selected_calendar_name': selectedCalendar.name,
+          'local_calendar_count': localCalendars.length,
+          'event_count': exportable.length,
+        },
       );
 
       setState(() {
@@ -1447,6 +1528,15 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
 
       await database.exportToFile(outputPath);
+      await _recordAudit(
+        action: 'export_database',
+        entityType: 'database_backup',
+        summary: '\u5df2\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
+        metadata: <String, Object?>{
+          'output_path': outputPath,
+          'flavor': appStorageFlavorLabel,
+        },
+      );
       setState(() {
         _exportingDatabase = false;
         _lastMessage = '\u5b8c\u6574\u6570\u636e\u5e93\u5df2\u5bfc\u51fa\u5230 $outputPath';
@@ -1489,6 +1579,15 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       final preparation =
           await const DatabaseRestoreService().stageRestore(sourcePath);
       final pendingRestore = await const DatabaseRestoreService().getPendingRestore();
+      await _recordAudit(
+        action: 'stage_database_restore',
+        entityType: 'database_backup',
+        summary: '\u5df2\u51c6\u5907\u6570\u636e\u5e93\u6062\u590d\u526f\u672c\uff0c\u7b49\u5f85\u4e0b\u6b21\u542f\u52a8\u5e94\u7528',
+        metadata: <String, Object?>{
+          'source_path': preparation.sourcePath,
+          'staged_path': preparation.stagedPath,
+        },
+      );
       if (!mounted) {
         return;
       }
@@ -1513,7 +1612,17 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
     setState(() => _restoringDatabase = true);
 
     try {
+      final pendingBefore = _pendingRestore;
       await const DatabaseRestoreService().clearPendingRestore();
+      await _recordAudit(
+        action: 'clear_pending_database_restore',
+        entityType: 'database_backup',
+        summary: '\u5df2\u53d6\u6d88\u5f85\u5e94\u7528\u7684\u6570\u636e\u5e93\u6062\u590d\u526f\u672c',
+        metadata: <String, Object?>{
+          'source_path': pendingBefore?.sourcePath,
+          'staged_path': pendingBefore?.stagedPath,
+        },
+      );
       if (!mounted) {
         return;
       }

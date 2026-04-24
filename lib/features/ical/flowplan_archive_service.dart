@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../audit/data_operation_log_repository.dart';
 import '../calendar/data/calendar_books_repository.dart';
 import '../calendar/data/event_repository.dart';
 import '../task/data/task_repository.dart';
@@ -18,22 +19,22 @@ extension FlowPlanArchiveImportModeX on FlowPlanArchiveImportMode {
   String get label {
     switch (this) {
       case FlowPlanArchiveImportMode.smartMerge:
-        return '智能合并';
+        return '\u667a\u80fd\u5408\u5e76';
       case FlowPlanArchiveImportMode.appendOnly:
-        return '仅追加';
+        return '\u4ec5\u8ffd\u52a0';
       case FlowPlanArchiveImportMode.replaceMatchingContainers:
-        return '替换同名容器内容';
+        return '\u66ff\u6362\u540c\u540d\u5bb9\u5668\u5185\u5bb9';
     }
   }
 
   String get description {
     switch (this) {
       case FlowPlanArchiveImportMode.smartMerge:
-        return '同名日历本 / 任务本会合并；同 UID 项目会更新，其余项目新增。';
+        return '\u540c\u540d\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u4f1a\u5408\u5e76\uff1b\u540c UID \u9879\u76ee\u4f1a\u66f4\u65b0\uff0c\u5176\u4f59\u9879\u76ee\u65b0\u589e\u3002';
       case FlowPlanArchiveImportMode.appendOnly:
-        return '不会改写已有项目；同名容器内已存在的 UID 会跳过，只追加新项目。';
+        return '\u4e0d\u4f1a\u6539\u5199\u5df2\u6709\u9879\u76ee\uff1b\u540c\u540d\u5bb9\u5668\u5185\u5df2\u5b58\u5728\u7684 UID \u4f1a\u8df3\u8fc7\uff0c\u53ea\u8ffd\u52a0\u65b0\u9879\u76ee\u3002';
       case FlowPlanArchiveImportMode.replaceMatchingContainers:
-        return '同名容器会先清空其内部项目，再导入归档内容；其他容器不受影响。';
+        return '\u540c\u540d\u5bb9\u5668\u4f1a\u5148\u6e05\u7a7a\u5176\u5185\u90e8\u9879\u76ee\uff0c\u518d\u5bfc\u5165\u5f52\u6863\u5185\u5bb9\uff1b\u5176\u4ed6\u5bb9\u5668\u4e0d\u53d7\u5f71\u54cd\u3002';
     }
   }
 }
@@ -55,14 +56,14 @@ class FlowPlanArchiveData {
   factory FlowPlanArchiveData.fromJsonString(String content) {
     final decoded = jsonDecode(content);
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('FlowPlan 结构化归档格式无效。');
+      throw const FormatException('\u0046\u006c\u006f\u0077\u0050\u006c\u0061\u006e \u7ed3\u6784\u5316\u5f52\u6863\u683c\u5f0f\u65e0\u6548\u3002');
     }
     return FlowPlanArchiveData.fromJson(decoded);
   }
 
   factory FlowPlanArchiveData.fromJson(Map<String, dynamic> json) {
     if (json['schema'] != schema) {
-      throw const FormatException('这不是 FlowPlan 结构化容器归档文件。');
+      throw const FormatException('\u8fd9\u4e0d\u662f FlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u6587\u4ef6\u3002');
     }
 
     return FlowPlanArchiveData(
@@ -128,7 +129,7 @@ class FlowPlanArchiveCalendar {
 
   factory FlowPlanArchiveCalendar.fromJson(Map<String, dynamic> json) {
     return FlowPlanArchiveCalendar(
-      name: _readString(json['name'], fallback: '未命名日历本'),
+      name: _readString(json['name'], fallback: '\u672a\u547d\u540d\u65e5\u5386\u672c'),
       colorHex: _readString(json['color_hex'], fallback: '#6B5EE4'),
       description: _readNullableString(json['description']),
       isVisible: _readBool(json['is_visible'], fallback: true),
@@ -207,7 +208,7 @@ class FlowPlanArchiveEvent {
     return FlowPlanArchiveEvent(
       uid: _readString(json['uid'], fallback: 'flowplan-import-${now.microsecondsSinceEpoch}'),
       dtstamp: _readDateTime(json['dtstamp']) ?? now,
-      summary: _readString(json['summary'], fallback: '未命名日程'),
+      summary: _readString(json['summary'], fallback: '\u672a\u547d\u540d\u65e5\u7a0b'),
       description: _readNullableString(json['description']),
       location: _readNullableString(json['location']),
       dtstart: _readDateTime(json['dtstart']) ?? now,
@@ -306,7 +307,7 @@ class FlowPlanArchiveTaskList {
 
   factory FlowPlanArchiveTaskList.fromJson(Map<String, dynamic> json) {
     return FlowPlanArchiveTaskList(
-      name: _readString(json['name'], fallback: '未命名任务本'),
+      name: _readString(json['name'], fallback: '\u672a\u547d\u540d\u4efb\u52a1\u672c'),
       colorHex: _readString(json['color_hex'], fallback: '#0EA8A0'),
       emoji: _readNullableString(json['emoji']),
       isVisible: _readBool(json['is_visible'], fallback: true),
@@ -413,7 +414,7 @@ class FlowPlanArchiveTask {
     return FlowPlanArchiveTask(
       uid: _readString(json['uid'], fallback: 'flowplan-task-import-${now.microsecondsSinceEpoch}'),
       dtstamp: _readDateTime(json['dtstamp']) ?? now,
-      summary: _readString(json['summary'], fallback: '未命名任务'),
+      summary: _readString(json['summary'], fallback: '\u672a\u547d\u540d\u4efb\u52a1'),
       description: _readNullableString(json['description']),
       dtstart: _readDateTime(json['dtstart']),
       due: _readDateTime(json['due']),
@@ -509,7 +510,7 @@ class FlowPlanArchiveContainerPreview {
   final int skipCount;
   final int removeBeforeImportCount;
 
-  String get actionLabel => willCreateContainer ? '新建容器' : '合并到同名容器';
+  String get actionLabel => willCreateContainer ? '\u65b0\u5efa\u5bb9\u5668' : '\u5408\u5e76\u5230\u540c\u540d\u5bb9\u5668';
 }
 
 class FlowPlanArchivePreview {
@@ -574,6 +575,7 @@ class FlowPlanArchiveService {
     required CalendarBooksRepository calendarBooksRepository,
     required EventRepository eventRepository,
     required TaskRepository taskRepository,
+    this.operationLogRepository,
   })  : _db = database,
         _calendarBooksRepository = calendarBooksRepository,
         _eventRepository = eventRepository,
@@ -583,6 +585,7 @@ class FlowPlanArchiveService {
   final CalendarBooksRepository _calendarBooksRepository;
   final EventRepository _eventRepository;
   final TaskRepository _taskRepository;
+  final DataOperationLogRepository? operationLogRepository;
 
   Future<FlowPlanArchiveData> buildArchive({
     required Iterable<int> calendarIds,
@@ -701,7 +704,7 @@ class FlowPlanArchiveService {
 
       containers.add(
         FlowPlanArchiveContainerPreview(
-          kindLabel: '日历本',
+          kindLabel: '\u65e5\u5386\u672c',
           name: archiveCalendar.name,
           willCreateContainer: existing == null,
           createCount: createCount,
@@ -750,7 +753,7 @@ class FlowPlanArchiveService {
 
       containers.add(
         FlowPlanArchiveContainerPreview(
-          kindLabel: '任务本',
+          kindLabel: '\u4efb\u52a1\u672c',
           name: archiveTaskList.name,
           willCreateContainer: existing == null,
           createCount: createCount,
@@ -770,6 +773,7 @@ class FlowPlanArchiveService {
   Future<FlowPlanArchiveImportResult> importArchive({
     required FlowPlanArchiveData archive,
     required FlowPlanArchiveImportMode mode,
+    String? sourcePath,
   }) async {
     final backupPath = await _createRollbackBackup();
 
@@ -808,6 +812,7 @@ class FlowPlanArchiveService {
               syncUrl: const Value<String?>(null),
               createdAt: DateTime.now(),
             ),
+            audit: false,
           );
           target = await _calendarBooksRepository.getEventCalendarById(id);
           createdCalendars++;
@@ -825,6 +830,7 @@ class FlowPlanArchiveService {
                 syncUrl: const Value<String?>(null),
                 createdAt: Value(target.createdAt),
               ),
+              audit: false,
             );
             target = await _calendarBooksRepository.getEventCalendarById(target.id);
           }
@@ -839,6 +845,7 @@ class FlowPlanArchiveService {
           await _calendarBooksRepository.saveEventCalendarDefaults(
             id: target.id,
             defaultIsBlock: archiveCalendar.defaultIsBlock,
+            audit: false,
           );
         }
 
@@ -866,6 +873,7 @@ class FlowPlanArchiveService {
                   eventCalendarId: target.id,
                   id: existingId,
                 ),
+                audit: false,
               );
               updatedEvents++;
             } else {
@@ -876,6 +884,7 @@ class FlowPlanArchiveService {
 
           final id = await _eventRepository.create(
             event.toCompanion(eventCalendarId: target.id),
+            audit: false,
           );
           if (event.uid.trim().isNotEmpty) {
             existingByUid[event.uid.trim()] = id;
@@ -903,6 +912,7 @@ class FlowPlanArchiveService {
               isArchived: const Value(false),
               createdAt: DateTime.now(),
             ),
+            audit: false,
           );
           target = await _calendarBooksRepository.getTaskListById(id);
           createdTaskLists++;
@@ -919,6 +929,7 @@ class FlowPlanArchiveService {
                 isArchived: const Value(false),
                 createdAt: Value(target.createdAt),
               ),
+              audit: false,
             );
             target = await _calendarBooksRepository.getTaskListById(target.id);
           }
@@ -935,6 +946,7 @@ class FlowPlanArchiveService {
             defaultIsAutoScheduled: archiveTaskList.defaultIsAutoScheduled,
             defaultReminderMinutesBefore:
                 archiveTaskList.defaultReminderMinutesBefore,
+            audit: false,
           );
         }
 
@@ -962,6 +974,7 @@ class FlowPlanArchiveService {
                   taskListId: target.id,
                   id: existingId,
                 ),
+                audit: false,
               );
               updatedTasks++;
             } else {
@@ -972,6 +985,7 @@ class FlowPlanArchiveService {
 
           final id = await _taskRepository.create(
             task.toCompanion(taskListId: target.id),
+            audit: false,
           );
           if (task.uid.trim().isNotEmpty) {
             existingByUid[task.uid.trim()] = id;
@@ -981,7 +995,7 @@ class FlowPlanArchiveService {
       }
     });
 
-    return FlowPlanArchiveImportResult(
+    final result = FlowPlanArchiveImportResult(
       backupPath: backupPath,
       createdCalendars: createdCalendars,
       mergedCalendars: mergedCalendars,
@@ -996,6 +1010,32 @@ class FlowPlanArchiveService {
       skippedTasks: skippedTasks,
       removedTasks: removedTasks,
     );
+    await operationLogRepository?.record(
+      actor: 'user',
+      action: 'import_structured_archive',
+      entityType: 'flowplan_archive',
+      summary: '\u5df2\u5bfc\u5165 FlowPlan \u7ed3\u6784\u5316\u5f52\u6863',
+      metadata: <String, Object?>{
+        'mode': mode.name,
+        'source_path': sourcePath,
+        'backup_path': backupPath,
+        'archive_calendar_count': archive.calendars.length,
+        'archive_task_list_count': archive.taskLists.length,
+        'created_calendars': createdCalendars,
+        'merged_calendars': mergedCalendars,
+        'created_task_lists': createdTaskLists,
+        'merged_task_lists': mergedTaskLists,
+        'created_events': createdEvents,
+        'updated_events': updatedEvents,
+        'skipped_events': skippedEvents,
+        'removed_events': removedEvents,
+        'created_tasks': createdTasks,
+        'updated_tasks': updatedTasks,
+        'skipped_tasks': skippedTasks,
+        'removed_tasks': removedTasks,
+      },
+    );
+    return result;
   }
 
   Future<String> _createRollbackBackup() async {
@@ -1094,8 +1134,7 @@ Object _categoriesForJson(String raw) {
       return decoded;
     }
   } catch (_) {
-    // 保留原始字符串，避免导出时丢失用户通过数据库手动维护的内容。
-  }
+    /* \u4fdd\u7559\u539f\u59cb\u5b57\u7b26\u4e32\uff0c\u907f\u514d\u5bfc\u51fa\u65f6\u4e22\u5931\u7528\u6237\u901a\u8fc7\u6570\u636e\u5e93\u624b\u52a8\u7ef4\u62a4\u7684\u5185\u5bb9\u3002 */ }
   return raw;
 }
 

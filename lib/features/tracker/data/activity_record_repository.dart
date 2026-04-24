@@ -99,8 +99,8 @@ class ActivityRecordRepository {
       WHERE id = ?
       ''',
       [
-        normalizedDeviceId?.isEmpty == true ? null : normalizedDeviceId,
-        normalizedPlatform?.isEmpty == true ? null : normalizedPlatform,
+        normalizedDeviceId.isEmpty ? null : normalizedDeviceId,
+        normalizedPlatform.isEmpty ? null : normalizedPlatform,
         id,
       ],
     );

@@ -243,6 +243,15 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.trackerLogHistory),
           ),
+          ListTile(
+            leading: const Icon(Icons.fact_check_outlined),
+            title: const Text('数据操作审计'),
+            subtitle: const Text(
+              '查看任务、日程、任务本、日历本、导入导出、数据库恢复、排程确认和 Outlook 同步等关键数据操作记录。',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push(AppRoutes.auditLogs),
+          ),
           const Divider(),
           const _SectionTitle('\u6570\u636e\u540c\u6b65\u4e0e\u5907\u4efd'),
           ListTile(

@@ -195,6 +195,9 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
         result,
         allowApply: result.requiresConfirmation,
       );
+      if (!mounted) {
+        return;
+      }
       if (!result.requiresConfirmation) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result.summary)),

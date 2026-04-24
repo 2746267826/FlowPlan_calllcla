@@ -19,7 +19,6 @@ import '../models/activity_insights.dart';
 import '../models/activity_log_entry.dart';
 import '../models/input_event_query.dart';
 import '../models/input_heatmap_summary.dart';
-import '../models/tracked_input_event.dart';
 import '../models/work_session.dart';
 import '../services/raw_input_service.dart';
 import '../services/tracker_platform_source.dart';
@@ -475,7 +474,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '\u6570\u636e\u5e93\u5df2\u5bfc\u51fa\u5230\uff1a' + outputPath,
+            '\u6570\u636e\u5e93\u5df2\u5bfc\u51fa\u5230\uff1a$outputPath',
           ),
         ),
       );
@@ -509,7 +508,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '\u5df2\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55\uff1a' + folderPath,
+            '\u5df2\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55\uff1a$folderPath',
           ),
         ),
       );
@@ -587,7 +586,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '\u952e\u9f20\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\uff1a' + outputPath,
+            '\u952e\u9f20\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\uff1a$outputPath',
           ),
         ),
       );
@@ -951,20 +950,20 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             ) ??
             false);
     final AsyncValue<ActivityHeatmapSeries> heatmapAsync = hasFreshSnapshot
-        ? snapshot!.heatmapAsync
+        ? snapshot.heatmapAsync
         : const AsyncLoading<ActivityHeatmapSeries>();
     final AsyncValue<List<ActivityRecord>> dayRecordsAsync = hasFreshSnapshot
-        ? snapshot!.dayRecordsAsync
+        ? snapshot.dayRecordsAsync
         : const AsyncLoading<List<ActivityRecord>>();
     final ActivityInsights insights =
-        hasFreshSnapshot ? snapshot!.insights : ActivityInsights.empty();
+        hasFreshSnapshot ? snapshot.insights : ActivityInsights.empty();
     final List<WorkSession> workSessions =
-        hasFreshSnapshot ? snapshot!.workSessions : const <WorkSession>[];
+        hasFreshSnapshot ? snapshot.workSessions : const <WorkSession>[];
     final AsyncValue<InputHeatmapSummary> inputBehaviorSummaryAsync = hasFreshSnapshot
-        ? snapshot!.inputBehaviorSummaryAsync
+        ? snapshot.inputBehaviorSummaryAsync
         : const AsyncLoading<InputHeatmapSummary>();
     final AsyncValue<TrackerRangeAnalysisSnapshot?> rangeAnalysisAsync = hasFreshSnapshot
-        ? snapshot!.rangeAnalysisAsync
+        ? snapshot.rangeAnalysisAsync
         : (selectedAnalysisBucket == null
             ? const AsyncData<TrackerRangeAnalysisSnapshot?>(null)
             : const AsyncLoading<TrackerRangeAnalysisSnapshot?>());
@@ -2389,7 +2388,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String?>(
-                value: widget.selectedProcess,
+                key: ValueKey<String?>('history-process-${widget.selectedProcess}'),
+                initialValue: widget.selectedProcess,
                 decoration: InputDecoration(
                   labelText: '应用',
                   border: OutlineInputBorder(
@@ -2422,7 +2422,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String?>(
-                value: widget.selectedCategory,
+                key: ValueKey<String?>('history-category-${widget.selectedCategory}'),
+                initialValue: widget.selectedCategory,
                 decoration: InputDecoration(
                   labelText: '分类',
                   border: OutlineInputBorder(
@@ -2456,7 +2457,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
             SizedBox(
               width: 260,
               child: DropdownButtonFormField<int?>(
-                value: widget.selectedTaskId,
+                key: ValueKey<String>('history-task-${widget.selectedTaskId}'),
+                initialValue: widget.selectedTaskId,
                 decoration: InputDecoration(
                   labelText: '任务',
                   border: OutlineInputBorder(
@@ -2753,162 +2755,6 @@ class _CurrentSessionPanel extends StatelessWidget {
   }
 }
 
-class _RecentInputPreviewPanel extends StatelessWidget {
-  const _RecentInputPreviewPanel({
-    required this.recentEventsAsync,
-    required this.onOpenHistory,
-  });
-
-  final AsyncValue<List<TrackedInputEvent>> recentEventsAsync;
-  final VoidCallback onOpenHistory;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(
-              Icons.history_toggle_off_outlined,
-              size: 16,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '最近输入预览',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: onOpenHistory,
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('查看完整历史'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          '这里只展示最近 12 条外部应用输入摘要，完整顺序日志可进入历史页按天查询。',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-        const SizedBox(height: 12),
-        recentEventsAsync.when(
-          loading: () => const SizedBox(
-            height: 120,
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (error, _) => SizedBox(
-            height: 120,
-            child: Center(
-              child: Text('读取最近输入失败：$error'),
-            ),
-          ),
-          data: (events) {
-            if (events.isEmpty) {
-              return _emptyState(
-                icon: Icons.keyboard_alt_outlined,
-                title: '还没有可预览的外部输入',
-                subtitle: '开始在其他应用中输入后，这里会显示最近捕获的按键与鼠标事件。',
-                compact: true,
-              );
-            }
-
-            return Column(
-              children: events
-                  .map(
-                    (event) => _RecentInputPreviewTile(
-                      event: event,
-                    ),
-                  )
-                  .toList(growable: false),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _RecentInputPreviewTile extends StatelessWidget {
-  const _RecentInputPreviewTile({
-    required this.event,
-  });
-
-  final TrackedInputEvent event;
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitleParts = <String>[
-      if (event.processName != null && event.processName!.trim().isNotEmpty)
-        event.processName!.trim(),
-      if (event.activityLabel != null && event.activityLabel!.trim().isNotEmpty)
-        event.activityLabel!.trim(),
-      if (event.category != null && event.category!.trim().isNotEmpty)
-        event.category!.trim(),
-    ];
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              _formatTimeWithSeconds(event.timestamp),
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _statusBadge(
-            _trackedInputEventKindLabel(event.kind),
-            _trackedInputEventColor(event.kind),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _trackedInputEventTitle(event),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (subtitleParts.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitleParts.join(' · '),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _DailyOverview extends StatelessWidget {
   final DateTime selectedDate;
   final ActivityInsights insights;
@@ -3192,8 +3038,7 @@ class _DailyInputBehaviorPanel extends StatelessWidget {
                           selected: selectedProcess == item.processName,
                           onTap: () => onApplyProcessFilter(item.processName),
                         ),
-                      )
-                      .toList(growable: false),
+                      ),
                 ],
                 if (summary.hourlyDistribution.isNotEmpty) ...[
                   const SizedBox(height: 16),
@@ -3701,7 +3546,8 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
               SizedBox(
                 width: 220,
                 child: DropdownButtonFormField<String?>(
-                  value: selectedProcess,
+                  key: ValueKey<String?>('detail-process-$selectedProcess'),
+                  initialValue: selectedProcess,
                   decoration: InputDecoration(
                     labelText: '应用',
                     border: OutlineInputBorder(
@@ -3735,7 +3581,8 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
               SizedBox(
                 width: 220,
                 child: DropdownButtonFormField<String?>(
-                  value: selectedCategory,
+                  key: ValueKey<String?>('detail-category-$selectedCategory'),
+                  initialValue: selectedCategory,
                   decoration: InputDecoration(
                     labelText: '分类',
                     border: OutlineInputBorder(
@@ -3929,7 +3776,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
               Text(
                 sortedSessions.length <= visibleSessionCount
                     ? '共 ${sortedSessions.length} 段工作会话。'
-                    : '共 ${sortedSessions.length} 段工作会话，当前显示 ${visibleSessionCount} 段。',
+                    : '共 ${sortedSessions.length} 段工作会话，当前显示 $visibleSessionCount 段。',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               if (sessionDaySummary.isNotEmpty) ...[
@@ -3942,7 +3789,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
               const SizedBox(height: 8),
               ...visibleSessions
                   .map((session) => _RangeSessionTile(session: session))
-                  .toList(),
+                  ,
             ],
             if (filteredInsights.busiestRecords.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -3955,7 +3802,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
               const SizedBox(height: 8),
               ...filteredInsights.busiestRecords
                   .map((item) => _SessionRecordRow(record: item.record))
-                  .toList(),
+                  ,
             ],
           ],
           const SizedBox(height: 16),
@@ -4073,7 +3920,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
             if (sortedLogEntries.length > visibleLogCount) ...[
               const SizedBox(height: 4),
               Text(
-                '当前默认显示最新 ${visibleLogCount} 条，可点击右上角“显示全部”查看完整列表。',
+                '当前默认显示最新 $visibleLogCount 条，可点击右上角“显示全部”查看完整列表。',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
@@ -4099,8 +3946,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
                     showDate: true,
                     showDetails: true,
                   ),
-                )
-                .toList(),
+                ),
           ],
         ],
       ],
@@ -4939,25 +4785,6 @@ Widget _card(BuildContext context, Widget child) {
   );
 }
 
-Widget _sectionTitle(BuildContext context, String title, String subtitle) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        subtitle,
-        style: const TextStyle(fontSize: 12, color: Colors.grey),
-      ),
-    ],
-  );
-}
-
 Widget _emptyState({
   required IconData icon,
   required String title,
@@ -5108,13 +4935,6 @@ String _formatTime(DateTime dateTime) {
   final hour = dateTime.hour.toString().padLeft(2, '0');
   final minute = dateTime.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
-}
-
-String _formatTimeWithSeconds(DateTime dateTime) {
-  final hour = dateTime.hour.toString().padLeft(2, '0');
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  final second = dateTime.second.toString().padLeft(2, '0');
-  return '$hour:$minute:$second';
 }
 
 String _formatDateTimeShort(DateTime dateTime) {
@@ -5304,64 +5124,6 @@ String _truncateLabel(String value, int maxLength) {
     return value;
   }
   return '${value.substring(0, maxLength)}...';
-}
-
-String _trackedInputEventKindLabel(TrackedInputEventKind kind) {
-  switch (kind) {
-    case TrackedInputEventKind.keyDown:
-      return '按键';
-    case TrackedInputEventKind.mouseButton:
-      return '鼠标按钮';
-    case TrackedInputEventKind.mouseWheel:
-      return '滚轮';
-    case TrackedInputEventKind.mouseMove:
-      return '鼠标移动';
-  }
-}
-
-Color _trackedInputEventColor(TrackedInputEventKind kind) {
-  switch (kind) {
-    case TrackedInputEventKind.keyDown:
-      return const Color(0xFF6B5EE4);
-    case TrackedInputEventKind.mouseButton:
-      return const Color(0xFF0EA8A0);
-    case TrackedInputEventKind.mouseWheel:
-      return const Color(0xFFE05A7A);
-    case TrackedInputEventKind.mouseMove:
-      return const Color(0xFF4C8BF5);
-  }
-}
-
-String _trackedInputEventTitle(TrackedInputEvent event) {
-  switch (event.kind) {
-    case TrackedInputEventKind.keyDown:
-      final token = describeInputToken(event.tokenText);
-      if (token.isNotEmpty) {
-        return '按键 $token';
-      }
-      if (event.keyLabel != null && event.keyLabel!.trim().isNotEmpty) {
-        return '按键 ${event.keyLabel!.trim()}';
-      }
-      if (event.keyCode != null) {
-        return '按键 VK_${event.keyCode}';
-      }
-      return '按键事件';
-    case TrackedInputEventKind.mouseButton:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '鼠标${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '鼠标按钮事件';
-    case TrackedInputEventKind.mouseWheel:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '滚轮 ${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '滚轮 ${event.wheelDelta}';
-    case TrackedInputEventKind.mouseMove:
-      if (event.moveDistance > 0) {
-        return '鼠标移动 ${event.moveDistance}px';
-      }
-      return '鼠标移动';
-  }
 }
 
 String _rangeSessionSortModeLabel(_RangeSessionSortMode mode) {

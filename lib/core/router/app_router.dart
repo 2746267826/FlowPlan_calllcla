@@ -5,6 +5,7 @@ import '../../features/calendar/presentation/timeline_view.dart';
 import '../../features/calendar/presentation/week_view.dart';
 import '../../features/calendar/presentation/month_view.dart';
 import '../../features/calendar/presentation/event_detail_page.dart';
+import '../../features/audit/presentation/data_operation_log_page.dart';
 import '../../features/task/presentation/task_detail_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 import '../../features/tracker/presentation/input_heatmap_page.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   static const String trackerLogHistory = '/tracker/log-history';
   static const String trackerInputHistory = '/tracker/input-history';
   static const String trackerInputHeatmap = '/tracker/input-heatmap';
+  static const String auditLogs = '/audit-logs';
   static const String settings = '/settings';
   static const String icalImportExport = '/ical';
   static const String outlookSync = '/outlook-sync';
@@ -39,8 +41,8 @@ final GoRouter appRouter = GoRouter(
   routes: [
     ShellRoute(
       builder: (context, state, child) => CalendarShell(
-        child: child,
         currentRoute: state.uri.path,
+        child: child,
       ),
       routes: [
         GoRoute(
@@ -99,6 +101,11 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.trackerInputHeatmap,
       name: 'trackerInputHeatmap',
       builder: (context, state) => const InputHeatmapPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.auditLogs,
+      name: 'auditLogs',
+      builder: (context, state) => const DataOperationLogPage(),
     ),
     // ── 任务路由 ──────────────────────────────────────────────────────────────
     GoRoute(
