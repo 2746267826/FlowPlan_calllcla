@@ -593,7 +593,11 @@ class OutlookAuthService {
     }
 
     if (uri != null) {
-      final code = uri.queryParameters['code']?.trim();
+      final fragmentUri = uri.fragment.isEmpty
+          ? null
+          : Uri.tryParse('https://callback.local/?${uri.fragment}');
+      final code = uri.queryParameters['code']?.trim() ??
+          fragmentUri?.queryParameters['code']?.trim();
       if (code == null || code.isEmpty) {
         throw const OutlookAuthException(
           code: 'missing_code',
@@ -603,7 +607,8 @@ class OutlookAuthService {
       }
       return _ParsedAuthorizationInput(
         code: code,
-        state: uri.queryParameters['state']?.trim(),
+        state: uri.queryParameters['state']?.trim() ??
+            fragmentUri?.queryParameters['state']?.trim(),
       );
     }
 

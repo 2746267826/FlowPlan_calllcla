@@ -35,6 +35,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   bool _isAuthenticated = false;
   bool _hasRequiredPermission = false;
   bool _refreshingToken = false;
+  bool _authSubmitting = false;
   bool _syncing = false;
   bool _exportingDiagnostics = false;
   String? _status;
@@ -203,7 +204,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _startAuth,
+                        onPressed: _authSubmitting ? null : _startAuth,
                         icon: const Icon(Icons.open_in_browser, size: 18),
                         label: const Text('连接 Outlook 日历'),
                       ),
@@ -231,9 +232,18 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _exchangeCode,
-                        icon: const Icon(Icons.login, size: 18),
-                        label: const Text('提交授权码'),
+                        onPressed: _authSubmitting ? null : _exchangeCode,
+                        icon: _authSubmitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.login, size: 18),
+                        label: Text(_authSubmitting ? '提交中...' : '提交授权码'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0078D4),
                           foregroundColor: Colors.white,
@@ -255,7 +265,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                             : '当前选择的同步模式为“${_syncMode.label}”，请重新完成一次 Microsoft 登录，确保新的浏览器会话与当前配置一致。',
                       ),
                       trailing: TextButton(
-                        onPressed: _logout,
+                        onPressed: _authSubmitting ? null : _logout,
                         child: const Text(
                           '断开 Outlook 连接',
                           style: TextStyle(color: Colors.redAccent),
@@ -1887,6 +1897,11 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return;
     }
 
+    setState(() {
+      _authSubmitting = true;
+      _status = '正在向 Microsoft 提交授权码并换取 token...';
+    });
+
     try {
       final token = await OutlookCalendarService(config).exchangeCodeForToken(
         rawInput,
@@ -1896,23 +1911,49 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         return;
       }
       setState(() {
+        _authSubmitting = false;
         _isAuthenticated = true;
         _grantedMode = token.grantedMode;
         _hasRequiredPermission =
             _syncMode == OutlookSyncMode.paused || token.supportsMode(_syncMode);
+        _authCodeController.clear();
         _status =
             '认证成功。FlowPlan 已连接个人 Outlook 账号，并会在 access_token 过期后自动使用 refresh_token 刷新。';
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Outlook 连接成功。'),
+        ),
+      );
     } on OutlookAuthException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _status = error.userMessage);
+      setState(() {
+        _authSubmitting = false;
+        _status = error.userMessage;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.userMessage),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     } catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _status = '认证失败：$error');
+      final message = '认证失败：$error';
+      setState(() {
+        _authSubmitting = false;
+        _status = message;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
@@ -1924,6 +1965,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     setState(() {
       _isAuthenticated = false;
       _hasRequiredPermission = false;
+      _authSubmitting = false;
       _grantedMode = OutlookSyncMode.bidirectional;
       _authCodeController.clear();
       _status = '已断开 Outlook 连接，本地保存的令牌已清除。';
