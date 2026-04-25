@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "flutter_window.h"
@@ -319,11 +318,6 @@ void DesktopShellPlugin::ShowReminder(
   if (window_ != nullptr) {
     window_->ShowTrayNotification(title, body);
   }
-
-  std::thread([title, body]() {
-    MessageBoxW(nullptr, body.c_str(), title.c_str(),
-                MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
-  }).detach();
 }
 
 std::wstring DesktopShellPlugin::GetCurrentUserName() const {

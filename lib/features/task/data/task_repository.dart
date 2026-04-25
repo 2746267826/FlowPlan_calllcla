@@ -97,6 +97,16 @@ class TaskRepository {
       (_db.select(_db.taskItems)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
 
+  Stream<List<TaskItem>> watchAllForManagement() =>
+      (_db.select(_db.taskItems)
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.status),
+              (t) => OrderingTerm(expression: t.due, mode: OrderingMode.asc),
+              (t) => OrderingTerm(expression: t.dtstart, mode: OrderingMode.asc),
+              (t) => OrderingTerm(expression: t.summary),
+            ]))
+          .watch();
+
   Future<List<TaskItem>> getByIds(Iterable<int> ids) async {
     final taskIds = ids.toSet();
     if (taskIds.isEmpty) {

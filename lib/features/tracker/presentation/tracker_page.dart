@@ -23,7 +23,6 @@ import '../models/work_session.dart';
 import '../services/raw_input_service.dart';
 import '../services/tracker_platform_source.dart';
 import '../services/tracker_service.dart';
-import '../widgets/heatmap_widget.dart';
 
 enum _TrackerMenuAction {
   viewDayDetails,
@@ -42,65 +41,49 @@ enum _TaskBindingSheetAction {
 
 class _TrackerPageLoadKey {
   final DateTime selectedDate;
-  final ActivityHeatmapScale? heatmapScaleOverride;
-  final ActivityHeatmapBucket? analysisBucket;
 
   const _TrackerPageLoadKey({
     required this.selectedDate,
-    required this.heatmapScaleOverride,
-    required this.analysisBucket,
   });
 
   bool matches({
     required DateTime selectedDate,
-    required ActivityHeatmapScale? heatmapScaleOverride,
-    required ActivityHeatmapBucket? analysisBucket,
   }) {
-    return DateUtils.isSameDay(this.selectedDate, selectedDate) &&
-        this.heatmapScaleOverride == heatmapScaleOverride &&
-        _isSameBucket(this.analysisBucket, analysisBucket);
+    return DateUtils.isSameDay(this.selectedDate, selectedDate);
   }
 }
 
 class _TrackerPageSnapshot {
-  final AsyncValue<ActivityHeatmapSeries> heatmapAsync;
   final AsyncValue<List<ActivityRecord>> dayRecordsAsync;
   final ActivityInsights insights;
   final List<WorkSession> workSessions;
   final AsyncValue<InputHeatmapSummary> inputBehaviorSummaryAsync;
-  final AsyncValue<TrackerRangeAnalysisSnapshot?> rangeAnalysisAsync;
   final TrackerState trackerState;
   final DateTime refreshedAt;
 
   const _TrackerPageSnapshot({
-    required this.heatmapAsync,
     required this.dayRecordsAsync,
     required this.insights,
     required this.workSessions,
     required this.inputBehaviorSummaryAsync,
-    required this.rangeAnalysisAsync,
     required this.trackerState,
     required this.refreshedAt,
   });
 
   _TrackerPageSnapshot copyWith({
-    AsyncValue<ActivityHeatmapSeries>? heatmapAsync,
     AsyncValue<List<ActivityRecord>>? dayRecordsAsync,
     ActivityInsights? insights,
     List<WorkSession>? workSessions,
     AsyncValue<InputHeatmapSummary>? inputBehaviorSummaryAsync,
-    AsyncValue<TrackerRangeAnalysisSnapshot?>? rangeAnalysisAsync,
     TrackerState? trackerState,
     DateTime? refreshedAt,
   }) {
     return _TrackerPageSnapshot(
-      heatmapAsync: heatmapAsync ?? this.heatmapAsync,
       dayRecordsAsync: dayRecordsAsync ?? this.dayRecordsAsync,
       insights: insights ?? this.insights,
       workSessions: workSessions ?? this.workSessions,
       inputBehaviorSummaryAsync:
           inputBehaviorSummaryAsync ?? this.inputBehaviorSummaryAsync,
-      rangeAnalysisAsync: rangeAnalysisAsync ?? this.rangeAnalysisAsync,
       trackerState: trackerState ?? this.trackerState,
       refreshedAt: refreshedAt ?? this.refreshedAt,
     );
@@ -124,53 +107,6 @@ class TrackerPage extends ConsumerStatefulWidget {
 
   void _clearHeatmapBucketFilter(WidgetRef ref) {
     ref.read(trackerHistorySelectedHeatmapBucketProvider.notifier).state = null;
-  }
-
-  void _clearHeatmapAnalysisBucket(WidgetRef ref) {
-    ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier).state = null;
-  }
-
-  void _clearHeatmapSelections(WidgetRef ref) {
-    _clearHeatmapBucketFilter(ref);
-    _clearHeatmapAnalysisBucket(ref);
-  }
-
-  void _toggleHeatmapAnalysisBucket(
-    WidgetRef ref,
-    ActivityHeatmapBucket bucket,
-  ) {
-    final notifier =
-        ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier);
-    final current = ref.read(trackerHistorySelectedAnalysisBucketProvider);
-    notifier.state = _isSameBucket(current, bucket) ? null : bucket;
-  }
-
-  void _handleHeatmapBucketDrillDown(
-    WidgetRef ref,
-    ActivityHeatmapScale scale,
-    ActivityHeatmapBucket bucket,
-  ) {
-    final dateNotifier = ref.read(selectedDateProvider.notifier);
-    final scaleNotifier =
-        ref.read(activityHeatmapScaleOverrideProvider.notifier);
-    _clearHeatmapSelections(ref);
-
-    switch (scale) {
-      case ActivityHeatmapScale.hour:
-        return;
-      case ActivityHeatmapScale.day:
-        dateNotifier.setDate(bucket.start);
-        scaleNotifier.state = ActivityHeatmapScale.hour;
-        return;
-      case ActivityHeatmapScale.month:
-        dateNotifier.setDate(bucket.start);
-        scaleNotifier.state = ActivityHeatmapScale.day;
-        return;
-      case ActivityHeatmapScale.year:
-        dateNotifier.setDate(bucket.start);
-        scaleNotifier.state = ActivityHeatmapScale.month;
-        return;
-    }
   }
 
   void _toggleHistoryProcessFilter(WidgetRef ref, String processName) {
@@ -626,13 +562,9 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
 
   void _ensureSnapshotUpToDate({
     required DateTime selectedDate,
-    required ActivityHeatmapScale? heatmapScaleOverride,
-    required ActivityHeatmapBucket? selectedAnalysisBucket,
   }) {
     final isLoaded = _loadedKey?.matches(
           selectedDate: selectedDate,
-          heatmapScaleOverride: heatmapScaleOverride,
-          analysisBucket: selectedAnalysisBucket,
         ) ??
         false;
     if (isLoaded) {
@@ -641,8 +573,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
 
     final isScheduled = _scheduledKey?.matches(
           selectedDate: selectedDate,
-          heatmapScaleOverride: heatmapScaleOverride,
-          analysisBucket: selectedAnalysisBucket,
         ) ??
         false;
     if (isScheduled) {
@@ -651,8 +581,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
 
     _scheduledKey = _TrackerPageLoadKey(
       selectedDate: selectedDate,
-      heatmapScaleOverride: heatmapScaleOverride,
-      analysisBucket: selectedAnalysisBucket,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -662,44 +590,14 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     });
   }
 
-  Future<AsyncValue<TrackerRangeAnalysisSnapshot?>> _loadRangeAnalysisSnapshot(
-    ActivityHeatmapBucket? bucket,
-  ) async {
-    if (bucket == null) {
-      return const AsyncData<TrackerRangeAnalysisSnapshot?>(null);
-    }
-
-    final recordRepository = ref.read(activityRecordRepositoryProvider);
-    final logService = ref.read(activityLogServiceProvider);
-    return AsyncValue.guard(() async {
-      final records = await recordRepository.listInRange(bucket.start, bucket.end);
-      final logEntries = await logService.readEntriesBetween(
-        bucket.start,
-        bucket.end,
-      );
-      return TrackerRangeAnalysisSnapshot(
-        bucket: bucket,
-        records: records,
-        logEntries: logEntries,
-        insights: ActivityInsights.fromRecords(records),
-        sessions: WorkSessionGrouper.fromRecords(records),
-      );
-    });
-  }
-
   _TrackerPageSnapshot _createLoadingSnapshot({
-    required ActivityHeatmapBucket? selectedAnalysisBucket,
     required TrackerState trackerState,
   }) {
     return _TrackerPageSnapshot(
-      heatmapAsync: const AsyncLoading<ActivityHeatmapSeries>(),
       dayRecordsAsync: const AsyncLoading<List<ActivityRecord>>(),
       insights: ActivityInsights.empty(),
       workSessions: const <WorkSession>[],
       inputBehaviorSummaryAsync: const AsyncLoading<InputHeatmapSummary>(),
-      rangeAnalysisAsync: selectedAnalysisBucket == null
-          ? const AsyncData<TrackerRangeAnalysisSnapshot?>(null)
-          : const AsyncLoading<TrackerRangeAnalysisSnapshot?>(),
       trackerState: trackerState,
       refreshedAt: DateTime.now(),
     );
@@ -708,12 +606,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
   void _updateSnapshotPart({
     required int requestId,
     required _TrackerPageLoadKey key,
-    AsyncValue<ActivityHeatmapSeries>? heatmapAsync,
     AsyncValue<List<ActivityRecord>>? dayRecordsAsync,
     ActivityInsights? insights,
     List<WorkSession>? workSessions,
     AsyncValue<InputHeatmapSummary>? inputBehaviorSummaryAsync,
-    AsyncValue<TrackerRangeAnalysisSnapshot?>? rangeAnalysisAsync,
     TrackerState? trackerState,
   }) {
     if (!mounted || requestId != _requestSerial) {
@@ -726,12 +622,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         return;
       }
       _snapshot = currentSnapshot.copyWith(
-        heatmapAsync: heatmapAsync,
         dayRecordsAsync: dayRecordsAsync,
         insights: insights,
         workSessions: workSessions,
         inputBehaviorSummaryAsync: inputBehaviorSummaryAsync,
-        rangeAnalysisAsync: rangeAnalysisAsync,
         trackerState: trackerState,
         refreshedAt: DateTime.now(),
       );
@@ -753,20 +647,13 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     bool force = false,
   }) async {
     final selectedDate = ref.read(selectedDateProvider);
-    final heatmapScaleOverride = ref.read(activityHeatmapScaleOverrideProvider);
-    final selectedAnalysisBucket =
-        ref.read(trackerHistorySelectedAnalysisBucketProvider);
     final key = _TrackerPageLoadKey(
       selectedDate: selectedDate,
-      heatmapScaleOverride: heatmapScaleOverride,
-      analysisBucket: selectedAnalysisBucket,
     );
 
     if (!force &&
         (_loadedKey?.matches(
               selectedDate: selectedDate,
-              heatmapScaleOverride: heatmapScaleOverride,
-              analysisBucket: selectedAnalysisBucket,
             ) ??
             false)) {
       _scheduledKey = null;
@@ -780,7 +667,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       setState(() {
         _isRefreshing = true;
         _snapshot = _createLoadingSnapshot(
-          selectedAnalysisBucket: selectedAnalysisBucket,
           trackerState: initialTrackerState,
         );
         _loadedKey = key;
@@ -792,7 +678,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         await ref.read(trackerServiceNotifierProvider.notifier).refreshNow();
       }
 
-      final trackerRepository = ref.read(trackerRepositoryProvider);
       final activityRecordRepository =
           ref.read(activityRecordRepositoryProvider);
       final supportsInputAnalytics =
@@ -817,20 +702,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         trackerState: trackerState,
       );
 
-      final heatmapFuture = AsyncValue.guard(
-        () => _withLoadTimeout(
-          () async {
-            final summary = await trackerRepository.getHistorySummary();
-            final scale = heatmapScaleOverride ?? summary.recommendedScale;
-            return trackerRepository.getHeatmapSeries(
-              scale: scale,
-              anchorDate: selectedDate,
-              historySummary: summary,
-            );
-          }(),
-          '热力图',
-        ),
-      );
       final dayRecordsFuture = AsyncValue.guard(
         () => _withLoadTimeout(
           activityRecordRepository.listInRange(dayStart, dayEnd),
@@ -849,20 +720,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                 InputHeatmapSummary.empty(inputQuery),
               ),
             );
-      final rangeAnalysisFuture = _withLoadTimeout(
-        _loadRangeAnalysisSnapshot(selectedAnalysisBucket),
-        '范围分析',
-      );
-
       await Future.wait<void>([
-        () async {
-          final heatmapAsync = await heatmapFuture;
-          _updateSnapshotPart(
-            requestId: requestId,
-            key: key,
-            heatmapAsync: heatmapAsync,
-          );
-        }(),
         () async {
           final dayRecordsAsync = await dayRecordsFuture;
           final records = dayRecordsAsync.valueOrNull ?? const <ActivityRecord>[];
@@ -886,14 +744,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             inputBehaviorSummaryAsync: inputBehaviorSummaryAsync,
           );
         }(),
-        () async {
-          final rangeAnalysisAsync = await rangeAnalysisFuture;
-          _updateSnapshotPart(
-            requestId: requestId,
-            key: key,
-            rangeAnalysisAsync: rangeAnalysisAsync,
-          );
-        }(),
       ]);
     } finally {
       if (mounted && requestId == _requestSerial) {
@@ -912,13 +762,9 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     final pageWidth = MediaQuery.of(context).size.width;
     final isCompactLayout = pageWidth < 600;
     final sequenceEnabled = ref.watch(sequenceRecordingProvider);
-    final heatmapScaleOverride =
-        ref.watch(activityHeatmapScaleOverrideProvider);
     final selectedProcessRaw = ref.watch(trackerHistorySelectedProcessProvider);
     final selectedHeatmapBucket =
         ref.watch(trackerHistorySelectedHeatmapBucketProvider);
-    final selectedAnalysisBucket =
-        ref.watch(trackerHistorySelectedAnalysisBucketProvider);
     final isTrackingRunning = ref.watch(
       trackerServiceNotifierProvider.select((state) => state.isRunning),
     );
@@ -937,21 +783,14 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
 
     _ensureSnapshotUpToDate(
       selectedDate: selectedDate,
-      heatmapScaleOverride: heatmapScaleOverride,
-      selectedAnalysisBucket: selectedAnalysisBucket,
     );
 
     final snapshot = _snapshot;
     final hasFreshSnapshot = snapshot != null &&
         (_loadedKey?.matches(
               selectedDate: selectedDate,
-              heatmapScaleOverride: heatmapScaleOverride,
-              analysisBucket: selectedAnalysisBucket,
             ) ??
             false);
-    final AsyncValue<ActivityHeatmapSeries> heatmapAsync = hasFreshSnapshot
-        ? snapshot.heatmapAsync
-        : const AsyncLoading<ActivityHeatmapSeries>();
     final AsyncValue<List<ActivityRecord>> dayRecordsAsync = hasFreshSnapshot
         ? snapshot.dayRecordsAsync
         : const AsyncLoading<List<ActivityRecord>>();
@@ -962,11 +801,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     final AsyncValue<InputHeatmapSummary> inputBehaviorSummaryAsync = hasFreshSnapshot
         ? snapshot.inputBehaviorSummaryAsync
         : const AsyncLoading<InputHeatmapSummary>();
-    final AsyncValue<TrackerRangeAnalysisSnapshot?> rangeAnalysisAsync = hasFreshSnapshot
-        ? snapshot.rangeAnalysisAsync
-        : (selectedAnalysisBucket == null
-            ? const AsyncData<TrackerRangeAnalysisSnapshot?>(null)
-            : const AsyncLoading<TrackerRangeAnalysisSnapshot?>());
     final trackerState = (snapshot?.trackerState ?? const TrackerState())
         .copyWith(isRunning: isTrackingRunning);
     final hasAndroidUsageAccess =
@@ -1221,84 +1055,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             ],
             _card(
               context,
-              heatmapAsync.when(
-                loading: () => const SizedBox(
-                  height: 180,
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-                error: (error, _) => SizedBox(
-                  height: 180,
-                  child: Center(
-                    child: Text('加载热力图失败：$error'),
-                  ),
-                ),
-                data: (series) => HeatmapWidget(
-                  series: series,
-                  selectedScaleOverride: heatmapScaleOverride,
-                  activeFilterBucket: selectedHeatmapBucket,
-                  activeAnalysisBucket: selectedAnalysisBucket,
-                  onScaleChanged: (scale) {
-                    widget._clearHeatmapSelections(ref);
-                    ref.read(activityHeatmapScaleOverrideProvider.notifier).state =
-                        scale;
-                  },
-                  onFilterBucket: (bucket) {
-                    ref
-                        .read(trackerHistorySelectedHeatmapBucketProvider.notifier)
-                        .state = bucket;
-                  },
-                  onAnalyzeBucket: (bucket) {
-                    widget._toggleHeatmapAnalysisBucket(ref, bucket);
-                  },
-                  onDrillDownBucket: (bucket) {
-                    widget._handleHeatmapBucketDrillDown(
-                      ref,
-                      series.scale,
-                      bucket,
-                    );
-                  },
-                  onClearBucketFilter: () => widget._clearHeatmapBucketFilter(ref),
-                  onClearAnalysisBucket: () =>
-                      widget._clearHeatmapAnalysisBucket(ref),
-                ),
-              ),
-            ),
-            if (selectedAnalysisBucket != null) ...[
-              const SizedBox(height: 16),
-              rangeAnalysisAsync.when(
-                loading: () => _card(
-                  context,
-                  const SizedBox(
-                    height: 180,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                ),
-                error: (error, _) => _card(
-                  context,
-                  SizedBox(
-                    height: 160,
-                    child: Center(
-                      child: Text('加载区间分析失败：$error'),
-                    ),
-                  ),
-                ),
-                data: (snapshot) {
-                  if (snapshot == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return _card(
-                    context,
-                    _SelectedRangeAnalysisPanel(
-                      snapshot: snapshot,
-                      onClose: () => widget._clearHeatmapAnalysisBucket(ref),
-                    ),
-                  );
-                },
-              ),
-            ],
-            const SizedBox(height: 16),
-            _card(
-              context,
               _CurrentSessionPanel(
                 state: trackerState,
                 sequenceEnabled: sequenceEnabled,
@@ -1376,6 +1132,11 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                 onOpenInputHistory: supportsInputAnalytics
                     ? () {
                         context.push(AppRoutes.trackerInputHistory);
+                      }
+                    : null,
+                onOpenInputHeatmap: supportsInputAnalytics
+                    ? () {
+                        context.push(AppRoutes.trackerInputHeatmap);
                       }
                     : null,
                 onOpenLogHistory: () {
@@ -2005,6 +1766,7 @@ class _TrackerDetailHubPanel extends StatelessWidget {
   final bool hasLinkedInputBehavior;
   final VoidCallback onOpenDayDetails;
   final VoidCallback? onOpenInputHistory;
+  final VoidCallback? onOpenInputHeatmap;
   final VoidCallback onOpenLogHistory;
 
   const _TrackerDetailHubPanel({
@@ -2014,6 +1776,7 @@ class _TrackerDetailHubPanel extends StatelessWidget {
     required this.hasLinkedInputBehavior,
     required this.onOpenDayDetails,
     required this.onOpenInputHistory,
+    required this.onOpenInputHeatmap,
     required this.onOpenLogHistory,
   });
 
@@ -2083,6 +1846,12 @@ class _TrackerDetailHubPanel extends StatelessWidget {
                 onPressed: onOpenInputHistory,
                 icon: const Icon(Icons.keyboard_outlined, size: 18),
                 label: const Text('查看完整输入历史'),
+              ),
+            if (onOpenInputHeatmap != null)
+              OutlinedButton.icon(
+                onPressed: onOpenInputHeatmap,
+                icon: const Icon(Icons.grid_view_outlined, size: 18),
+                label: const Text('打开键鼠热力图'),
               ),
             OutlinedButton.icon(
               onPressed: onOpenLogHistory,
@@ -3311,6 +3080,8 @@ enum _RangeSessionSortMode {
   input,
 }
 
+// 区间分析已从追踪主页面下沉到二级体验，保留面板实现以便后续接入独立入口。
+// ignore: unused_element
 class _SelectedRangeAnalysisPanel extends StatefulWidget {
   final TrackerRangeAnalysisSnapshot snapshot;
   final VoidCallback onClose;

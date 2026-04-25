@@ -111,6 +111,14 @@ class EventRepository {
       (_db.select(_db.calendarEvents)..where((e) => e.id.equals(id)))
           .getSingleOrNull();
 
+  Stream<List<CalendarEvent>> watchAllForManagement() =>
+      (_db.select(_db.calendarEvents)
+            ..orderBy([
+              (e) => OrderingTerm(expression: e.dtstart),
+              (e) => OrderingTerm(expression: e.summary),
+            ]))
+          .watch();
+
   Future<List<CalendarEvent>> getByCalendarId(int calendarId) =>
       (_db.select(_db.calendarEvents)
             ..where((e) => e.eventCalendarId.equals(calendarId))
@@ -266,11 +274,11 @@ class EventRepository {
         .go();
   }
 
-  Future<void> deleteBySourceAndCalendarId({
+  Future<int> deleteBySourceAndCalendarId({
     required String source,
     required int calendarId,
   }) async {
-    await (_db.delete(_db.calendarEvents)
+    return (_db.delete(_db.calendarEvents)
           ..where(
             (e) => e.source.equals(source) & e.eventCalendarId.equals(calendarId),
           ))

@@ -91,6 +91,8 @@ class MsGraphService {
               'endDateTime': (endDate ?? DateTime.now().add(const Duration(days: 365)))
                   .toUtc()
                   .toIso8601String(),
+              r'$select':
+                  'id,subject,body,bodyPreview,location,locations,start,end,showAs,isAllDay',
             },
           );
 
@@ -217,7 +219,7 @@ class MsGraphService {
         .replace(
       queryParameters: {
         r'$select':
-            'id,subject,body,start,end,showAs,lastModifiedDateTime,categories',
+            'id,subject,body,bodyPreview,location,locations,start,end,showAs,lastModifiedDateTime,categories,isAllDay',
       },
     );
     final response = await http.get(uri, headers: headers);
@@ -300,10 +302,9 @@ class MsGraphService {
     String status,
   }) fromGraphEvent(Map<String, dynamic> graphEvent) {
     final id = graphEvent['id'] as String? ?? '';
-    final subject = graphEvent['subject'] as String? ?? '';
-    final body = (graphEvent['bodyPreview'] as String?)?.trim();
-    final location =
-        (graphEvent['location'] as Map<String, dynamic>?)?['displayName'] as String?;
+    final subject = (graphEvent['subject'] as String? ?? '').trim();
+    final body = _extractBodyText(graphEvent);
+    final location = _extractLocation(graphEvent);
 
     final startRaw = graphEvent['start'] as Map<String, dynamic>? ?? const {};
     final endRaw = graphEvent['end'] as Map<String, dynamic>? ?? const {};
@@ -330,5 +331,77 @@ class MsGraphService {
       end: end,
       status: status,
     );
+  }
+
+  static bool needsEventDetails(Map<String, dynamic> graphEvent) {
+    if (isDeletedEvent(graphEvent)) {
+      return false;
+    }
+    return !graphEvent.containsKey('subject') ||
+        !graphEvent.containsKey('body') ||
+        !graphEvent.containsKey('bodyPreview') ||
+        !graphEvent.containsKey('location');
+  }
+
+  static String? _extractLocation(Map<String, dynamic> graphEvent) {
+    final location =
+        graphEvent['location'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final displayName = (location['displayName'] as String?)?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    final locations = graphEvent['locations'] as List<dynamic>?;
+    if (locations == null || locations.isEmpty) {
+      return null;
+    }
+    final names = locations
+        .whereType<Map>()
+        .map((item) => (item['displayName'] as String?)?.trim())
+        .whereType<String>()
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+    return names.isEmpty ? null : names.join('、');
+  }
+
+  static String? _extractBodyText(Map<String, dynamic> graphEvent) {
+    final bodyMap =
+        graphEvent['body'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final bodyContent = (bodyMap['content'] as String?)?.trim();
+    final bodyContentType = (bodyMap['contentType'] as String? ?? '').trim().toLowerCase();
+    if (bodyContent != null && bodyContent.isNotEmpty) {
+      final normalized = bodyContentType == 'html'
+          ? _stripHtml(bodyContent)
+          : bodyContent.trim();
+      if (normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+
+    final preview = (graphEvent['bodyPreview'] as String?)?.trim();
+    if (preview == null || preview.isEmpty) {
+      return null;
+    }
+    return preview;
+  }
+
+  static String _stripHtml(String input) {
+    final withLineBreaks = input
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</div\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</li\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<li\s*>', caseSensitive: false), '• ');
+    final withoutTags = withLineBreaks.replaceAll(RegExp(r'<[^>]+>'), ' ');
+    final decoded = withoutTags
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'");
+    final collapsedSpaces = decoded.replaceAll(RegExp(r'[ \t]+'), ' ');
+    final collapsedLines = collapsedSpaces.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return collapsedLines.trim();
   }
 }

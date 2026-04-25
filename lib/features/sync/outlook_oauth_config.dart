@@ -8,7 +8,7 @@ class OutlookOAuthPlatformConfig {
   static const redirectUri =
       'https://login.microsoftonline.com/common/oauth2/nativeclient';
   static const graphBaseUrl = 'https://graph.microsoft.com/v1.0';
-  static const preferTimezone = 'Asia/Tokyo';
+  static const preferTimezone = 'Asia/Shanghai';
   static const scopes = <String>[
     'openid',
     'profile',

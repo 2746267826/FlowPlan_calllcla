@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -279,6 +280,22 @@ class _ParsedAuthorizationInput {
   final String? state;
 }
 
+class OutlookNetworkDiagnostics {
+  const OutlookNetworkDiagnostics({
+    required this.canResolveMicrosoftHost,
+    required this.canReachMicrosoftServer,
+    this.resolvedAddresses = const <String>[],
+    this.failureReason,
+  });
+
+  final bool canResolveMicrosoftHost;
+  final bool canReachMicrosoftServer;
+  final List<String> resolvedAddresses;
+  final String? failureReason;
+
+  bool get isReady => canResolveMicrosoftHost && canReachMicrosoftServer;
+}
+
 class OutlookAuthService {
   static const _tokenKey = 'outlook_auth_token';
   static const _configClientIdKey = 'outlook_client_id';
@@ -287,6 +304,7 @@ class OutlookAuthService {
   static const _pendingAuthKey = 'outlook_pending_auth_session';
   static const _pkceAlphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  static const _microsoftLoginHost = 'login.microsoftonline.com';
 
   static Future<void> saveConfig(String clientId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -396,20 +414,47 @@ class OutlookAuthService {
       );
     }
 
-    final response = await http.post(
-      Uri.parse(config.tokenUrl),
-      headers: const <String, String>{
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: <String, String>{
-        'client_id': config.clientId,
-        'grant_type': 'authorization_code',
-        'code': parsed.code,
-        'redirect_uri': config.redirectUri,
-        'code_verifier': session.codeVerifier,
-        'scope': config.scopeString,
-      },
-    );
+    final diagnostics = await runMicrosoftNetworkDiagnostics();
+    if (!diagnostics.isReady) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: diagnostics.failureReason,
+      );
+    }
+
+    http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse(config.tokenUrl),
+        headers: const <String, String>{
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: <String, String>{
+          'client_id': config.clientId,
+          'grant_type': 'authorization_code',
+          'code': parsed.code,
+          'redirect_uri': config.redirectUri,
+          'code_verifier': session.codeVerifier,
+          'scope': config.scopeString,
+        },
+      );
+    } on SocketException catch (error) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: error.message,
+      );
+    } on http.ClientException catch (error) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: error.message,
+      );
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _buildAuthException(
@@ -445,19 +490,46 @@ class OutlookAuthService {
       return null;
     }
 
-    final response = await http.post(
-      Uri.parse(config.tokenUrl),
-      headers: const <String, String>{
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: <String, String>{
-        'client_id': config.clientId,
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
-        'redirect_uri': config.redirectUri,
-        'scope': config.scopeString,
-      },
-    );
+    final diagnostics = await runMicrosoftNetworkDiagnostics();
+    if (!diagnostics.isReady) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: diagnostics.failureReason,
+      );
+    }
+
+    http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse(config.tokenUrl),
+        headers: const <String, String>{
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: <String, String>{
+          'client_id': config.clientId,
+          'grant_type': 'refresh_token',
+          'refresh_token': refreshToken,
+          'redirect_uri': config.redirectUri,
+          'scope': config.scopeString,
+        },
+      );
+    } on SocketException catch (error) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: error.message,
+      );
+    } on http.ClientException catch (error) {
+      throw OutlookAuthException(
+        code: 'network_unreachable',
+        userMessage:
+            '\u5f53\u524d\u8bbe\u5907\u7f51\u7edc\u6216 DNS \u65e0\u6cd5\u8bbf\u95ee Microsoft \u767b\u5f55\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u8054\u7f51\u3001DNS\u3001\u4ee3\u7406\u6216 Android \u7f51\u7edc\u6743\u9650\u3002',
+        debugMessage: error.message,
+      );
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final error = _buildAuthException(
@@ -570,6 +642,75 @@ class OutlookAuthService {
       return false;
     }
     return token.supportsMode(mode);
+  }
+
+  static Future<OutlookNetworkDiagnostics> runMicrosoftNetworkDiagnostics() async {
+    List<InternetAddress> addresses;
+    try {
+      addresses = await InternetAddress.lookup(_microsoftLoginHost);
+    } on SocketException catch (error) {
+      return OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: false,
+        canReachMicrosoftServer: false,
+        failureReason: error.message,
+      );
+    } catch (error) {
+      return OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: false,
+        canReachMicrosoftServer: false,
+        failureReason: error.toString(),
+      );
+    }
+
+    if (addresses.isEmpty) {
+      return const OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: false,
+        canReachMicrosoftServer: false,
+        failureReason: 'DNS 查询成功返回为空。',
+      );
+    }
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final request = await client.getUrl(
+        Uri.parse(OutlookOAuthPlatformConfig.authority),
+      );
+      request.followRedirects = false;
+      final response = await request.close();
+      await response.drain<void>();
+      final reachable =
+          response.statusCode >= 200 && response.statusCode < 500;
+      return OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: true,
+        canReachMicrosoftServer: reachable,
+        resolvedAddresses: addresses
+            .map((address) => address.address)
+            .toList(growable: false),
+        failureReason: reachable
+            ? null
+            : 'Microsoft 登录服务器返回异常状态：${response.statusCode}',
+      );
+    } on SocketException catch (error) {
+      return OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: true,
+        canReachMicrosoftServer: false,
+        resolvedAddresses: addresses
+            .map((address) => address.address)
+            .toList(growable: false),
+        failureReason: error.message,
+      );
+    } catch (error) {
+      return OutlookNetworkDiagnostics(
+        canResolveMicrosoftHost: true,
+        canReachMicrosoftServer: false,
+        resolvedAddresses: addresses
+            .map((address) => address.address)
+            .toList(growable: false),
+        failureReason: error.toString(),
+      );
+    } finally {
+      client.close(force: true);
+    }
   }
 
   static _ParsedAuthorizationInput _parseAuthorizationInput(String rawInput) {

@@ -387,6 +387,18 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                       label: const Text('\u91cd\u7f6e\u540c\u6b65\u72b6\u6001'),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _syncing ? null : _resetSyncedOutlookEventCalendars,
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      label: const Text('完全重置已同步的 Outlook 日历本'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.redAccent,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -395,24 +407,30 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             const SizedBox(height: 8),
             _buildLastSyncReportPanel(),
             const SizedBox(height: 24),
-            _sectionTitle('\u8bca\u65ad\u4e0e\u51b2\u7a81'),
-            const SizedBox(height: 8),
-            _buildDiagnosticsPanel(
-              taskMirrorDiagnosticsAsync,
-              fieldConflictsAsync,
+            _OutlookAdvancedSection(
+              title: '\u8bca\u65ad\u4e0e\u51b2\u7a81',
+              icon: Icons.troubleshoot_outlined,
+              child: _buildDiagnosticsPanel(
+                taskMirrorDiagnosticsAsync,
+                fieldConflictsAsync,
+              ),
             ),
-            const SizedBox(height: 24),
-            _sectionTitle('\u5199\u56de\u8fb9\u754c'),
-            const SizedBox(height: 8),
-            _buildControlledWriteScopePanel(),
-            const SizedBox(height: 24),
-            _sectionTitle('\u540c\u6b65\u5bf9\u8c61'),
-            const SizedBox(height: 8),
-            _buildSyncObjectsPanel(
-              eventCalendarsAsync: eventCalendarsAsync,
-              taskListsAsync: taskListsAsync,
-              taskListBindingsAsync: taskListBindingsAsync,
-              taskMirrorDiagnosticsAsync: taskMirrorDiagnosticsAsync,
+            const SizedBox(height: 12),
+            _OutlookAdvancedSection(
+              title: '\u5199\u56de\u8fb9\u754c',
+              icon: Icons.policy_outlined,
+              child: _buildControlledWriteScopePanel(),
+            ),
+            const SizedBox(height: 12),
+            _OutlookAdvancedSection(
+              title: '\u540c\u6b65\u5bf9\u8c61',
+              icon: Icons.account_tree_outlined,
+              child: _buildSyncObjectsPanel(
+                eventCalendarsAsync: eventCalendarsAsync,
+                taskListsAsync: taskListsAsync,
+                taskListBindingsAsync: taskListBindingsAsync,
+                taskMirrorDiagnosticsAsync: taskMirrorDiagnosticsAsync,
+              ),
             ),
             if (_status != null) ...[
               const SizedBox(height: 24),
@@ -428,15 +446,12 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
               ),
             ],
             const SizedBox(height: 32),
-            _Panel(
+            _OutlookAdvancedSection(
+              title: '\u4f7f\u7528\u8bf4\u660e',
+              icon: Icons.help_outline,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '\u4f7f\u7528\u8bf4\u660e',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
                   const _HelpRow(
                     num: '1.',
                     text:
@@ -2159,6 +2174,83 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       _status = '\u540c\u6b65\u72b6\u6001\u5df2\u91cd\u7f6e\u3002\u4e0b\u6b21\u540c\u6b65\u4f1a\u91cd\u65b0\u62c9\u53d6 Outlook \u6570\u636e\u3002';
     });
   }
+
+  Future<void> _resetSyncedOutlookEventCalendars() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('完全重置 Outlook 日历本'),
+        content: const Text(
+          '这会删除 FlowPlan 本地已经同步到的 Outlook 日历本和其中日程，不会删除任务本，也不会删除 Outlook 服务器中的任何数据。确认后下次同步会重新完整拉取 Outlook 日历。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('确认重置'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    setState(() {
+      _syncing = true;
+      _status = '正在删除本地 Outlook 日历本并清空同步缓存...';
+    });
+
+    try {
+      final calendarRepo = ref.read(calendarBooksRepositoryProvider);
+      final eventRepo = ref.read(eventRepositoryProvider);
+      final calendars = await calendarRepo.getEventCalendarsBySource('outlook');
+      var deletedEvents = 0;
+      var deletedCalendars = 0;
+
+      for (final calendar in calendars) {
+        deletedEvents += await eventRepo.deleteBySourceAndCalendarId(
+          source: 'outlook',
+          calendarId: calendar.id,
+        );
+        deletedCalendars += await calendarRepo.deleteEventCalendar(
+          calendar.id,
+          actor: 'user',
+          action: 'reset_outlook_calendar',
+          summary: '重置 Outlook 同步日历本「${calendar.name}」',
+          metadata: <String, Object?>{
+            'source': 'outlook',
+            'remote_id': calendar.syncUrl,
+          },
+        );
+      }
+
+      await SyncEngine.resetSync();
+      final lastSyncReport = await SyncEngine.getLastSyncReport();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncing = false;
+        _lastSync = null;
+        _lastSyncReport = lastSyncReport;
+        _status =
+            '已重置 Outlook 日历本：删除 $deletedCalendars 个本地日历本、$deletedEvents 条本地日程。下次同步会重新完整拉取。';
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncing = false;
+        _status = '重置 Outlook 日历本失败：$error';
+      });
+    }
+  }
 }
 
 class _StatusCard extends StatelessWidget {
@@ -2330,6 +2422,36 @@ class _Panel extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,
+    );
+  }
+}
+
+class _OutlookAdvancedSection extends StatelessWidget {
+  const _OutlookAdvancedSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(top: 8),
+        leading: Icon(icon, color: AppColors.primary),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        children: [
+          child,
+        ],
+      ),
     );
   }
 }

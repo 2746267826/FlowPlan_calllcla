@@ -527,6 +527,16 @@ final allTasksProvider = StreamProvider<List<TaskItem>>((ref) {
   return repo.watchAll();
 });
 
+final managementTasksProvider = StreamProvider<List<TaskItem>>((ref) {
+  final repo = ref.watch(taskRepositoryProvider);
+  return repo.watchAllForManagement();
+});
+
+final managementEventsProvider = StreamProvider<List<CalendarEvent>>((ref) {
+  final repo = ref.watch(eventRepositoryProvider);
+  return repo.watchAllForManagement();
+});
+
 // 鈹€鈹€ Tracker Repository 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final trackerRepositoryProvider = Provider<TrackerRepository>((ref) {

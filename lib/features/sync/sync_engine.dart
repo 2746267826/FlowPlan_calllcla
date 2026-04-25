@@ -140,6 +140,8 @@ class SyncEngine {
   late MsGraphService _graphService;
 
   static const _deltaLinkKeyPrefix = 'outlook_sync_delta_link.';
+  static const _deltaSchemaVersionKey = 'outlook_sync_delta_schema_version';
+  static const _deltaSchemaVersion = 3;
   static const _lastSyncKey = 'outlook_last_sync';
   static const _lastSyncReportTimeKey = 'outlook_last_sync_report_time';
   static const _lastSyncReportStatusKey = 'outlook_last_sync_report_status';
@@ -391,7 +393,10 @@ class SyncEngine {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final deltaKey = '$_deltaLinkKeyPrefix$remoteCalendarId';
-    final deltaLink = prefs.getString(deltaKey);
+    final cachedDeltaSchemaVersion = prefs.getInt(_deltaSchemaVersionKey) ?? 0;
+    final deltaLink = cachedDeltaSchemaVersion >= _deltaSchemaVersion
+        ? prefs.getString(deltaKey)
+        : null;
 
     final result = await _graphService.getEvents(
       calendarId: remoteCalendarId,
@@ -401,6 +406,7 @@ class SyncEngine {
     if (result.deltaLink != null) {
       await prefs.setString(deltaKey, result.deltaLink!);
     }
+    await prefs.setInt(_deltaSchemaVersionKey, _deltaSchemaVersion);
 
     var count = 0;
     for (final graphEvent in result.events) {
@@ -417,7 +423,11 @@ class SyncEngine {
         continue;
       }
 
-      final parsed = MsGraphService.fromGraphEvent(graphEvent);
+      final eventForParsing = await _hydrateGraphEventIfNeeded(
+        calendarId: remoteCalendarId,
+        graphEvent: graphEvent,
+      );
+      final parsed = MsGraphService.fromGraphEvent(eventForParsing);
       await _eventRepo.upsertSyncedEvent(
         uid: uid,
         dtstamp: DateTime.now(),
@@ -435,6 +445,26 @@ class SyncEngine {
     }
 
     return count;
+  }
+
+  Future<Map<String, dynamic>> _hydrateGraphEventIfNeeded({
+    required String calendarId,
+    required Map<String, dynamic> graphEvent,
+  }) async {
+    if (!MsGraphService.needsEventDetails(graphEvent)) {
+      return graphEvent;
+    }
+
+    final eventId = (graphEvent['id'] as String? ?? '').trim();
+    if (eventId.isEmpty) {
+      return graphEvent;
+    }
+
+    final fullEvent = await _graphService.getEvent(
+      calendarId: calendarId,
+      eventId: eventId,
+    );
+    return fullEvent ?? graphEvent;
   }
 
   static Future<DateTime?> getLastSyncTime() async {
@@ -510,6 +540,7 @@ class SyncEngine {
     }
 
     await prefs.remove(_lastSyncKey);
+    await prefs.remove(_deltaSchemaVersionKey);
     await _clearLastSyncReport(prefs);
   }
 

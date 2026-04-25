@@ -27,6 +27,10 @@ class CalendarBooksPage extends ConsumerWidget {
       ),
       body: ListView(
         children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _CalendarBooksBoundaryCard(),
+          ),
           _SectionHeader(
             title: '\u65e5\u5386\u672c',
             subtitle: '\u65e5\u7a0b\u5bb9\u5668',
@@ -1105,6 +1109,141 @@ class _SectionHeader extends StatelessWidget {
         icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
         onPressed: onAdd,
         tooltip: '\u65b0\u5efa',
+      ),
+    );
+  }
+}
+
+class _CalendarBooksBoundaryCard extends StatelessWidget {
+  const _CalendarBooksBoundaryCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.account_tree_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '容器边界',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '日程必须属于日历本，任务必须属于任务本；这里集中管理容器，而不是直接编辑条目内容。',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _BoundaryChip(
+                icon: Icons.edit_outlined,
+                label: '普通编辑',
+                description: '本地容器可修改名称、颜色、默认值',
+              ),
+              _BoundaryChip(
+                icon: Icons.cloud_sync_outlined,
+                label: '同步容器',
+                description: 'Outlook 来源只维护映射和显示状态',
+              ),
+              _BoundaryChip(
+                icon: Icons.event_busy_outlined,
+                label: '本地排程策略',
+                description: '默认阻挡、默认提醒等只影响 FlowPlan',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BoundaryChip extends StatelessWidget {
+  const _BoundaryChip({
+    required this.icon,
+    required this.label,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String label;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 190),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 150,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

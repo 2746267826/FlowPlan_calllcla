@@ -51,12 +51,20 @@ class SettingsPage extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('\u8bbe\u7f6e'),
-      ),
+      appBar: AppBar(title: const Text('\u8bbe\u7f6e')),
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          const _SectionTitle('\u5916\u89c2'),
+          _SettingsHeader(
+            title: appProductName,
+            subtitle: appAboutSubtitle,
+            badge: appStorageFlavorLabel,
+          ),
+          const SizedBox(height: 16),
+          _SettingsSection(
+            title: '\u5916\u89c2',
+            icon: Icons.palette_outlined,
+            children: [
           ListTile(
             leading: const Icon(Icons.dark_mode_outlined),
             title: const Text('\u4e3b\u9898\u6a21\u5f0f'),
@@ -87,8 +95,12 @@ class SettingsPage extends ConsumerWidget {
               },
             ),
           ),
-          const Divider(),
-          const _SectionTitle('\u5de5\u4f5c\u65f6\u95f4'),
+            ],
+          ),
+          _SettingsSection(
+            title: '\u5de5\u4f5c\u65f6\u95f4',
+            icon: Icons.work_history_outlined,
+            children: [
           ListTile(
             leading: const Icon(Icons.schedule_outlined),
             title: const Text('\u6bcf\u65e5\u5de5\u4f5c\u5f00\u59cb'),
@@ -139,8 +151,12 @@ class SettingsPage extends ConsumerWidget {
               );
             },
           ),
-          const Divider(),
-          const _SectionTitle('\u63d0\u9192'),
+            ],
+          ),
+          _SettingsSection(
+            title: '\u63d0\u9192',
+            icon: Icons.notifications_active_outlined,
+            children: [
           ListTile(
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('\u9ed8\u8ba4\u63d0\u524d\u63d0\u9192'),
@@ -172,15 +188,19 @@ class SettingsPage extends ConsumerWidget {
             title: const Text('\u8fd0\u884c\u65f6\u63d0\u9192\u670d\u52a1'),
             subtitle: Text(
               isWindowsDesktop
-                  ? '应用运行时会检查日程、任务和计划偏离；Windows 会触发托盘通知与置顶强提醒。'
+                  ? '应用运行时会检查日程、任务和计划偏离；Windows 仅触发托盘/系统通知，不再弹出置顶软件窗口。'
                   : '应用运行时会检查日程、任务和计划偏离；Android 会同时尝试写入系统精准提醒调度。',
             ),
           ),
           if (Platform.isAndroid)
             _AndroidReminderSystemTile(status: reminderSystemStatus),
+            ],
+          ),
           if (Platform.isAndroid) ...[
-            const Divider(),
-            const _SectionTitle('安卓端状态'),
+            _SettingsSection(
+              title: '安卓端状态',
+              icon: Icons.phone_android_outlined,
+              children: [
             const _AndroidTrackerAccessTile(),
             const _AndroidDeviceIdentityTile(),
             ListTile(
@@ -192,9 +212,13 @@ class SettingsPage extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push(AppRoutes.outlookSync),
             ),
+              ],
+            ),
           ],
-          const Divider(),
-          const _SectionTitle('\u7cfb\u7edf'),
+          _SettingsSection(
+            title: '\u7cfb\u7edf',
+            icon: Icons.tune_outlined,
+            children: [
           ListTile(
             leading: const Icon(Icons.developer_mode_outlined),
             title: const Text('\u5f53\u524d\u8fd0\u884c\u73af\u5883'),
@@ -252,8 +276,21 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.auditLogs),
           ),
-          const Divider(),
-          const _SectionTitle('\u6570\u636e\u540c\u6b65\u4e0e\u5907\u4efd'),
+            ],
+          ),
+          _SettingsSection(
+            title: '\u6570\u636e\u540c\u6b65\u4e0e\u5907\u4efd',
+            icon: Icons.storage_outlined,
+            children: [
+          ListTile(
+            leading: const Icon(Icons.dataset_outlined),
+            title: const Text('全部任务与日程管理'),
+            subtitle: const Text(
+              '统一查看、筛选、多选和批量管理所有任务与日程数据。',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push(AppRoutes.dataManagement),
+          ),
           ListTile(
             leading: const Icon(Icons.import_export_outlined),
             title: const Text('\u5bfc\u5165 / \u5bfc\u51fa\u4e0e\u5907\u4efd'),
@@ -272,8 +309,12 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.outlookSync),
           ),
-          const Divider(),
-          const _SectionTitle('\u65f6\u95f4\u683c\u5f0f'),
+            ],
+          ),
+          _SettingsSection(
+            title: '\u65f6\u95f4\u683c\u5f0f',
+            icon: Icons.access_time_outlined,
+            children: [
           ListTile(
             leading: const Icon(Icons.access_time_outlined),
             title: const Text('\u65f6\u95f4\u5236'),
@@ -302,8 +343,12 @@ class SettingsPage extends ConsumerWidget {
               },
             ),
           ),
-          const Divider(),
-          const _SectionTitle('\u5173\u4e8e'),
+            ],
+          ),
+          _SettingsSection(
+            title: '\u5173\u4e8e',
+            icon: Icons.info_outline,
+            children: [
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text(appProductName),
@@ -312,28 +357,129 @@ class SettingsPage extends ConsumerWidget {
             ),
             isThreeLine: true,
           ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title);
+class _SettingsHeader extends StatelessWidget {
+  const _SettingsHeader({
+    required this.title,
+    required this.subtitle,
+    required this.badge,
+  });
 
   final String title;
+  final String subtitle;
+  final String badge;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-          letterSpacing: 0.5,
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.auto_awesome, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Chip(
+            label: Text(badge),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: Theme.of(context).cardColor,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.16)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0)
+                Divider(
+                  height: 1,
+                  indent: 56,
+                  color: Colors.grey.withValues(alpha: 0.12),
+                ),
+              children[i],
+            ],
+          ],
         ),
       ),
     );

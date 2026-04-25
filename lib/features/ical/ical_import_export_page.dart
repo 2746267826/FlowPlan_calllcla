@@ -147,7 +147,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             error: (error, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('闂備礁鎲″缁樻叏閹灐褰掑炊閵娧屾祫闁荤姴娲﹁ぐ鍐綖閵堝鐓涢柛顐亜婢ь噣鏌曢崶銊ョ仼闁瑰嘲缍婃俊鐑筋敍濠婂懐宕?error'),
+                child: Text('加载任务本失败：$error'),
               ),
             ),
             data: (taskLists) {
@@ -169,6 +169,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const _ImportExportSectionHeader(
+                  icon: Icons.tune_outlined,
+                  title: '操作对象与策略',
+                  subtitle: '先选择本地日历本、导入策略和导出范围；Outlook 只读日历不会在这里被改写。',
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -293,6 +300,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                const _ImportExportSectionHeader(
+                  icon: Icons.event_note_outlined,
+                  title: '标准 iCalendar',
+                  subtitle: '用于和 Outlook、Google Calendar、Apple Calendar 等日历软件交换 .ics 日程文件。',
+                  color: Color(0xFF43A047),
+                ),
+                const SizedBox(height: 12),
                 _ActionCard(
                   icon: Icons.file_download_outlined,
                   title: '\u5bfc\u5165 .ics \u6587\u4ef6',
@@ -328,11 +342,25 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   color: const Color(0xFF43A047),
                 ),
                 const SizedBox(height: 16),
+                const _ImportExportSectionHeader(
+                  icon: Icons.account_tree_outlined,
+                  title: 'FlowPlan 结构化归档',
+                  subtitle: '保留日历本、任务本、默认规则和条目归属关系，适合跨设备迁移或选择性备份。',
+                  color: Color(0xFF00897B),
+                ),
+                const SizedBox(height: 12),
                 _buildStructuredArchiveSection(
                   localCalendars: localCalendars,
                   taskLists: taskLists,
                 ),
                 const SizedBox(height: 16),
+                const _ImportExportSectionHeader(
+                  icon: Icons.storage_outlined,
+                  title: '完整数据库',
+                  subtitle: '用于完整备份当前环境的所有本地数据，适合发布前、迁移前或大规模整理前保底。',
+                  color: Color(0xFF5C6BC0),
+                ),
+                const SizedBox(height: 12),
                 _ActionCard(
                   icon: Icons.backup_outlined,
                   title: '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
@@ -345,6 +373,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   color: const Color(0xFF5C6BC0),
                 ),
                 const SizedBox(height: 16),
+                const _ImportExportSectionHeader(
+                  icon: Icons.restore_outlined,
+                  title: '恢复管理',
+                  subtitle: '恢复完整数据库需要完整重启 FlowPlan；本区只处理本地副本，不会触碰 Outlook 服务器数据。',
+                  color: Color(0xFFD81B60),
+                ),
+                const SizedBox(height: 12),
                 _ActionCard(
                   icon: Icons.restore_page_outlined,
                   title: '\u6062\u590d\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
@@ -415,6 +450,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   ),
                 ],
                 const SizedBox(height: 16),
+                const _ImportExportSectionHeader(
+                  icon: Icons.folder_open_outlined,
+                  title: '存储位置',
+                  subtitle: '快速打开或查看当前运行环境的数据库目录，方便用第三方 SQLite 工具检查和维护。',
+                  color: Color(0xFF8E24AA),
+                ),
+                const SizedBox(height: 12),
                 _ActionCard(
                   icon: Icons.folder_open_outlined,
                   title: Platform.isWindows
@@ -463,6 +505,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                     ),
                   ),
                 const SizedBox(height: 24),
+                const _ImportExportSectionHeader(
+                  icon: Icons.rule_folder_outlined,
+                  title: '规则说明',
+                  subtitle: '集中说明不同导入、导出、归档和恢复方式的边界，避免误用。',
+                  color: Colors.blueGrey,
+                ),
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -688,7 +737,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_upload_outlined, size: 18),
                 label: Text(
                   _exportingStructuredArchive
-                      ? '闂佽娴烽弫鎼佸储瑜斿畷鐢割敇閻旇　鏋?..'
+                      ? '导出中...'
                       : '\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
@@ -699,7 +748,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_download_outlined, size: 18),
                 label: Text(
                   _importingStructuredArchive
-                      ? '闂佽娴烽弫鎼佸储瑜斿畷锝夊幢濡皷鏋?..'
+                      ? '导入中...'
                       : '\u5bfc\u5165\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
@@ -997,7 +1046,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _exportingStructuredArchive = false;
-        _lastMessage = '闂佽娴烽弫鎼佸储瑜斿畷鐢割敇閻樼數锛滈梺瑙勫劤椤曨參鍩€椤掑鐏︾€规洜濞€瀵€燁槾缂佸鍎ゆ穱濠偽旂€ｎ剙鍩岄梺闈涙处閸ㄥ綊骞忚ぐ鎺懳ㄦい鏍ㄧ矌閻?error';
+        _lastMessage = '导出结构化归档失败：$error';
       });
     }
   }
@@ -1086,7 +1135,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _importingStructuredArchive = false;
-        _lastMessage = '闂佽娴烽弫鎼佸储瑜斿畷锝夊幢濞嗘垹锛滈梺瑙勫劤椤曨參鍩€椤掑鐏︾€规洜濞€瀵€燁槾缂佸鍎ゆ穱濠偽旂€ｎ剙鍩岄梺闈涙处閸ㄥ綊骞忚ぐ鎺懳ㄦい鏍ㄧ矌閻?error';
+        _lastMessage = '导入结构化归档失败：$error';
       });
     }
   }
@@ -1185,9 +1234,9 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                                 ? Icons.calendar_month_outlined
                                 : Icons.checklist_outlined,
                           ),
-                          title: Text('${container.kindLabel}闂?{container.name}'),
+                          title: Text('${container.kindLabel}：${container.name}'),
                           subtitle: Text(
-                            '${container.actionLabel}闂備焦瀵х粙鎴﹀嫉椤掑嫬钃熷┑鐘插暞濞?${container.createCount}闂備焦瀵х粙鎴﹀嫉椤掆偓鐓ら柛褎顨呭Λ?${container.updateCount}闂備焦瀵х粙鎴︽儗娓氣偓閹粓鏁傞懞銉ゆ唉?${container.skipCount}闂備焦瀵х粙鎴︽儔闂傚鏄傞梻?${container.removeBeforeImportCount}',
+                            '${container.actionLabel}，新增 ${container.createCount}，更新 ${container.updateCount}，跳过 ${container.skipCount}，导入前移除 ${container.removeBeforeImportCount}',
                           ),
                         );
                       }).toList(growable: false),
@@ -1794,6 +1843,67 @@ class _ActionCard extends StatelessWidget {
               foregroundColor: Colors.white,
             ),
             child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportExportSectionHeader extends StatelessWidget {
+  const _ImportExportSectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         ],
       ),
