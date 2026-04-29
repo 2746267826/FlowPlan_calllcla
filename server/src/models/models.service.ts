@@ -62,6 +62,16 @@ const DEFAULT_MODELS: Array<{
       deadlineFirstBonus: 20,
       minChunkMinutes: 15,
       maxChunkMinutes: 120,
+      workHours: {
+        enabled: false,
+        days: {
+          '1': [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+          '2': [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+          '3': [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+          '4': [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+          '5': [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+        },
+      },
       llmFallback: {
         enabled: true,
         unplannedRatioThreshold: 0.3,

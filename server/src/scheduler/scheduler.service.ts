@@ -14,6 +14,15 @@ interface TaskCandidate {
   remainingMinutes: number;
   dueAt?: Date;
   priority: string;
+  location?: string | null;
+  notes?: string | null;
+  locked: boolean;
+  allowAutoSchedule: boolean;
+  earliestStart?: Date;
+  latestEnd?: Date;
+  canSplit: boolean;
+  minChunkMinutes: number;
+  maxChunkMinutes: number;
   payload: Record<string, unknown>;
   status: string;
 }
@@ -28,6 +37,7 @@ interface BusyBlock {
 interface FreeBlock {
   start: Date;
   end: Date;
+  source?: string;
 }
 
 @Injectable()
@@ -46,9 +56,14 @@ export class SchedulerService {
     const strategy = this.clean(body.strategy) ?? 'balanced';
     const activeModel = await this.modelsService.activeProfile(userId, 'scheduler.v1');
     const profile = this.asRecord(activeModel.ruleProfile);
+    const schedulerSettings = await this.readSchedulerSettings(userId);
     const tasks = await this.readTasks(userId);
     const busyBlocks = await this.readBusyBlocks(userId, start, end);
-    const freeBlocks = this.computeFreeBlocks(start, end, busyBlocks);
+    const workBlocks = this.computeWorkBlocks(start, end, schedulerSettings, profile);
+    const freeBlocks = this.applyWorkBlocks(
+      this.computeFreeBlocks(start, end, busyBlocks),
+      workBlocks,
+    );
     const modelRun = await this.modelsService.startRun(userId, 'scheduler.v1', {
       source: 'scheduler.createRun',
       inputSummary: {
@@ -57,12 +72,14 @@ export class SchedulerService {
         strategy,
         taskCount: tasks.length,
         busyBlockCount: busyBlocks.length,
+        workBlockCount: workBlocks.length,
+        schedulerSettings,
         profile,
       },
     });
     const ruleResult = this.plan(tasks, freeBlocks, strategy, profile);
-    let planned = ruleResult.planned;
-    let unplanned = ruleResult.unplanned;
+    let planned = this.normalizePlannedReasons(ruleResult.planned, strategy);
+    let unplanned = this.normalizeUnplannedReasons(ruleResult.unplanned, freeBlocks);
     let llmFallback: Record<string, unknown> = { used: false };
     const shouldUseLlm = this.shouldUseLlmFallback(
       body,
@@ -86,6 +103,11 @@ export class SchedulerService {
           notes: task.payload.notes ?? task.payload.description,
           locked: task.payload.locked,
           allowAutoSchedule: task.payload.allowAutoSchedule,
+          earliestStart: task.earliestStart?.toISOString(),
+          latestEnd: task.latestEnd?.toISOString(),
+          canSplit: task.canSplit,
+          minChunkMinutes: task.minChunkMinutes,
+          maxChunkMinutes: task.maxChunkMinutes,
         })),
         busyBlocks,
         freeBlocks,
@@ -141,7 +163,10 @@ export class SchedulerService {
               estimatedMinutes: task.estimatedMinutes,
               confirmedMinutes: task.confirmedMinutes,
               remainingMinutes: task.remainingMinutes,
+              locked: task.locked,
+              allowAutoSchedule: task.allowAutoSchedule,
             })),
+            workBlocks,
           }),
           JSON.stringify({ plannedCount: planned.length, unplanned }),
           JSON.stringify({
@@ -567,18 +592,35 @@ export class SchedulerService {
     }> = [];
     const unplanned: Array<Record<string, unknown>> = [];
     const remainingBlocks = freeBlocks.map((block) => ({ ...block }));
-    const sorted = [...tasks]
-      .filter((task) => task.remainingMinutes > 0)
+    const candidates = tasks.filter((task) => task.remainingMinutes > 0);
+    for (const task of candidates) {
+      const blockedReason = this.taskBlockedReason(task);
+      if (blockedReason) {
+        unplanned.push({
+          taskId: task.id,
+          title: task.title,
+          remainingMinutes: task.remainingMinutes,
+          reason: blockedReason,
+          locked: task.locked,
+          allowAutoSchedule: task.allowAutoSchedule,
+        });
+      }
+    }
+    const sorted = candidates
+      .filter((task) => !this.taskBlockedReason(task))
       .sort((a, b) => this.taskScore(b, strategy, profile) - this.taskScore(a, strategy, profile));
 
     for (const task of sorted) {
       let minutesLeft = task.remainingMinutes;
       let didPlan = false;
       for (const block of remainingBlocks) {
-        const blockMinutes = Math.floor((block.end.getTime() - block.start.getTime()) / 60000);
-        if (blockMinutes < 15 || minutesLeft <= 0) continue;
-        const minutes = Math.min(minutesLeft, blockMinutes, Math.max(30, Number(task.payload.maxChunkMinutes ?? 120)));
-        const start = new Date(block.start);
+        const taskStart = task.earliestStart && task.earliestStart > block.start ? task.earliestStart : block.start;
+        const taskLimitEnd = task.latestEnd && task.latestEnd < block.end ? task.latestEnd : block.end;
+        const blockMinutes = Math.floor((taskLimitEnd.getTime() - taskStart.getTime()) / 60000);
+        if (blockMinutes < task.minChunkMinutes || minutesLeft <= 0) continue;
+        if (!task.canSplit && blockMinutes < minutesLeft) continue;
+        const minutes = Math.min(minutesLeft, blockMinutes, task.maxChunkMinutes);
+        const start = new Date(taskStart);
         const end = new Date(start.getTime() + minutes * 60000);
         planned.push({
           task,
@@ -591,10 +633,20 @@ export class SchedulerService {
               priority: task.priority,
               confirmedMinutes: task.confirmedMinutes,
               remainingMinutes: task.remainingMinutes,
+              location: task.location,
+              notes: task.notes,
+              canSplit: task.canSplit,
+              minChunkMinutes: task.minChunkMinutes,
+              maxChunkMinutes: task.maxChunkMinutes,
+              earliestStart: task.earliestStart?.toISOString(),
+              latestEnd: task.latestEnd?.toISOString(),
+              freeBlockSource: block.source ?? 'range',
               modelUsed: 'rule_learned',
             },
           risk: {
             deadlineSoon: task.dueAt ? task.dueAt.getTime() - Date.now() < 36 * 60 * 60 * 1000 : false,
+            constrainedByWindow: Boolean(task.earliestStart || task.latestEnd),
+            locationAware: Boolean(task.location),
           },
         });
         block.start = end;
@@ -643,6 +695,14 @@ export class SchedulerService {
         const taskId = String(row.uid ?? row.id);
         const estimatedMinutes = Math.max(15, Number(payload.estimatedMinutes ?? payload.estimated_minutes ?? payload.durationMinutes ?? 60));
         const confirmedMinutes = workMap.get(taskId) ?? workMap.get(String(row.id)) ?? 0;
+        const minChunkMinutes = Math.max(
+          5,
+          Number(payload.minChunkMinutes ?? payload.min_chunk_minutes ?? 15),
+        );
+        const maxChunkMinutes = Math.max(
+          minChunkMinutes,
+          Number(payload.maxChunkMinutes ?? payload.max_chunk_minutes ?? 120),
+        );
         return {
           id: taskId,
           objectId: String(row.id),
@@ -654,6 +714,22 @@ export class SchedulerService {
             this.readDate(this.readString(payload, ['dueAt', 'due_at', 'deadline'])) ??
             undefined,
           priority: String(payload.priority ?? 'normal'),
+          location: this.readString(payload, ['location', 'place', 'where']),
+          notes: this.readString(payload, ['notes', 'note', 'description', 'remark']),
+          locked: payload.locked === true || payload.isLocked === true,
+          allowAutoSchedule:
+            payload.allowAutoSchedule === false || payload.autoSchedule === false
+              ? false
+              : true,
+          earliestStart:
+            this.readDate(this.readString(payload, ['earliestStart', 'availableAfter', 'notBefore', 'startAfter'])) ??
+            undefined,
+          latestEnd:
+            this.readDate(this.readString(payload, ['latestEnd', 'availableBefore', 'notAfter', 'endBefore'])) ??
+            undefined,
+          canSplit: payload.canSplit === false || payload.splittable === false ? false : true,
+          minChunkMinutes,
+          maxChunkMinutes,
           payload,
           status,
         };
@@ -669,10 +745,10 @@ export class SchedulerService {
       WHERE user_id = $1
         AND deleted_at IS NULL
         AND object_type = ANY($2::text[])
-        AND updated_at >= $3 - interval '7 days'
-        AND updated_at < $4 + interval '7 days'
+      ORDER BY updated_at DESC
+      LIMIT 1000
       `,
-      [userId, ['calendar_event', 'calendar_events', 'event', 'events', 'time_block', 'time_blocks'], start, end],
+      [userId, ['calendar_event', 'calendar_events', 'event', 'events', 'time_block', 'time_blocks']],
     );
     const blocks: BusyBlock[] = [];
     for (const row of events.rows) {
@@ -680,6 +756,18 @@ export class SchedulerService {
       const eventStart = this.readDate(this.readString(payload, ['startAt', 'startTime', 'start_at']));
       const eventEnd = this.readDate(this.readString(payload, ['endAt', 'endTime', 'end_at']));
       const blocking = payload.isBlocking === true || payload.blocking === true || payload.kind === 'blocking';
+      const recurring = this.isRecurringEvent(payload);
+      if (blocking && recurring) {
+        for (const occurrence of this.expandEventOccurrences(payload, eventStart, eventEnd, start, end)) {
+          blocks.push({
+            start: new Date(Math.max(occurrence.start.getTime(), start.getTime())),
+            end: new Date(Math.min(occurrence.end.getTime(), end.getTime())),
+            title: this.readString(payload, ['title', 'name', 'summary']) ?? 'Blocking schedule',
+            source: 'calendar_event_recurring',
+          });
+        }
+        continue;
+      }
       if (eventStart && eventEnd && eventStart < end && eventEnd > start && blocking) {
         blocks.push({
           start: new Date(Math.max(eventStart.getTime(), start.getTime())),
@@ -692,6 +780,93 @@ export class SchedulerService {
     return blocks.sort((a, b) => a.start.getTime() - b.start.getTime());
   }
 
+  private async readSchedulerSettings(userId: string) {
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT config_key AS key, config_value AS value
+      FROM admin_remote_configs
+      WHERE user_id = $1
+        AND config_key = ANY($2::text[])
+      ORDER BY updated_at DESC
+      `,
+      [
+        userId,
+        [
+          'scheduler.policy',
+          'work.time',
+          'working_hours',
+          'work_hours',
+          'user.preference',
+        ],
+      ],
+    );
+    const merged: Record<string, unknown> = {};
+    for (const row of result.rows) {
+      const value = this.asRecord(row.value);
+      Object.assign(merged, value);
+      const workHours = this.asRecord(value.workHours ?? value.workingHours ?? value.working_hours);
+      if (Object.keys(workHours).length > 0) merged.workHours = workHours;
+    }
+    return merged;
+  }
+
+  private computeWorkBlocks(
+    start: Date,
+    end: Date,
+    settings: Record<string, unknown>,
+    profile: Record<string, unknown>,
+  ): FreeBlock[] {
+    const rawWorkHours =
+      settings.workHours ??
+      settings.workingHours ??
+      settings.working_hours ??
+      profile.workHours ??
+      profile.workingHours;
+    const workHours = this.asRecord(rawWorkHours);
+    if (Object.keys(workHours).length === 0 || workHours.enabled === false) return [{ start, end, source: 'range' }];
+
+    const blocks: FreeBlock[] = [];
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor < end) {
+      const weekday = cursor.getDay();
+      const dayKey = String(weekday);
+      const isoDayKey = String(weekday === 0 ? 7 : weekday);
+      const windows =
+        this.workWindowsForDay(workHours, dayKey) ??
+        this.workWindowsForDay(workHours, isoDayKey) ??
+        this.workWindowsForDay(workHours, cursor.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()) ??
+        [];
+      for (const window of windows) {
+        const windowStart = this.dateAtTime(cursor, this.clean(window.start) ?? this.clean(window.from) ?? '09:00');
+        const windowEnd = this.dateAtTime(cursor, this.clean(window.end) ?? this.clean(window.to) ?? '18:00');
+        if (windowStart && windowEnd && windowStart < end && windowEnd > start && windowStart < windowEnd) {
+          blocks.push({
+            start: new Date(Math.max(windowStart.getTime(), start.getTime())),
+            end: new Date(Math.min(windowEnd.getTime(), end.getTime())),
+            source: 'work_hours',
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return blocks.length > 0 ? blocks : [{ start, end, source: 'range_no_work_hours_match' }];
+  }
+
+  private applyWorkBlocks(freeBlocks: FreeBlock[], workBlocks: FreeBlock[]) {
+    const result: FreeBlock[] = [];
+    for (const free of freeBlocks) {
+      for (const work of workBlocks) {
+        const start = new Date(Math.max(free.start.getTime(), work.start.getTime()));
+        const end = new Date(Math.min(free.end.getTime(), work.end.getTime()));
+        if (end.getTime() - start.getTime() >= 15 * 60000) {
+          result.push({ start, end, source: work.source ?? free.source });
+        }
+      }
+    }
+    return result.sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+
   private computeFreeBlocks(start: Date, end: Date, busy: BusyBlock[]) {
     const free: FreeBlock[] = [];
     let cursor = new Date(start);
@@ -701,6 +876,118 @@ export class SchedulerService {
     }
     if (cursor < end) free.push({ start: cursor, end });
     return free.filter((block) => block.end.getTime() - block.start.getTime() >= 15 * 60000);
+  }
+
+  private taskBlockedReason(task: TaskCandidate) {
+    if (task.locked) return '任务已锁定，不参与自动排程。';
+    if (!task.allowAutoSchedule) return '任务已关闭自动排程。';
+    if (task.latestEnd && task.latestEnd <= new Date()) return '任务可排时间窗已结束。';
+    return null;
+  }
+
+  private unplannedReason(task: TaskCandidate, freeBlocks: FreeBlock[]) {
+    if (freeBlocks.length === 0) return '没有可用时间块，可能被阻挡日程或工作时间设置占满。';
+    if (task.earliestStart || task.latestEnd) return '可用时间不足，或任务时间窗与空闲时间不匹配。';
+    if (!task.canSplit) return '任务不可拆分，找不到足够长的连续时间块。';
+    return '可用时间不足，或被更高优先级任务占用。';
+  }
+
+  private normalizePlannedReasons<T extends { task: TaskCandidate; reason: Record<string, unknown> }>(
+    items: T[],
+    strategy: string,
+  ) {
+    return items.map((item) => ({
+      ...item,
+      reason: {
+        ...item.reason,
+        text: `预计剩余 ${item.task.remainingMinutes} 分钟，已确认投入 ${item.task.confirmedMinutes} 分钟；按 ${strategy} 策略安排。`,
+        location: item.task.location,
+        notes: item.task.notes,
+        dueAt: item.task.dueAt?.toISOString(),
+      },
+    })) as T[];
+  }
+
+  private normalizeUnplannedReasons(items: Array<Record<string, unknown>>, freeBlocks: FreeBlock[]) {
+    return items.map((item) => {
+      const reason = this.clean(item.reason);
+      if (reason && /^[\x20-\x7E\u4E00-\u9FFF，。；：、（）]+$/.test(reason)) return item;
+      return {
+        ...item,
+        reason: freeBlocks.length === 0 ? '没有可用时间块。' : '可用时间不足或约束不匹配。',
+      };
+    });
+  }
+
+  private isRecurringEvent(payload: Record<string, unknown>) {
+    const recurrence = this.asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
+    const repeat = this.clean(payload.repeat ?? payload.repeatType ?? payload.frequency);
+    return Object.keys(recurrence).length > 0 || Boolean(repeat);
+  }
+
+  private expandEventOccurrences(
+    payload: Record<string, unknown>,
+    eventStart: Date | null,
+    eventEnd: Date | null,
+    rangeStart: Date,
+    rangeEnd: Date,
+  ) {
+    if (!eventStart || !eventEnd || eventStart >= eventEnd) return [];
+    const recurrence = this.asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
+    const repeat = this.clean(recurrence.frequency ?? recurrence.freq ?? payload.repeat ?? payload.repeatType ?? payload.frequency)?.toLowerCase();
+    if (!repeat) {
+      return eventStart < rangeEnd && eventEnd > rangeStart ? [{ start: eventStart, end: eventEnd }] : [];
+    }
+    const interval = Math.max(1, Number(recurrence.interval ?? payload.repeatInterval ?? 1));
+    const until = this.readDate(recurrence.until ?? payload.repeatUntil) ?? rangeEnd;
+    const durationMs = eventEnd.getTime() - eventStart.getTime();
+    const occurrences: Array<{ start: Date; end: Date }> = [];
+    const cursor = new Date(eventStart);
+    const maxIterations = 1000;
+    let iterations = 0;
+
+    while (cursor < rangeEnd && cursor <= until && iterations < maxIterations) {
+      const occurrenceEnd = new Date(cursor.getTime() + durationMs);
+      if (cursor < rangeEnd && occurrenceEnd > rangeStart && this.recurrenceDayMatches(cursor, recurrence)) {
+        occurrences.push({ start: new Date(cursor), end: occurrenceEnd });
+      }
+      if (repeat.includes('week')) cursor.setDate(cursor.getDate() + 7 * interval);
+      else if (repeat.includes('month')) cursor.setMonth(cursor.getMonth() + interval);
+      else cursor.setDate(cursor.getDate() + interval);
+      iterations += 1;
+    }
+    return occurrences;
+  }
+
+  private recurrenceDayMatches(date: Date, recurrence: Record<string, unknown>) {
+    const days = recurrence.byWeekday ?? recurrence.byweekday ?? recurrence.daysOfWeek ?? recurrence.weekdays;
+    if (!Array.isArray(days) || days.length === 0) return true;
+    const weekday = date.getDay();
+    const isoWeekday = weekday === 0 ? 7 : weekday;
+    const names = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    return days.some((item) => {
+      if (typeof item === 'number') return item === weekday || item === isoWeekday;
+      if (typeof item !== 'string') return false;
+      const lower = item.toLowerCase();
+      return lower === String(weekday) || lower === String(isoWeekday) || lower.startsWith(names[weekday]);
+    });
+  }
+
+  private workWindowsForDay(workHours: Record<string, unknown>, dayKey: string) {
+    const direct = workHours[dayKey];
+    if (Array.isArray(direct)) return direct.map((item) => this.asRecord(item));
+    const days = this.asRecord(workHours.days ?? workHours.weekly ?? workHours.schedule);
+    const nested = days[dayKey];
+    if (Array.isArray(nested)) return nested.map((item) => this.asRecord(item));
+    return null;
+  }
+
+  private dateAtTime(day: Date, value: string) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value);
+    if (!match) return null;
+    const date = new Date(day);
+    date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    return date;
   }
 
   private taskScore(task: TaskCandidate, strategy: string, profile: Record<string, unknown>) {
@@ -781,8 +1068,26 @@ export class SchedulerService {
         rejected.push({ taskId, reason: 'invalid_task_or_time', raw: item });
         continue;
       }
+      const blockedReason = this.taskBlockedReason(task);
+      if (blockedReason) {
+        rejected.push({ taskId, reason: 'task_not_auto_schedulable', detail: blockedReason, raw: item });
+        continue;
+      }
       if (start < rangeStart || end > rangeEnd) {
         rejected.push({ taskId, reason: 'outside_range', raw: item });
+        continue;
+      }
+      if (task.earliestStart && start < task.earliestStart) {
+        rejected.push({ taskId, reason: 'before_task_time_window', raw: item });
+        continue;
+      }
+      if (task.latestEnd && end > task.latestEnd) {
+        rejected.push({ taskId, reason: 'after_task_time_window', raw: item });
+        continue;
+      }
+      const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000);
+      if (durationMinutes < task.minChunkMinutes || durationMinutes > task.maxChunkMinutes) {
+        rejected.push({ taskId, reason: 'outside_task_chunk_limits', raw: item });
         continue;
       }
       if (occupied.some((block) => start < block.end && end > block.start)) {

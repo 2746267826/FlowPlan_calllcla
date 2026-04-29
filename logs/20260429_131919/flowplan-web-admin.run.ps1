@@ -1,0 +1,12 @@
+﻿$ErrorActionPreference = 'Continue'
+Set-Location -LiteralPath 'C:\Users\a2746\Desktop\calll260426\web_admin'
+$env:PORT = '5173'
+$env:VITE_API_BASE_URL = 'http://localhost:3000/api'
+$env:VITE_PORT = '5173'
+Write-Host '[flowplan-web-admin] working directory: C:\Users\a2746\Desktop\calll260426\web_admin'
+Write-Host '[flowplan-web-admin] log: C:\Users\a2746\Desktop\calll260426\logs\20260429_131919\flowplan-web-admin.log'
+Write-Host '[flowplan-web-admin] command: npm run dev'
+npm run dev 2>&1 | Tee-Object -FilePath 'C:\Users\a2746\Desktop\calll260426\logs\20260429_131919\flowplan-web-admin.log'
+Write-Host ''
+Write-Host '[flowplan-web-admin] exited. Press Enter to close this window.'
+Read-Host

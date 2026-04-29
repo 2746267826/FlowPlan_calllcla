@@ -5,8 +5,8 @@ import { FlowPlanRequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
-const TASK_TYPES = ['task', 'task_item', 'task_items'];
-const EVENT_TYPES = ['event', 'calendar_event', 'calendar_events'];
+const TASK_TYPES = ['task', 'tasks', 'task_item', 'task_items'];
+const EVENT_TYPES = ['event', 'events', 'calendar_event', 'calendar_events'];
 
 @Injectable()
 export class WebService {

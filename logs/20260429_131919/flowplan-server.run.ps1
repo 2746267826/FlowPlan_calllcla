@@ -1,0 +1,11 @@
+﻿$ErrorActionPreference = 'Continue'
+Set-Location -LiteralPath 'C:\Users\a2746\Desktop\calll260426\server'
+$env:DATABASE_URL = 'postgresql://postgres:060331@localhost:5432/flowplan'
+$env:PORT = '3000'
+Write-Host '[flowplan-server] working directory: C:\Users\a2746\Desktop\calll260426\server'
+Write-Host '[flowplan-server] log: C:\Users\a2746\Desktop\calll260426\logs\20260429_131919\flowplan-server.log'
+Write-Host '[flowplan-server] command: npm run dev'
+npm run dev 2>&1 | Tee-Object -FilePath 'C:\Users\a2746\Desktop\calll260426\logs\20260429_131919\flowplan-server.log'
+Write-Host ''
+Write-Host '[flowplan-server] exited. Press Enter to close this window.'
+Read-Host

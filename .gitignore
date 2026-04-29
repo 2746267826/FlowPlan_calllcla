@@ -39,6 +39,11 @@ migrate_working_dir/
 server/dist/
 web_admin/dist/
 
+# Local secrets
+flowplan.local.env
+server/flowplan.local.env
+server/.env
+
 # Symbolication related
 app.*.symbols
 
