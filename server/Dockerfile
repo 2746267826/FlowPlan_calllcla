@@ -1,27 +1,27 @@
-# 放弃 Alpine，直接使用官方全量 Debian 镜像（不带后缀就是全量版）
 FROM node:24.13.1
 
-# 环境变量：标准版镜像自带时区数据，直接设置即可生效
 ENV TZ=Asia/Shanghai
 ENV NODE_ENV=production
 
+# 🌟 核心拦截：强行将常见底层二进制包的下载地址重定向到国内镜像
+ENV PRISMA_ENGINES_MIRROR=https://npmmirror.com/mirrors/prisma/
+ENV SHARP_DIST_BASE_URL=https://npmmirror.com/mirrors/sharp-libvips/
+ENV SASS_BINARY_SITE=https://npmmirror.com/mirrors/node-sass/
+ENV PUPPETEER_DOWNLOAD_HOST=https://npmmirror.com/mirrors/
+ENV ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+
 WORKDIR /app
 
-# 1. 核心加速：配置国内镜像源
 RUN npm config set registry https://registry.npmmirror.com/
 
-# 2. 核心优化：只拷贝依赖描述文件
-# 这样做能利用 Docker 的“层缓存”。只要你没改 package.json，下次部署这一步是 0 秒完成。
 COPY package*.json ./
 
-# 3. 增加参数防止日志刷屏导致缓冲区假死，并关闭安全审计以提速
-RUN npm install --no-audit --progress=false
+# 🌟 核心排错：开启 verbose (啰嗦模式)，强制打印每一次底层的网络请求
+RUN npm install --verbose
 
-# 4. 拷贝源代码
 COPY . .
 
 EXPOSE 3200
 
-# 启动
-# 使用 && 确保只有数据库同步成功后，才会启动应用
+# 绑定数据库表结构同步与服务启动
 CMD ["sh", "-c", "npm run db:schema && npm start"]
