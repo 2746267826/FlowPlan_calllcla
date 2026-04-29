@@ -23,4 +23,5 @@ COPY . .
 EXPOSE 3200
 
 # 启动
-CMD ["npm", "start"]
+# 使用 && 确保只有数据库同步成功后，才会启动应用
+CMD ["sh", "-c", "npm run db:schema && npm start"]
