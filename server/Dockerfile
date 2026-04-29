@@ -1,23 +1,26 @@
-FROM node:24.13.1-alpine
+# 放弃 Alpine，直接使用官方全量 Debian 镜像（不带后缀就是全量版）
+FROM node:24.13.1
 
-# 设置工作目录
+# 环境变量：标准版镜像自带时区数据，直接设置即可生效
+ENV TZ=Asia/Shanghai
+ENV NODE_ENV=production
+
 WORKDIR /app
 
-# 🌟 核心魔法：配置 npm 国内镜像源，彻底解决网络卡顿问题
+# 1. 核心加速：配置国内镜像源
 RUN npm config set registry https://registry.npmmirror.com/
 
-# 先只拷贝 package 文件，利用 Docker 缓存机制加速后续构建
+# 2. 核心优化：只拷贝依赖描述文件
+# 这样做能利用 Docker 的“层缓存”。只要你没改 package.json，下次部署这一步是 0 秒完成。
 COPY package*.json ./
 
-# 安装依赖（这步现在会飞快）
-RUN npm install
+# 3. 增加参数防止日志刷屏导致缓冲区假死，并关闭安全审计以提速
+RUN npm install --no-audit --progress=false
 
-# 拷贝服务端的所有源代码到容器中
+# 4. 拷贝源代码
 COPY . .
 
-# 暴露你的 3200 端口
 EXPOSE 3200
 
-# 启动服务（假设你的 package.json 里配置了 "start": "node xxx"）
-# 如果你是直接运行 js 文件，请改成 CMD ["node", "你的入口文件.js"]
+# 启动
 CMD ["npm", "start"]
