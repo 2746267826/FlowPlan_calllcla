@@ -1,0 +1,11 @@
+{
+  "name": "FlowPlan",
+  "short_name": "FlowPlan",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#f8fafc",
+  "description": "FlowPlan cloud-first planning workspace",
+  "orientation": "any",
+  "icons": []
+}

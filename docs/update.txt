@@ -1,0 +1,201 @@
+# FlowPlan 日常更新记录
+
+本文件记录开发过程中的细粒度更新；面向发布的版本摘要继续写入 `version.txt`。
+
+维护约定：
+
+- 每次重要功能开发、结构调整、发布准备或关键修复后，自动补充本文件。
+- 如果改动影响用户理解、平台支持、权限说明、构建说明、同步边界或数据安全边界，同时修缮 `README.md`。
+- 发布前同步检查 `version.txt`、`README.md`、`RELEASE_CHECKLIST.md` 与应用内版本号。
+
+## 2026-04-26
+
+### 开发优先级调整：Web 管理端提前
+- 按最新决策，将原 P13「Web 管理面板完善和运维管理」提前为新的 P9。
+- 原 P9 及之后阶段整体顺延：云文件/OneDrive 变为 P10，AI 聊天变为 P11，外部聊天入口变为 P12，位置/天气/蓝牙变为 P13。
+- 将生态扩展与插件体系单独整理为 P14，长期智能、隐私治理和更长期生态方向顺延为 P15。
+- 调整原因：后续云文件、AI、外部聊天和现实上下文都会增加大量服务端状态，先补齐 Web 管理端有利于审计、排障、冲突处理和远程配置。
+
+### P3/P7/P8 严格复核后的补齐
+- P3：将 Outlook 设置页和 iCal 导入导出页的路由入口文件瘦身为导出壳，具体实现移入 `outlook_settings_page_body.dart` 与 `ical_import_export_page_body.dart`，保留原有 part widget 拆分结构，降低后续路由入口维护负担。
+- P7：报告中心补充本周周报、本月月报生成入口，报告卡片支持人工确认；系统通知从队列补齐为实际调用 Windows 通知能力；邮件从队列补齐为 `mailto:` 客户端发送入口；“发送全部待推送”可统一处理 Telegram、Webhook、系统通知和邮件。
+- P8：文件中心补充本地目录扫描、文件列表、文件选择、双击系统打开、长按/按钮定位资源管理器、文本文件右侧预览、文本编辑保存、Kopia 历史版本登记和历史版本列表展示。
+- 严格边界：Telegram 外部回复生成操作草案、真实 Kopia 版本下载/恢复、OneDrive/服务端云文件下载和资源管理器系统级右键菜单仍属于 P9/P11/P13 的后续外部集成，不再用 P7/P8 的完成勾选混淆。
+
+### P8 代码部分完成
+- 客户端 schema 升级到 15，新增 `file_folders`、`file_items`、`file_context_links`、`file_folder_usages`、`file_version_records`，支持本地文件夹登记、文件元数据、上下文关联、最近使用和历史版本索引。
+- 新增 `FileContextRepository` 和 `FileContextInteractionService`，支持任务/日程绑定文件夹、自动推荐文件夹、记录最近使用、文本预览、文本保存、系统默认打开和资源管理器定位。
+- 新增文件中心 `/files`，展示最近/常驻文件夹和全部文件夹，可手动添加本地资料目录并调用 Windows 资源管理器打开或定位。
+- 任务详情和日程详情接入文件上下文面板，可生成推荐文件夹候选、人工确认推荐、手动绑定文件夹，并把操作写入审计与同步队列。
+- Windows 原生壳层新增 `openPath` 和 `revealPath` MethodChannel 能力，为双击打开、右键/长按定位、文件管理原生交互提供基础。
+- Kopia 版本管理先落为版本元数据接口：历史版本不覆盖当前文件，后续 P9 可以接入真实下载、恢复前预览和云后端同步。
+- 同步能力扩展：`file_folder`、`file_item`、`file_context_link`、`file_folder_usage`、`file_version_record` 纳入同步对象注册，并补齐服务端拉取落地逻辑。
+- 服务端 PostgreSQL schema 新增文件上下文和版本记录表及索引；health phase 更新为 `p8`。
+- 已更新用户版完整计划和 master priority plan，将 P8 代码部分标记为完成；下一阶段主线切换到 P9 云文件、OneDrive 与服务端存储共存。
+
+### P7 代码部分完成
+- 新增报告与日记数据模型：客户端 schema 升级到 14，新增 `report_documents`、`diary_entries`、`report_push_deliveries`，支持草稿、确认、推送状态、失败原因和重试次数。
+- 新增 `ReportRepository`、`ReportGenerationService` 和 `ReportPushService`，可生成日报、周报、月报和自动日记草稿，并把软件内通知、Telegram、Webhook、邮件等渠道纳入统一推送队列。
+- 日报会引用日程、阻挡日程实际候选、任务排程片段、任务完成情况、实际记录、活动片段、任务投入等结构化数据；文件、位置、天气先保留上下文接口，等待 P8/P12 数据源接入。
+- 新增软件内报告页 `/reports`，可生成今日日报、查看最近报告、将报告加入 Telegram/Webhook/Email/系统通知队列，并触发 Telegram 待推送发送。
+- Telegram 推送支持 bot token 和 chat id 设置读取；推送成功/失败会写入 `report_push_deliveries`，失败保留错误并可重试。Webhook 支持直接发送，邮件和系统通知先进入统一队列。
+- 同步能力扩展：`report_document`、`diary_entry`、`report_push_delivery` 纳入同步对象注册，并补齐服务端拉取落地逻辑。
+- 服务端 PostgreSQL schema 新增报告、日记和推送投递表及索引；health phase 更新为 `p7`。
+- 已更新用户版完整计划和 master priority plan，将 P7 代码部分标记为完成；下一阶段主线切换到 P8 文件管理和文件上下文。
+### P6 代码部分完成
+- 排程引擎升级为读取真实状态：在生成预案前汇总阻挡日程、已确认实际记录、任务实际投入日志、任务剩余时间和计划偏离触发原因。
+- 任务排程时不再只使用原始预计时长；若已有可信 `task_work_logs`，会扣减实际投入并按剩余时长安排，已被实际投入覆盖的任务会从本轮排程中清出。
+- 已确认实际记录会作为占用块参与避让，普通任务不会覆盖阻挡日程或已确认实际发生的时间段。
+- 排程结果新增上下文快照、每个安排的原因、原始预计时长、实际投入、剩余时长和是否需要确认等字段，继续只生成预案，不静默写库。
+- 新增计划偏离触发的局部重排入口，偏离后可从当前时间开始重新生成预案。
+- 服务端 health phase 更新为 `p6`；用户版计划和 master priority plan 已将 P6 代码部分标记为完成。
+### P4/P5 代码部分完成
+- P4 新增实际记录基础能力：客户端 schema 升级到 13，新增 `actual_activity_logs`，支持候选、确认、拒绝、合并状态，来源覆盖手动、阻挡日程、追踪推断和 AI 草案。
+- P4 新增 `ActualActivityLogRepository` 和 `BlockingEventActualCandidateService`：阻挡日程仅在已结束、未取消、无已确认实际记录重叠、无明显追踪冲突时生成候选；确认/拒绝均写入审计并进入离线同步队列。
+- P5 新增活动融合基础能力：新增 `activity_segments`、`activity_interpretations`、`task_work_logs`，把碎片追踪记录合并为活动片段，生成活动理解、任务投入日志和追踪推断实际记录候选。
+- P5 新增 `ActivityFusionRepository` 和 `ActivityFusionService`：支持连续上下文合并、应用/窗口/文档上下文提取、关键词任务关联、置信度分层和报告可引用摘要。
+- 同步能力扩展：`actual_activity_log`、`activity_segment`、`activity_interpretation`、`task_work_log` 纳入同步对象注册，并补齐服务端拉取落地逻辑。
+- 服务端 PostgreSQL schema 新增实际记录、活动片段、活动理解和任务投入日志表及核心索引，为服务端完整事实库存储和后续 P6/P7 使用做准备。
+- 已更新用户版完整计划和 master priority plan，将 P4/P5 代码部分标记为完成；UI 展示和报告推送接入继续归入后续 P6/P7 细化。
+
+### 文件管理与版本历史需求补充
+- 在 P8/P9 计划中新增文件同步原生开发约束：同步、传输、断点续传、校验、版本历史等能力需要独立模块化，不与普通 UI 逻辑混放。
+- 新增 Kopia 作为未来文件历史版本管理能力的底层工具或后端之一。
+- 明确小文件正常传输，大文件必须分块传输。
+- 明确上传断点续传优先采用 upload session，下载断点续传优先采用 HTTP Range 或 chunk 下载。
+- 明确文件历史版本不是覆盖当前版本，而是在文件详情或交互面板中展示历史版本列表，用户可选择下载；恢复覆盖必须二次确认并审计。
+
+### P3 客户端模块化重构完成
+- 完成 P3 代码部分：客户端大页面和 Provider 文件按模块拆分，新增 `docs/architecture/p3_client_modularization_report_260427.md` 记录拆分结果和验收口径。
+- `tracker_page.dart` 从约 5363 行拆分为主页面、模型、日详情、历史筛选、通用面板、输入行为面板、区间分析面板、会话/日志条目和 helper 等多个 part 文件。
+- `app_providers.dart` 将追踪相关 Provider 拆入 `tracker_providers.dart`，主 Provider 文件保留通用仓储、同步、Outlook、日期和日历任务基础注册。
+- `outlook_settings_page.dart`、`ical_import_export_page.dart`、`calendar_books_page.dart`、`settings_page.dart` 已分别拆出私有 widget/dialog part 文件。
+- 新增 `client_flutter/lib/shared/widgets/app_state_widgets.dart`，提供空状态、错误状态、section header、轻量统计卡片、同步状态标签、审计提示和危险操作确认弹窗。
+- 已更新用户版完整计划，将 P3 标记为代码部分完成，下一阶段主线切换到 P4。
+- Codex 未运行 Flutter/Dart 指令；Flutter/Dart analyzer 和格式化仍需用户按需手动执行。
+
+### 仓库目录模块化整理
+- 新增 `client_flutter/`，将 Flutter 客户端完整移动到该目录下，包括 `lib/`、`android/`、`windows/`、`assets/`、`test/`、`pubspec.yaml`、`pubspec.lock`、发布检查清单和版本记录。
+- 根目录保留仓库级入口文件、`server/`、`web_admin/`、`docs/` 和 `client_flutter/`，避免 Flutter 客户端与服务端、Web 管理端交叉混放。
+- 将根目录历史计划文件和早期 `CODEX.md` 归档到 `docs/archive/legacy-root-plans/`。
+- 将日常更新记录移动到 `docs/update.txt`。
+- 将原 Flutter 客户端 README 移入 `client_flutter/README.md`，根目录新增仓库级 `README.md`，说明各模块职责和命令入口。
+- 更新 `.gitignore`，让 Flutter、Node、IDE 和构建缓存忽略规则适配新的多模块目录结构。
+
+### P2 代码部分完成
+- 修正 `docs/FlowPlan_用户版完整开发计划_260426.md` 中 P1 的展示口径：P1 已完成，第二/第三批同步对象和 Outlook 深度集成已明确归入后续阶段，不再显示为 P1 未完成项。
+- 本地数据库 schema 提升到 12，新增追踪性能索引和 `activity_hourly_stats`、`activity_daily_stats`、`input_hourly_stats`、`input_daily_stats` 聚合表。
+- 为历史日志、输入事件、活动记录新增分页查询入口，并将时间、应用、分类、任务、事件类型、忽略状态等筛选下推到 SQL / Repository 层。
+- 服务端 PostgreSQL schema 新增追踪聚合表和同步对象追踪时间索引。
+- 新增服务端 `AnalyticsController` / `AnalyticsService`，提供 `/api/analytics/activity-heatmap`、`/api/analytics/input-heatmap`、`/api/analytics/activity-range-summary`、`/api/analytics/top-apps`、`/api/analytics/top-categories`、`/api/analytics/task-work-summary`、`/api/analytics/focus-trends`。
+- 继续补齐 P2 服务端明细分页能力：新增 `/api/analytics/activity-records` 和 `/api/analytics/input-events`，支持时间范围、应用、分类、任务或事件类型筛选，并通过 `limit` / `offset` 分页返回明细。
+- 统计分桶接口补充 `processName`、`category`、`taskId` / `eventKind` 筛选参数，为后续追踪 UI 的多条件筛选下推做准备。
+- 客户端新增 `AnalyticsApi` 和 `analyticsApiProvider`，为后续追踪页面切换到服务端统计结果提供统一调用入口。
+- 客户端 `AnalyticsApi` 新增活动记录和输入事件分页明细调用方法。
+- 服务端 health phase 更新为 `p2`。
+- 已执行 `server` 的 `npm run build`，构建通过。
+- Codex 未运行 Flutter/Dart 指令；客户端 Dart 层格式化、分析和测试仍按强制约束由用户手动执行。
+
+### P1 完整收尾
+- 用户已成功执行 `npm run db:schema`，服务端 PostgreSQL schema 已应用。
+- 用户已成功启动 `npm run dev`，Nest 服务端已启动并映射 P1 API 路由。
+- 用户已验证 `/api/health` 和 `/api/sync/status` 可访问；设备注册 smoke test 为可选项，不作为 P1 阻塞。
+- 已将 `server/src/health/health.controller.ts` 的 phase 从 `p0` 更新为 `p1`，并再次确认 `server` 构建通过。
+- 已更新 `docs/FlowPlan_用户版完整开发计划_260426.md`，将 P1 标记为已完成并收尾，下一阶段主线切换为 P2。
+
+### P1 代码部分完成
+- 服务端从 P0 占位骨架升级为 P1 同步底座：新增 PostgreSQL schema、用户、设备、同步对象、变更日志、冲突、同步游标、审计日志和 Outlook 对象映射表。
+- 服务端实现 `/auth/login`、`/devices/register`、`/devices`、`/devices/:deviceId/heartbeat`、`/sync/push`、`/sync/pull`、`/sync/ack`、`/sync/conflicts`、`/sync/status` 和冲突解决接口。
+- 客户端新增服务端拉取变更落地器，支持将服务端日历本、任务本、日程、任务、排程片段、审计日志和跨端设置应用到本地数据库。
+- 客户端将日程、任务、任务本、日历本、排程片段和审计日志写入接入离线变更队列，并维护本地同步状态。
+- 客户端推送成功后会标记对象已同步；服务端返回冲突时会写入本地冲突表并标记对象冲突状态。
+- 新增服务端 P1 schema 应用脚本 `server/scripts/apply-schema.mjs`，并更新 `server/README.md`。
+- 更新 `docs/FlowPlan_用户版完整开发计划_260426.md`，将 P1 代码完成项打钩，并保留手动联调验证清单。
+- 已完成非 Flutter/Dart 验证：`server` 执行 `npm run build` 成功；`web_admin` 执行 `npm run build` 成功。
+
+### Outlook 同步路线调整
+- 更新 `docs/FlowPlan_用户版完整开发计划_260426.md`，明确未来不再把 Outlook 作为任务本同步容器。
+- 新路线为：FlowPlan 服务端是任务、任务本和排程事实库；服务端自动读取 Outlook 任务并生成导入结果或候选。
+- 保留 Outlook 专属日历能力：任务排程后可在 Outlook 中创建对应日程镜像，方便用户查看计划时间。
+- 服务端需要定时或实时比较自身数据与 Outlook 端差异，差异进入同步差异或冲突候选，不静默覆盖。
+- 未来允许写入 Outlook，但写入前必须明确提示并经人工确认，写入过程必须记录严格审计。
+
+### 用户版总计划收口
+- 新增 `docs/FlowPlan_用户版完整开发计划_260426.md`，作为用户日常阅读的唯一完整计划入口。
+- 将 P0 到 P14 全部整理到同一个文件中，按阶段说明目标、任务、验收标准和当前状态。
+- 已在用户版计划中将 P0 已完成事项全部勾选。
+- 更新 `docs/README.md`，明确用户优先阅读用户版完整开发计划，其余文档作为开发和架构内部参考。
+
+### 计划体系整理到 docs
+- 新增 `docs/README.md`，作为项目文档总入口。
+- 新增 `docs/planning/README.md`，作为规划文档入口。
+- 新增 `docs/planning/master_priority_plan_260426.md`，将现有计划统一整理为 P0-P14 的完整优先级路线图。
+- 新增 `docs/planning/near_term_execution_plan_260426.md`，整理 P1-P3 近期执行清单。
+- 新增 `docs/planning/source_plan_inventory_260426.md`，说明根目录历史计划文件与 `docs/planning/` 权威计划之间的映射关系。
+- 在 `priority_development_plan_260426.md`、`complete_development_plan_260426.md`、`future_development_plan_260426.md` 顶部标记其已归档为历史来源，后续计划以 `docs/planning/master_priority_plan_260426.md` 为准。
+
+### P0 收尾勾选
+- 将 `docs/planning/master_priority_plan_260426.md` 中 P0 的已完成事项、交付物、非目标确认和收尾验收统一改为 `[x]` 勾选清单。
+- 将 `docs/architecture/p0_client_server_architecture_260426.md` 中 P0 完成判据和交付物状态统一改为 `[x]`。
+- 将 `docs/architecture/p0_completion_report_260426.md` 中 P0 交付物与完成判据统一改为 `[x]`。
+- 将归档来源文件 `priority_development_plan_260426.md` 中 P0 必须完成项、输出物和验收项补齐勾选，确保所有已完成 P0 工作在计划中可见。
+
+### P0 技术路线决策补充
+- 补充“继续保留 Flutter 主客户端”的架构决策：Windows/Android 端继续使用 Flutter + Riverpod + Drift，本阶段不进行 Electron、Tauri、React Native 全量迁移。
+- 明确 Flutter 客户端的长期职责：本地缓存、离线交互、Windows/Android 原生采集、文件打开、同步状态展示和所有自动操作的人工确认。
+- 明确服务端独立建设：承载完整事实库、跨端同步、统计聚合、文件存储、日报/周报、AI 后台任务和审计。
+- 明确 Web 管理面板独立建设：优先采用 Next.js 或 Vite React，不把 Flutter Web 作为复杂管理后台主路线。
+- 明确 Windows 文件管理、右键菜单、资源管理器联动、OneDrive 本地状态检测等能力优先通过 Flutter 插件或轻量 sidecar 补强，不因此整体替换客户端框架。
+- 已同步更新 `docs/architecture/p0_client_server_architecture_260426.md`、`priority_development_plan_260426.md`、`complete_development_plan_260426.md` 和 `future_development_plan_260426.md`。
+
+### P0 完整收口
+- 新增 `docs/architecture/p0_completion_report_260426.md`，明确 P0 已完成、P0 非目标、完成判据、当前代码基础盘点和 P1 启动条件。
+- 新增 `docs/architecture/p0_p1_handoff_contract_260426.md`，整理 P1 第一批同步对象、同步元数据、离线变更队列、最小同步 API、DTO 草案、客户端/服务端最小模块和 P1 验收口径。
+- 更新 `docs/architecture/p0_client_server_architecture_260426.md` 的 P0 交付物清单和 P1 交接入口。
+- 更新 `priority_development_plan_260426.md`，将 P0 完成报告和 P1 交接契约纳入 P0 输出物。
+
+### P0 代码底座
+- 新增 Flutter 客户端服务端 API 基础设施：`lib/core/server_api/api_client.dart`、`api_error.dart`、`auth_token_store.dart`。
+- 新增 Flutter 客户端同步基础设施：`lib/core/sync/` 下的同步状态、对象注册、游标存储、冲突快照、冲突存储、同步状态存储和 `ServerSyncEngine`。
+- 新增 Flutter 客户端离线队列基础设施：`lib/core/offline_queue/` 下的离线变更模型、存储和上传 runner。
+- 数据库版本提升到 11，新增 `sync_object_states`、`offline_mutations`、`sync_conflicts` 三张 P0 基础表，支持同步状态、离线变更队列和冲突候选。
+- 新增 `server/` NestJS 风格最小骨架，覆盖 health、devices、sync push/pull/ack/conflicts 的 P0 级接口边界。
+- 新增 `web_admin/` Vite React 风格最小骨架，作为未来独立 Web 管理面板入口。
+- 新增 `docs/development_constraints_260426.md`，记录 Codex 禁止运行 `flutter` 和 `dart` 指令的强制约束；需要时由用户手动执行验证命令。
+
+### P0 客户端 / 服务端分离架构收口
+
+- 根据 `priority_development_plan_260426.md` 完成 P0“架构定调与服务端/客户端分离底座”。
+- 新增 `docs/architecture/p0_client_server_architecture_260426.md`，明确未来 FlowPlan 架构：
+  - 服务端是完整事实库，不只是备份。
+  - 客户端是本地缓存、离线交互、原生采集和人工确认入口。
+  - 热力图、趋势图、输入统计、区间分析、日报统计等大量数据统计由服务端聚合后返回结果，客户端默认不下载海量原始数据。
+- 在 P0 文档中确定推荐服务端技术栈：TypeScript + NestJS + PostgreSQL，配合 Redis、S3 兼容对象存储和 Web 管理面板。
+- 补齐 API 分层草案：认证与设备、同步、业务数据、统计、文件、AI 与操作预案、报告与推送、审计。
+- 补齐同步对象清单：第一批同步日程/任务/排程/实际记录/审计，第二批同步活动片段/活动理解/文件元数据，第三批后台同步原始追踪和输入事件。
+- 补齐客户端/服务端职责边界表，为后续 P1 同步状态、离线队列和冲突模型开发提供依据。
+- 已在 `priority_development_plan_260426.md` 标记 P0 输出物完成。
+
+## 2026-04-24
+
+### P1 信息架构与页面层级整理收口
+
+- 根据 `plan260424.md` 完成 P1 开发侧收口。
+- 追踪主页面移除热力图和区间分析的直接展示与加载，保留当前会话、日报摘要、输入行为摘要和详细数据入口。
+- 追踪详情、历史日志、完整输入历史、键鼠热力图继续由二级页面承载，降低一级页面卡顿风险。
+- 导入导出页增加明确区块：操作对象与策略、标准 iCalendar、FlowPlan 结构化归档、完整数据库、恢复管理、存储位置、规则说明。
+- 日历本管理页增加容器边界说明，区分普通编辑、同步容器和本地排程策略。
+- 清理导入导出页残留乱码文案。
+
+### 新增待开发需求：追踪查询性能优化
+
+- 记录新需求：目前“追踪”中所有涉及查询和筛选数据的位置仍存在较长加载时间，需要优化或调整数据库结构与查询方式。
+- 已将该需求同步到 `plan260424.md` 的 P6 / P8：后续应从数据库索引、复合索引、筛选下推、分页/游标加载、结果缓存、按日/按小时预聚合、归档清理策略等方向处理。
+- 后续实现时优先避免在 Dart/UI 层全量拉取原始追踪数据再过滤，追踪页面和二级分析页均应只加载当前可见范围或明确分页的数据。
+
+### P0 发布稳定性收口
+
+- 根据 `plan260424.md` 的 P0“发布稳定与回归验证”建立 `RELEASE_CHECKLIST.md`。
+- 将版本链路推进到 `v1.4.3+143`，同步 `pubspec.yaml`、`app_release.dart`、`Runner.rc`、`README.md` 和 `version.txt`。
+- 在 README 中新增“发布验证”章节，明确发布前需要完成的 Windows、Android、Outlook、追踪、数据管理与审计回归。
+- 建立日常更新记录文件，后续开发继续在本文件追加细粒度更新。
