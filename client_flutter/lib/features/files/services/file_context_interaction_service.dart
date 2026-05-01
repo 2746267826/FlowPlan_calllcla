@@ -39,7 +39,9 @@ class FileNodeOpenResult {
   final String? localPath;
   final String? message;
 
-  bool get needsDownload => action == 'download_then_open';
+  bool get needsDownload =>
+      action == 'download_then_open' ||
+      action == 'conflict_or_download_required';
 }
 
 class FileContextInteractionService {
@@ -367,6 +369,8 @@ class FileContextInteractionService {
 
   String _messageForOpenAction(String action, Map<String, dynamic> plan) {
     switch (action) {
+      case 'conflict_or_download_required':
+        return '本地候选文件无法与服务端对象确认同一性，不能直接打开。可下载服务端副本，或重新定位正确文件。';
       case 'download_then_open':
         return '本设备没有可确认同一性的本地副本，需要下载后打开。';
       case 'needs_upload_or_relink':

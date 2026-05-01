@@ -4,7 +4,7 @@ const Set<String> kDefaultTrackerIgnoredProcesses = <String>{
 };
 
 const Set<String> kDefaultTrackerIgnoredAndroidPackages = <String>{
-  'com.flowplan.flowplan',
+  'com.flowplan.flawplanv2',
   'com.android.systemui',
   'com.android.launcher3',
   'com.google.android.apps.nexuslauncher',

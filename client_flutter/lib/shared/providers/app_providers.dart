@@ -20,8 +20,17 @@ import '../../core/server_api/models_api.dart';
 import '../../core/server_api/remote_settings_repository.dart';
 import '../../core/server_api/reports_api.dart';
 import '../../core/server_api/request_context.dart';
+import '../../core/server_api/scheduler_api.dart';
 import '../../core/server_api/server_config_store.dart';
 import '../../core/server_api/tracking_ingest_api.dart';
+import '../../core/server_api/activity_understanding_api.dart';
+import '../../core/server_first/activity_understanding_server_first_store.dart';
+import '../../core/server_first/cloud_drive_server_first_store.dart';
+import '../../core/server_first/mutation_coordinator.dart';
+import '../../core/server_first/scheduler_server_first_store.dart';
+import '../../core/server_first/server_first_repository.dart';
+import '../../core/server_first/task_event_server_first_store.dart';
+import '../../core/server_first/tracking_server_first_store.dart';
 import '../../core/sync/server_sync_change_applier.dart';
 import '../../core/sync/sync_conflict_store.dart';
 import '../../core/sync/sync_cursor_store.dart';
@@ -292,6 +301,17 @@ final reportsApiProvider = FutureProvider<ReportsApi>((ref) async {
   return ReportsApi(apiClient);
 }, dependencies: [apiClientProvider]);
 
+final schedulerApiProvider = FutureProvider<SchedulerApi>((ref) async {
+  final apiClient = await ref.watch(apiClientProvider.future);
+  return SchedulerApi(apiClient);
+}, dependencies: [apiClientProvider]);
+
+final activityUnderstandingApiProvider =
+    FutureProvider<ActivityUnderstandingApi>((ref) async {
+  final apiClient = await ref.watch(apiClientProvider.future);
+  return ActivityUnderstandingApi(apiClient);
+}, dependencies: [apiClientProvider]);
+
 final modelsApiProvider = FutureProvider<ModelsApi>((ref) async {
   final apiClient = await ref.watch(apiClientProvider.future);
   return ModelsApi(apiClient);
@@ -361,6 +381,86 @@ final serverSyncEngineProvider = FutureProvider<ServerSyncEngine>((ref) async {
   serverRequestContextProvider,
   syncCursorStoreProvider,
   serverSyncChangeApplierProvider,
+]);
+
+final mutationCoordinatorProvider = Provider<MutationCoordinator>((ref) {
+  return MutationCoordinator(
+    mutationStore: ref.watch(offlineMutationStoreProvider),
+    pushPending: () async {
+      final engine = await ref.read(serverSyncEngineProvider.future);
+      await engine.pushPending();
+    },
+  );
+}, dependencies: [
+  offlineMutationStoreProvider,
+  serverSyncEngineProvider,
+]);
+
+final serverFirstRepositoryProvider =
+    FutureProvider<ServerFirstRepository>((ref) async {
+  final clientApi = await ref.watch(clientApiProvider.future);
+  return ServerFirstRepository(
+    clientApi: clientApi,
+    mutationCoordinator: ref.watch(mutationCoordinatorProvider),
+  );
+}, dependencies: [
+  clientApiProvider,
+  mutationCoordinatorProvider,
+]);
+
+final taskEventServerFirstStoreProvider =
+    FutureProvider<TaskEventServerFirstStore>((ref) async {
+  final repository = await ref.watch(serverFirstRepositoryProvider.future);
+  return TaskEventServerFirstStore(
+    repository: repository,
+    mutationCoordinator: ref.watch(mutationCoordinatorProvider),
+    stateStore: ref.watch(syncObjectStateStoreProvider),
+    database: ref.watch(databaseProvider),
+    taskRepository: ref.watch(taskRepositoryProvider),
+    eventRepository: ref.watch(eventRepositoryProvider),
+  );
+}, dependencies: [
+  serverFirstRepositoryProvider,
+  mutationCoordinatorProvider,
+  syncObjectStateStoreProvider,
+  databaseProvider,
+  taskRepositoryProvider,
+  eventRepositoryProvider,
+]);
+
+final cloudDriveServerFirstStoreProvider =
+    FutureProvider<CloudDriveServerFirstStore>((ref) async {
+  final api = await ref.watch(fileContextApiProvider.future);
+  return CloudDriveServerFirstStore(api);
+}, dependencies: [fileContextApiProvider]);
+
+final schedulerServerFirstStoreProvider =
+    FutureProvider<SchedulerServerFirstStore>((ref) async {
+  final api = await ref.watch(schedulerApiProvider.future);
+  return SchedulerServerFirstStore(api);
+}, dependencies: [schedulerApiProvider]);
+
+final activityUnderstandingServerFirstStoreProvider =
+    FutureProvider<ActivityUnderstandingServerFirstStore>((ref) async {
+  final api = await ref.watch(activityUnderstandingApiProvider.future);
+  return ActivityUnderstandingServerFirstStore(api);
+}, dependencies: [activityUnderstandingApiProvider]);
+
+final trackingServerFirstStoreProvider =
+    FutureProvider<TrackingServerFirstStore>((ref) async {
+  final analytics = await ref.watch(analyticsApiProvider.future);
+  final tracking = await ref.watch(trackingIngestApiProvider.future);
+  final activityUnderstanding =
+      await ref.watch(activityUnderstandingApiProvider.future);
+  return TrackingServerFirstStore(
+    analytics: analytics,
+    tracking: tracking,
+    activityUnderstanding: activityUnderstanding,
+  );
+}, dependencies: [
+  analyticsApiProvider,
+  trackingIngestApiProvider,
+  activityUnderstandingApiProvider,
 ]);
 
 final clientBootstrapServiceProvider =

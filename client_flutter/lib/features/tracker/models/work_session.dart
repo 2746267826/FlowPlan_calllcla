@@ -18,6 +18,7 @@ class WorkSession {
   final List<String> processNames;
   final List<String> categories;
   final int interruptionCount;
+  final int? rawRecordCountOverride;
 
   const WorkSession({
     required this.startTime,
@@ -34,9 +35,10 @@ class WorkSession {
     required this.processNames,
     required this.categories,
     required this.interruptionCount,
+    this.rawRecordCountOverride,
   });
 
-  int get rawRecordCount => records.length;
+  int get rawRecordCount => rawRecordCountOverride ?? records.length;
   bool get spansMultipleProcesses => processNames.length > 1;
   bool get spansMultipleCategories => categories.length > 1;
 }

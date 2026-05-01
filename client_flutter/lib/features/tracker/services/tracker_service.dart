@@ -35,6 +35,7 @@ class TrackerState {
   final bool isViewingExcludedApp;
   final bool? hasUsageStatsPermission;
   final DateTime? lastSampleAt;
+  final String? lastError;
 
   const TrackerState({
     this.isRunning = false,
@@ -50,6 +51,7 @@ class TrackerState {
     this.isViewingExcludedApp = false,
     this.hasUsageStatsPermission,
     this.lastSampleAt,
+    this.lastError,
   });
 
   TrackerState copyWith({
@@ -66,6 +68,7 @@ class TrackerState {
     bool? isViewingExcludedApp,
     Object? hasUsageStatsPermission = _unset,
     Object? lastSampleAt = _unset,
+    Object? lastError = _unset,
   }) {
     return TrackerState(
       isRunning: isRunning ?? this.isRunning,
@@ -104,6 +107,9 @@ class TrackerState {
       lastSampleAt: identical(lastSampleAt, _unset)
           ? this.lastSampleAt
           : lastSampleAt as DateTime?,
+      lastError: identical(lastError, _unset)
+          ? this.lastError
+          : lastError as String?,
     );
   }
 }
@@ -118,6 +124,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   final Duration _sampleInterval = const Duration(seconds: 5);
   InputTelemetry? _telemetryBaseline;
   InputTelemetry _activeTelemetry = InputTelemetry.empty();
+  bool _sampleInFlight = false;
 
   @override
   TrackerState build() {
@@ -154,6 +161,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     }
 
     state = state.copyWith(isRunning: true);
+    unawaited(rawInputService.start());
     unawaited(_sample());
     _timer = Timer.periodic(_sampleInterval, (_) {
       unawaited(_sample());
@@ -163,6 +171,9 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    if (_platform.supportsInputAnalytics) {
+      unawaited(rawInputService.stop());
+    }
     unawaited(_stopAsync());
   }
 
@@ -247,13 +258,32 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> _sample() async {
+    if (_sampleInFlight) {
+      return;
+    }
+    _sampleInFlight = true;
+    try {
+      await _sampleOnce();
+    } catch (error) {
+      state = state.copyWith(
+        lastSampleAt: DateTime.now(),
+        lastError: error.toString(),
+      );
+    } finally {
+      _sampleInFlight = false;
+    }
+  }
+
+  Future<void> _sampleOnce() async {
     final snapshot = _sensor.capture();
     if (snapshot == null) {
+      state = state.copyWith(lastSampleAt: DateTime.now());
       return;
     }
 
     final classification = _classifier.classify(snapshot);
     final telemetry = await rawInputService.getStats();
+    final rawInputError = rawInputService.lastError;
     final previousSnapshot = state.currentSnapshot;
     final previousClassification = state.currentClassification;
     final previousRecordId = state.activeRecordId;
@@ -309,6 +339,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
         displayTelemetry: frozenTelemetry,
         isViewingExcludedApp: true,
         lastSampleAt: snapshot.timestamp,
+        lastError: rawInputError,
       );
 
       wroteLog = await _appendLog(
@@ -408,6 +439,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       displayTelemetry: _activeTelemetry,
       isViewingExcludedApp: false,
       lastSampleAt: snapshot.timestamp,
+      lastError: rawInputError,
     );
 
     wroteLog = await _persistActiveRecord(snapshot.timestamp) || wroteLog;

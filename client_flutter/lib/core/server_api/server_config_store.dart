@@ -18,10 +18,20 @@ class ServerConfigStore {
     if (trimmed == _oldReservedBaseUrl) {
       return Uri.parse(_defaultBaseUrl);
     }
-    return Uri.parse(trimmed);
+    return normalizeBaseUri(Uri.parse(trimmed));
   }
 
   Future<void> saveBaseUri(Uri uri) {
-    return _database.setSetting(_baseUrlKey, uri.toString());
+    return _database.setSetting(_baseUrlKey, normalizeBaseUri(uri).toString());
+  }
+
+  static Uri normalizeBaseUri(Uri uri) {
+    final rawPath = uri.path.trim().replaceAll(RegExp(r'/+$'), '');
+    final nextPath = rawPath.isEmpty
+        ? '/api'
+        : rawPath.endsWith('/api')
+            ? rawPath
+            : '$rawPath/api';
+    return uri.replace(path: nextPath, query: '', fragment: '');
   }
 }

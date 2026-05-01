@@ -12,6 +12,7 @@ export interface ActivityUnderstandingQuery {
   end?: string;
   status?: string;
   limit?: string;
+  offset?: string;
 }
 
 interface RawActivity {
@@ -272,6 +273,7 @@ export class ActivityUnderstandingService {
     const { start, end } = this.readRange(query.date, query.start, query.end);
     const status = this.clean(query.status);
     const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -301,11 +303,11 @@ export class ActivityUnderstandingService {
         AND ($4::text IS NULL OR s.status = $4)
       GROUP BY s.id, i.summary, i.reason_json
       ORDER BY s.start_at ASC
-      LIMIT $5
+      LIMIT $5 OFFSET $6
       `,
-      [userId, start, end, status, limit],
+      [userId, start, end, status, limit, offset],
     );
-    return { range: { start, end }, items: result.rows };
+    return { range: { start, end }, limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
   async confirmSegment(
@@ -734,6 +736,11 @@ export class ActivityUnderstandingService {
   private readLimit(value: string | undefined, fallback: number) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.max(1, Math.min(500, Math.trunc(parsed))) : fallback;
+  }
+
+  private readOffset(value: string | undefined) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }
 
   private clean(value: unknown) {

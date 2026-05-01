@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { QueryResultRow } from 'pg';
 import { FlowPlanRequestContext } from '../common/request-context';
@@ -98,7 +98,26 @@ export class WebService {
   }
 
   async updateTask(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
-    return this.updateObject(id, this.normalizeTaskPayload(body), context, this.taskVm);
+    return this.updateObject(id, this.normalizeTaskPayload(body), context, this.taskVm, this.numberValue(body.baseServerVersion));
+  }
+
+  async completeTask(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
+    return this.updateObject(
+      id,
+      this.cleanRecord({
+        status: this.clean(body.status) ?? 'done',
+        completedAt: this.clean(body.completedAt) ?? new Date().toISOString(),
+        updatedFrom: 'client',
+        ...this.asRecord(body.payload),
+      }),
+      context,
+      this.taskVm,
+      this.numberValue(body.baseServerVersion),
+    );
+  }
+
+  async deleteTask(id: string, context: FlowPlanRequestContext) {
+    return this.deleteObject(id, 'task_item', context);
   }
 
   async createEvent(body: Record<string, unknown>, context: FlowPlanRequestContext) {
@@ -106,12 +125,24 @@ export class WebService {
   }
 
   async updateEvent(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
-    return this.updateObject(id, this.normalizeEventPayload(body), context, this.eventVm);
+    return this.updateObject(
+      id,
+      this.normalizeEventPayload(body),
+      context,
+      this.eventVm,
+      this.numberValue(body.baseServerVersion),
+    );
+  }
+
+  async deleteEvent(id: string, context: FlowPlanRequestContext) {
+    return this.deleteObject(id, 'calendar_event', context);
   }
 
   async actualRecords(query: Record<string, unknown>, context: FlowPlanRequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit);
+    const from = this.readDate(query.from);
+    const to = this.readDate(query.to);
     const result = await this.database.query(
       `
       SELECT
@@ -127,10 +158,12 @@ export class WebService {
         confirmed_at AS "confirmedAt"
       FROM actual_activity_logs
       WHERE user_id = $1
+        AND ($2::timestamptz IS NULL OR start_at >= $2::timestamptz)
+        AND ($3::timestamptz IS NULL OR start_at < $3::timestamptz)
       ORDER BY start_at DESC
-      LIMIT $2
+      LIMIT $4
       `,
-      [userId, limit],
+      [userId, from, to, limit],
     );
     return { items: result.rows };
   }
@@ -208,6 +241,8 @@ export class WebService {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit);
     const q = this.search(query.q);
+    const from = this.readDate(query.from);
+    const to = this.readDate(query.to);
     const result = await this.database.query(
       `
       SELECT id::text, object_type AS "objectType", uid, payload, server_version AS "serverVersion",
@@ -223,11 +258,45 @@ export class WebService {
           OR payload->>'summary' ILIKE $3
           OR payload->>'name' ILIKE $3
           OR payload->>'location' ILIKE $3
+          OR payload->>'description' ILIKE $3
+          OR payload->>'notes' ILIKE $3
         )
-      ORDER BY updated_at DESC
-      LIMIT $4
+        AND (
+          $4::text IS NULL
+          OR COALESCE(
+            NULLIF(payload->>'startAt', ''),
+            NULLIF(payload->>'start_at', ''),
+            NULLIF(payload->>'startTime', ''),
+            NULLIF(payload->>'dtstart', ''),
+            NULLIF(payload->>'dueAt', ''),
+            NULLIF(payload->>'dueDate', ''),
+            updated_at::text
+          ) >= $4::text
+        )
+        AND (
+          $5::text IS NULL
+          OR COALESCE(
+            NULLIF(payload->>'startAt', ''),
+            NULLIF(payload->>'start_at', ''),
+            NULLIF(payload->>'startTime', ''),
+            NULLIF(payload->>'dtstart', ''),
+            NULLIF(payload->>'dueAt', ''),
+            NULLIF(payload->>'dueDate', ''),
+            updated_at::text
+          ) < $5::text
+        )
+      ORDER BY COALESCE(
+        NULLIF(payload->>'startAt', ''),
+        NULLIF(payload->>'start_at', ''),
+        NULLIF(payload->>'startTime', ''),
+        NULLIF(payload->>'dtstart', ''),
+        NULLIF(payload->>'dueAt', ''),
+        NULLIF(payload->>'dueDate', ''),
+        updated_at::text
+      ) ASC, updated_at DESC
+      LIMIT $6
       `,
-      [userId, objectTypes, q, limit],
+      [userId, objectTypes, q, from, to, limit],
     );
     return {
       limit,
@@ -244,6 +313,22 @@ export class WebService {
     const deviceId = await this.devicesService.ensureDevice(context);
     const uid = this.clean(payload.uid) ?? `${objectType}:${randomUUID()}`;
     const result = await this.database.transaction(async (client) => {
+      const existing = await client.query(
+        `
+        SELECT id::text, object_type AS "objectType", uid, payload,
+               server_version AS "serverVersion", created_at AS "createdAt", updated_at AS "updatedAt"
+        FROM sync_objects
+        WHERE user_id = $1
+          AND object_type = $2
+          AND uid = $3
+          AND deleted_at IS NULL
+        LIMIT 1
+        `,
+        [userId, objectType, uid],
+      );
+      if (existing.rows[0]) {
+        return { row: existing.rows[0], syncChangeId: null, auditId: null, replayed: true };
+      }
       const row = await client.query(
         `
         INSERT INTO sync_objects (
@@ -254,15 +339,24 @@ export class WebService {
         `,
         [userId, objectType, uid, JSON.stringify(payload), deviceId],
       );
-      await this.recordChange(client, userId, deviceId, row.rows[0], 'create');
-      await this.recordAudit(client, userId, deviceId, `web.${objectType}.create`, {
+      const syncChangeId = await this.recordChange(client, userId, deviceId, row.rows[0], 'create');
+      const auditId = await this.recordAudit(client, userId, deviceId, `web.${objectType}.create`, {
         objectId: row.rows[0]?.id,
         uid,
         payload,
       });
-      return row.rows[0];
+      return { row: row.rows[0], syncChangeId, auditId, replayed: false };
     });
-    return { ok: true, item: objectType === 'calendar_event' ? this.eventVm(result) : this.taskVm(result) };
+    const item = objectType === 'calendar_event' ? this.eventVm(result.row) : this.taskVm(result.row);
+    return {
+      ok: true,
+      canonical: true,
+      item,
+      serverVersion: result.row.serverVersion ?? 1,
+      syncChangeId: result.syncChangeId,
+      auditId: result.auditId,
+      replayed: result.replayed,
+    };
   }
 
   private async updateObject(
@@ -270,14 +364,33 @@ export class WebService {
     payloadPatch: Record<string, unknown>,
     context: FlowPlanRequestContext,
     mapper: (row: QueryResultRow) => Record<string, unknown>,
+    baseServerVersion?: number,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const result = await this.database.transaction(async (client) => {
       const before = await client.query(
-        `SELECT payload FROM sync_objects WHERE user_id = $1 AND id = $2 LIMIT 1`,
+        `
+        SELECT payload, server_version AS "serverVersion"
+        FROM sync_objects
+        WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+        LIMIT 1
+        `,
         [userId, id],
       );
+      const beforeRow = before.rows[0];
+      if (!beforeRow) {
+        return null;
+      }
+      if (baseServerVersion != null && Number(beforeRow.serverVersion) !== baseServerVersion) {
+        throw new ConflictException({
+          ok: false,
+          code: 'version_conflict',
+          message: 'Object has changed on the server. Pull latest state before overwriting.',
+          serverVersion: Number(beforeRow.serverVersion),
+          baseServerVersion,
+        });
+      }
       const row = await client.query(
         `
         UPDATE sync_objects
@@ -295,15 +408,68 @@ export class WebService {
       if (!updated) {
         return null;
       }
-      await this.recordChange(client, userId, deviceId, updated, 'update');
-      await this.recordAudit(client, userId, deviceId, `web.${updated.objectType}.update`, {
+      const syncChangeId = await this.recordChange(client, userId, deviceId, updated, 'update');
+      const auditId = await this.recordAudit(client, userId, deviceId, `web.${updated.objectType}.update`, {
         objectId: id,
-        before: before.rows[0]?.payload,
+        before: beforeRow.payload,
         after: updated.payload,
       });
-      return updated;
+      return { row: updated, syncChangeId, auditId };
     });
-    return { ok: !!result, item: result ? mapper.call(this, result) : null };
+    return {
+      ok: !!result,
+      canonical: !!result,
+      item: result ? mapper.call(this, result.row) : null,
+      serverVersion: result?.row.serverVersion ?? null,
+      syncChangeId: result?.syncChangeId ?? null,
+      auditId: result?.auditId ?? null,
+    };
+  }
+
+  private async deleteObject(
+    id: string,
+    expectedObjectType: string,
+    context: FlowPlanRequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    const result = await this.database.transaction(async (client) => {
+      const row = await client.query(
+        `
+        UPDATE sync_objects
+        SET deleted_at = now(),
+            server_version = server_version + 1,
+            last_modified_device_id = $4,
+            updated_at = now()
+        WHERE user_id = $1
+          AND id = $2
+          AND deleted_at IS NULL
+          AND object_type = $3
+        RETURNING id::text, object_type AS "objectType", uid, payload,
+                  server_version AS "serverVersion", created_at AS "createdAt", updated_at AS "updatedAt"
+        `,
+        [userId, id, expectedObjectType, deviceId],
+      );
+      const deleted = row.rows[0];
+      if (!deleted) {
+        return null;
+      }
+      const syncChangeId = await this.recordChange(client, userId, deviceId, deleted, 'delete');
+      const auditId = await this.recordAudit(client, userId, deviceId, `web.${deleted.objectType}.delete`, {
+        objectId: id,
+        payload: deleted.payload,
+      });
+      return { row: deleted, syncChangeId, auditId };
+    });
+    return {
+      ok: !!result,
+      canonical: !!result,
+      deleted: !!result,
+      id,
+      serverVersion: result?.row.serverVersion ?? null,
+      syncChangeId: result?.syncChangeId ?? null,
+      auditId: result?.auditId ?? null,
+    };
   }
 
   private async recordChange(
@@ -312,12 +478,13 @@ export class WebService {
     deviceId: string,
     row: QueryResultRow,
     action: string,
-  ) {
-    await client.query(
+  ): Promise<string | null> {
+    const inserted = await client.query(
       `
       INSERT INTO sync_changes (
         user_id, device_id, server_object_id, object_type, action, server_version, payload
       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+      RETURNING id::text AS id
       `,
       [
         userId,
@@ -329,6 +496,7 @@ export class WebService {
         JSON.stringify(row.payload ?? {}),
       ],
     );
+    return inserted.rows[0]?.id ?? null;
   }
 
   private async recordAudit(
@@ -337,12 +505,13 @@ export class WebService {
     deviceId: string,
     action: string,
     metadata: Record<string, unknown>,
-  ) {
-    await client.query(
+  ): Promise<string | null> {
+    const inserted = await client.query(
       `
       INSERT INTO audit_logs (
         user_id, device_id, actor, action, entity_type, entity_id, summary, metadata
       ) VALUES ($1, $2, 'web', $3, 'web', $4, $5, $6::jsonb)
+      RETURNING id::text AS id
       `,
       [
         userId,
@@ -353,6 +522,7 @@ export class WebService {
         JSON.stringify(metadata),
       ],
     );
+    return inserted.rows[0]?.id ?? null;
   }
 
   private taskVm(row: QueryResultRow) {
@@ -374,15 +544,35 @@ export class WebService {
 
   private eventVm(row: QueryResultRow) {
     const payload = this.asRecord(row.payload);
+    const startAt =
+      this.clean(payload.startAt) ??
+      this.clean(payload.start_at) ??
+      this.clean(payload.startTime) ??
+      this.clean(payload.dtstart);
+    const endAt =
+      this.clean(payload.endAt) ??
+      this.clean(payload.end_at) ??
+      this.clean(payload.endTime) ??
+      this.clean(payload.dtend);
+    const notes =
+      this.clean(payload.notes) ??
+      this.clean(payload.note) ??
+      this.clean(payload.description) ??
+      '';
     return {
       id: row.id,
       uid: row.uid,
       objectType: row.objectType,
       title: this.clean(payload.title) ?? this.clean(payload.summary) ?? this.clean(payload.name) ?? '未命名日程',
-      startAt: this.clean(payload.startAt) ?? this.clean(payload.start_at) ?? this.clean(payload.startTime),
-      endAt: this.clean(payload.endAt) ?? this.clean(payload.end_at) ?? this.clean(payload.endTime),
+      startAt,
+      endAt,
+      dtstart: startAt,
+      dtend: endAt,
       status: this.clean(payload.status) ?? 'confirmed',
       location: this.clean(payload.location) ?? '',
+      notes,
+      description: notes,
+      isBlock: payload.isBlock === true || payload.blocking === true || payload.isBlocking === true,
       syncStatus: 'server',
       serverVersion: row.serverVersion,
       updatedAt: row.updatedAt,
@@ -392,9 +582,21 @@ export class WebService {
 
   private normalizeTaskPayload(body: Record<string, unknown>) {
     return this.cleanRecord({
+      uid: this.clean(body.uid),
       title: this.clean(body.title) ?? this.clean(body.summary) ?? '未命名任务',
+      summary: this.clean(body.summary) ?? this.clean(body.title),
+      description: this.clean(body.description),
       status: this.clean(body.status) ?? 'todo',
-      dueAt: this.clean(body.dueAt),
+      dueAt: this.clean(body.dueAt) ?? this.clean(body.due),
+      dtstart: this.clean(body.dtstart) ?? this.clean(body.startAt),
+      durationMinutes: this.numberValue(body.durationMinutes),
+      priorityLocal: this.numberValue(body.priorityLocal),
+      isSplittable: this.boolValue(body.isSplittable),
+      isAutoScheduled: this.boolValue(body.isAutoScheduled),
+      isLocked: this.boolValue(body.isLocked),
+      rrule: this.clean(body.rrule),
+      reminderMinutesBefore: this.numberValue(body.reminderMinutesBefore),
+      taskListId: this.numberValue(body.taskListId),
       location: this.clean(body.location),
       notes: this.clean(body.notes),
       updatedFrom: 'web',
@@ -403,21 +605,48 @@ export class WebService {
   }
 
   private normalizeEventPayload(body: Record<string, unknown>) {
+    const payload = this.asRecord(body.payload);
+    const startAt =
+      this.clean(body.startAt) ??
+      this.clean(body.dtstart) ??
+      this.clean(payload.startAt) ??
+      this.clean(payload.dtstart);
+    const endAt =
+      this.clean(body.endAt) ??
+      this.clean(body.dtend) ??
+      this.clean(payload.endAt) ??
+      this.clean(payload.dtend);
+    const notes =
+      this.clean(body.notes) ??
+      this.clean(body.note) ??
+      this.clean(body.description) ??
+      this.clean(payload.notes) ??
+      this.clean(payload.note) ??
+      this.clean(payload.description);
     return this.cleanRecord({
+      ...payload,
+      uid: this.clean(body.uid) ?? this.clean(payload.uid),
       title: this.clean(body.title) ?? this.clean(body.summary) ?? '未命名日程',
-      startAt: this.clean(body.startAt),
-      endAt: this.clean(body.endAt),
-      status: this.clean(body.status) ?? 'confirmed',
-      location: this.clean(body.location),
-      notes: this.clean(body.notes),
+      summary: this.clean(body.summary) ?? this.clean(body.title) ?? this.clean(payload.summary) ?? this.clean(payload.title),
+      description: notes,
+      startAt,
+      dtstart: startAt,
+      endAt,
+      dtend: endAt,
+      status: this.clean(body.status) ?? this.clean(payload.status) ?? 'confirmed',
+      rrule: this.clean(body.rrule) ?? this.clean(payload.rrule),
+      colorHex: this.clean(body.colorHex) ?? this.clean(payload.colorHex),
+      isBlock: this.boolValue(body.isBlock) ?? this.boolValue(payload.isBlock),
+      eventCalendarId: this.numberValue(body.eventCalendarId) ?? this.numberValue(payload.eventCalendarId),
+      location: this.clean(body.location) ?? this.clean(payload.location),
+      notes,
       updatedFrom: 'web',
-      ...this.asRecord(body.payload),
     });
   }
 
   private cleanRecord(value: Record<string, unknown>) {
     return Object.fromEntries(
-      Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ''),
+      Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== ''),
     );
   }
 
@@ -431,9 +660,27 @@ export class WebService {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
+  private numberValue(value: unknown) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private boolValue(value: unknown) {
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
   private search(value: unknown) {
     const text = this.clean(value);
     return text ? `%${text}%` : null;
+  }
+
+  private readDate(value: unknown) {
+    const text = this.clean(value);
+    if (!text) {
+      return null;
+    }
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   private readLimit(value: unknown) {

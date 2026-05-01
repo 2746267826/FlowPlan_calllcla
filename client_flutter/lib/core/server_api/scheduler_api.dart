@@ -14,8 +14,8 @@ class SchedulerApi {
     return _apiClient.postJson(
       '/scheduler/runs',
       body: <String, Object?>{
-        'startAt': startAt.toIso8601String(),
-        'endAt': endAt.toIso8601String(),
+        'rangeStart': startAt.toIso8601String(),
+        'rangeEnd': endAt.toIso8601String(),
         'defaultTaskMinutes': defaultTaskMinutes,
         'strategy': strategy,
       },
@@ -57,8 +57,8 @@ class SchedulerApi {
     return _apiClient.postJson(
       '/scheduler/deviations/detect',
       body: <String, Object?>{
-        if (startAt != null) 'startAt': startAt.toIso8601String(),
-        if (endAt != null) 'endAt': endAt.toIso8601String(),
+        if (startAt != null) 'rangeStart': startAt.toIso8601String(),
+        if (endAt != null) 'rangeEnd': endAt.toIso8601String(),
       },
     );
   }

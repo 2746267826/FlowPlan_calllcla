@@ -94,8 +94,8 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
           ),
         )
         .toList(growable: false);
-    final filteredInsights = ActivityInsights.fromRecords(filteredRecords);
-    final filteredSessions = WorkSessionGrouper.fromRecords(filteredRecords);
+    final filteredInsights = snapshot.insights;
+    final filteredSessions = snapshot.sessions;
     final filteredLogEntries = snapshot.logEntries
         .where(
           (entry) => _matchesLogEntry(
@@ -201,7 +201,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
         ),
         const SizedBox(height: 8),
         Text(
-          '这部分来自热力图选中的时间桶，用于查看跨天或跨月的聚合趋势，不会改变下方按天展示的工作会话和原始日志。',
+          '这部分来自服务端对热力图选中时间桶的聚合分析，用于查看跨天或跨月趋势；客户端只展示服务端返回的摘要和有限预览，不拉取全量原始追踪数据。',
           style: const TextStyle(fontSize: 12, color: Colors.grey),
         ),
         if (hasAnyRangeData) ...[
@@ -323,7 +323,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
           ),
           const SizedBox(height: 12),
           Text(
-            '当前筛选后显示 ${filteredSessions.length} 段工作会话，${filteredRecords.length} 条活动记录，${filteredLogEntries.length} 条原始日志。',
+            '当前筛选后显示 ${filteredSessions.length} 段服务端工作会话，${filteredRecords.length} 条服务端活动预览，${filteredLogEntries.length} 条服务端日志预览。',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
@@ -347,7 +347,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
                   : '当前筛选下没有可聚合的活动记录',
               subtitle: filteredLogEntries.isEmpty
                   ? '可以尝试切换应用、分类，或关闭“仅看有输入活动”。'
-                  : '该区间仍保留 ${filteredLogEntries.length} 条原始日志，可以继续在下方检索明细。',
+                  : '该区间仍有 ${filteredLogEntries.length} 条服务端日志预览，可以继续在下方检索明细。',
               compact: true,
             ),
           ] else ...[
@@ -372,9 +372,9 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
                   '区间内合并后的连续工作段',
                 ),
                 _summaryCard(
-                  '原始日志',
+                  '日志预览',
                   '${filteredLogEntries.length}',
-                  '写入数据库的追踪日志条数',
+                  '服务端返回的有限预览条数',
                 ),
                 _summaryCard(
                   '活跃应用',
@@ -507,7 +507,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
             children: [
               Expanded(
                 child: Text(
-                  '区间原始日志',
+                  '服务端日志预览',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -526,7 +526,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
           ),
           const SizedBox(height: 8),
           Text(
-            '原始日志按时间倒序展示，支持按关键词和日志类型继续缩小范围。',
+            '这里仅展示服务端返回的有限日志预览，按时间倒序排列，支持按关键词和日志类型继续缩小范围。',
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -601,7 +601,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
           if (sortedLogEntries.isEmpty)
             _emptyState(
               icon: Icons.receipt_long_outlined,
-              title: hasLogQuery ? '没有找到匹配的原始日志' : '这个时间区间还没有原始日志',
+              title: hasLogQuery ? '没有找到匹配的日志预览' : '这个时间区间还没有服务端日志预览',
               subtitle: hasLogQuery
                   ? '可以尝试清空关键词或切换日志类型。'
                   : '后续采样、会话变化和快照写入后，这里会逐步丰富。',
@@ -769,7 +769,7 @@ class _RangeSessionTile extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _tag('${session.rawRecordCount} 条原始记录'),
+              _tag('${session.rawRecordCount} 条服务端记录'),
               if (session.spansMultipleProcesses)
                 _tag('跨 ${session.processNames.length} 个应用'),
               if (session.interruptionCount > 0)
@@ -787,13 +787,13 @@ class _RangeSessionTile extends StatelessWidget {
               tilePadding: EdgeInsets.zero,
               childrenPadding: const EdgeInsets.only(bottom: 4),
               title: const Text(
-                '查看原始记录与合并细节',
+                '查看服务端记录与合并细节',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
                 session.interruptionCount > 0
-                    ? '本段包含 ${session.rawRecordCount} 条原始记录，其中 ${session.interruptionCount} 次打断已被吸收'
-                    : '本段包含 ${session.rawRecordCount} 条原始记录',
+                    ? '本段包含 ${session.rawRecordCount} 条服务端记录，其中 ${session.interruptionCount} 次打断已被吸收'
+                    : '本段包含 ${session.rawRecordCount} 条服务端记录',
                 style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
               children: [

@@ -137,6 +137,32 @@ export class ClientService {
     };
   }
 
+  async effectiveSettings(context: FlowPlanRequestContext) {
+    const settings = await this.settings(context);
+    const effective = Object.fromEntries(
+      settings.settings.map((setting) => [setting.key, setting.value]),
+    );
+    return {
+      ok: true,
+      mode: 'server_fact_source',
+      version: settings.version,
+      updatedAt: settings.updatedAt,
+      effective,
+      settings: settings.settings,
+      policy: this.settingsPolicy(),
+      deviceLocalOnly: [
+        'server.api.base_url',
+        'server.auth.access_token',
+        'server.auth.refresh_token',
+        'device.window',
+        'device.tray',
+        'device.permissions',
+        'device.local_paths',
+        'device.cache_paths',
+      ],
+    };
+  }
+
   async updateSetting(
     key: string,
     body: Record<string, unknown>,

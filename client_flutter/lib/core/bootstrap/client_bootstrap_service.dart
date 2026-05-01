@@ -59,11 +59,15 @@ class ClientBootstrapService extends ChangeNotifier {
 
   Future<ClientRuntimeState> bootstrapAndSync({String source = 'manual'}) async {
     _setState(_state.copyWith(syncing: true, lastError: null));
+    Map<String, dynamic>? bootstrapSnapshot;
+    int? settingsVersion;
     try {
       final bootstrap = await _clientApi.bootstrap();
+      bootstrapSnapshot = bootstrap;
       await _database.setSetting(stateKey, jsonEncode(bootstrap));
       await _database.setSetting(modeKey, 'server_first');
       final remoteSettings = await _remoteSettingsRepository.refresh();
+      settingsVersion = remoteSettings.version;
       final engine = await _syncEngineLoader();
       final push = await engine.pushPending();
       final trackingUpload = await _tryUploadTrackingBuffer(source);
@@ -94,7 +98,11 @@ class ClientBootstrapService extends ChangeNotifier {
       ));
       return _state;
     } catch (error) {
-      await _database.setSetting(modeKey, 'local_cache');
+      final serverReached = bootstrapSnapshot != null;
+      await _database.setSetting(
+        modeKey,
+        serverReached ? 'server_first' : 'local_cache',
+      );
       await _database.setSetting(lastErrorKey, error.toString());
       await _operationLogs.record(
         actor: 'system',
@@ -106,12 +114,23 @@ class ClientBootstrapService extends ChangeNotifier {
           'error': error.toString(),
         },
       );
-      _setState(_state.copyWith(
-        mode: 'local_cache',
-        syncing: false,
-        serverReachable: false,
-        lastError: error.toString(),
-      ));
+      final next = serverReached
+          ? ClientRuntimeState.fromBootstrap(
+              bootstrapSnapshot!,
+              mode: 'server_first',
+              syncing: false,
+            ).copyWith(
+              settingsVersion: settingsVersion,
+              lastSyncAt: _state.lastSyncAt,
+              lastError: error.toString(),
+            )
+          : _state.copyWith(
+              mode: 'local_cache',
+              syncing: false,
+              serverReachable: false,
+              lastError: error.toString(),
+            );
+      _setState(next);
       return _state;
     }
   }
@@ -145,11 +164,12 @@ class ClientBootstrapService extends ChangeNotifier {
       ));
       return _state;
     } catch (error) {
+      final serverWasReachable = _state.serverReachable == true;
       await _database.setSetting(lastErrorKey, error.toString());
       _setState(_state.copyWith(
-        mode: 'local_cache',
+        mode: serverWasReachable ? 'server_first' : 'local_cache',
         syncing: false,
-        serverReachable: false,
+        serverReachable: serverWasReachable,
         lastError: error.toString(),
       ));
       return _state;

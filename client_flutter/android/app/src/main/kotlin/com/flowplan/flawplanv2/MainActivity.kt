@@ -1,4 +1,4 @@
-package com.flowplan.flowplan
+package com.flowplan.flawplanv2
 
 import android.app.AppOpsManager
 import android.app.AlarmManager
@@ -17,9 +17,9 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     companion object {
-        private const val CHANNEL = "com.flowplan.flowplan/android_usage_stats"
+        private const val CHANNEL = "com.flowplan.flawplanv2/android_usage_stats"
         private const val REMINDER_CHANNEL =
-            "com.flowplan.flowplan/android_reminders"
+            "com.flowplan.flawplanv2/android_reminders"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

@@ -73,9 +73,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
         ref.watch(trackerHistorySelectedHeatmapBucketProvider);
 
     final records = recordsAsync.valueOrNull ?? const <ActivityRecord>[];
-    final workSessions = records.isEmpty
-        ? const <WorkSession>[]
-        : WorkSessionGrouper.fromRecords(records);
+    final workSessions = ref.watch(workSessionsForDateProvider);
     final logEntries = logEntriesAsync.valueOrNull ?? const <ActivityLogEntry>[];
     final allTasks = allTasksAsync.valueOrNull ?? const <TaskItem>[];
     final taskById = <int, TaskItem>{
@@ -216,7 +214,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              '主页现在只保留摘要和分析，本页承载历史筛选、工作会话和原始日志，减少主页卡顿。',
+                              '主页现在只展示服务端处理后的摘要；本页的日志区域仅用于本机上传缓冲诊断，避免把本地日志当作事实统计。',
                               style:
                                   TextStyle(fontSize: 12, color: Colors.grey),
                             ),
@@ -232,7 +230,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                     children: [
                       _tag('日期：${_formatDate(selectedDate)}'),
                       _tag('${filteredWorkSessions.length}/${workSessions.length} 段会话'),
-                      _tag('${filteredLogEntries.length}/${logEntries.length} 条日志'),
+                      _tag('${filteredLogEntries.length}/${logEntries.length} 条本机诊断日志'),
                       if (selectedProcess != null) _tag('联动应用：$selectedProcess'),
                       if (selectedTimeBucketLabel != null)
                         _tag('联动时段：$selectedTimeBucketLabel'),
@@ -272,7 +270,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                   if (hasActiveHistoryFilters) ...[
                     const SizedBox(height: 10),
                     const Text(
-                      '当前筛选已作用于下方会话和日志列表，适合在这里做细查，避免主页一次性渲染过多内容。',
+                      '当前筛选已作用于服务端会话和本机诊断日志预览；统计、报告和排程均以服务端汇总结果为准。',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
@@ -427,7 +425,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                 error: (error, _) => SizedBox(
                   height: 180,
                   child: Center(
-                    child: Text('加载原始日志失败：$error'),
+                    child: Text('加载本机诊断日志失败：$error'),
                   ),
                 ),
                 data: (_) {
@@ -437,14 +435,14 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                       children: [
                         const _TrackerSectionHeader(
                           icon: Icons.receipt_long_outlined,
-                          title: '原始日志预览',
-                          subtitle: '这里保留当天明细预览，完整历史请进入日志页查看。',
+                          title: '本机上传缓冲诊断预览',
+                          subtitle: '这里只用于排查本机采集和上传状态，不参与追踪统计。',
                         ),
                         const SizedBox(height: 12),
                         Text(
                           logStoragePath == null
-                              ? '当前筛选下没有可显示的日志。'
-                              : '当前筛选下没有可显示的日志。日志文件位置：$logStoragePath',
+                              ? '当前筛选下没有可显示的本机诊断日志。'
+                              : '当前筛选下没有可显示的本机诊断日志。日志文件位置：$logStoragePath',
                           style: const TextStyle(color: Colors.grey),
                         ),
                       ],
@@ -456,9 +454,9 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                     children: [
                       _TrackerSectionHeader(
                         icon: Icons.receipt_long_outlined,
-                        title: '原始日志预览',
+                        title: '本机上传缓冲诊断预览',
                         subtitle:
-                            '为保证本页流畅度，这里只渲染前 $logPreviewLimit 条；完整日志可进入日志历史页查看。',
+                            '为保证本页流畅度，这里只渲染前 $logPreviewLimit 条；它们仅用于诊断本机采集缓冲。',
                         trailing: TextButton.icon(
                           onPressed: () {
                             context.push(AppRoutes.trackerLogHistory);
@@ -476,7 +474,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                             children: [
                               if (logStoragePath != null)
                                 Text(
-                                  '当日日志：$logStoragePath',
+                                  '当日本机诊断日志：$logStoragePath',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: Colors.grey,
@@ -503,7 +501,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(
-                            '还有 ${filteredLogEntries.length - filteredLogEntriesPreview.length} 条日志未在本页渲染，可进入“历史日志文件”查看完整内容。',
+                            '还有 ${filteredLogEntries.length - filteredLogEntriesPreview.length} 条本机诊断日志未在本页渲染，可进入“历史日志文件”查看完整内容。',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.grey,

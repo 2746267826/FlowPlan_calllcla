@@ -41,6 +41,7 @@ class ActivityInsights {
   final int totalMovePx;
   final int totalScrollPx;
   final int sequenceRecordCount;
+  final int? productiveRecordCountOverride;
   final List<ActivityInsightSlice> topProcesses;
   final List<ActivityInsightSlice> topCategories;
   final List<ActivityInsightRecord> busiestRecords;
@@ -54,6 +55,7 @@ class ActivityInsights {
     required this.totalMovePx,
     required this.totalScrollPx,
     required this.sequenceRecordCount,
+    this.productiveRecordCountOverride,
     required this.topProcesses,
     required this.topCategories,
     required this.busiestRecords,
@@ -91,15 +93,17 @@ class ActivityInsights {
 
   int get activeProcessCount => topProcesses.length;
 
-  int get productiveRecordCount => records
-      .where(
-        (record) =>
-            record.keyCount > 0 ||
-            record.mouseClicks > 0 ||
-            record.mouseMovePx > 0 ||
-            record.scrollPx > 0,
-      )
-      .length;
+  int get productiveRecordCount =>
+      productiveRecordCountOverride ??
+      records
+          .where(
+            (record) =>
+                record.keyCount > 0 ||
+                record.mouseClicks > 0 ||
+                record.mouseMovePx > 0 ||
+                record.scrollPx > 0,
+          )
+          .length;
 
   static ActivityInsights fromRecords(List<ActivityRecord> allRecords) {
     if (allRecords.isEmpty) {

@@ -1844,6 +1844,16 @@ export class FilesService {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const rootUid = this.clean(body.rootUid) ?? `root:${randomUUID()}`;
+    const providerType = this.clean(body.providerType) ?? 'server_storage';
+    const providerTypeKey = providerType.toLowerCase();
+    if (providerTypeKey === 'local' || providerTypeKey === 'client_local') {
+      return {
+        ok: false,
+        reason: 'client_local_root_not_allowed',
+        message:
+          'file_roots are server-accessible cloud roots. Client local folders must be registered as device locations/bindings.',
+      };
+    }
     const result = await this.database.transaction(async (client) => {
       const row = await client.query<QueryResultRow>(
         `
@@ -1875,7 +1885,7 @@ export class FilesService {
           userId,
           rootUid,
           this.clean(body.name) ?? this.basename(String(body.rootUri ?? rootUid)),
-          this.clean(body.providerType) ?? 'local',
+          providerType,
           this.clean(body.rootUri) ?? this.clean(body.localPath) ?? rootUid,
           this.clean(body.rootDisplayPath) ?? this.clean(body.localPath),
           deviceId,
@@ -2128,8 +2138,12 @@ export class FilesService {
       Boolean(verifiedLocalPath) &&
       (node.currentDevice?.availability === 'available' || Boolean(localIdentity.localPath)) &&
       verifiedIdentity;
+    const comparableLocalCopy =
+      Boolean(verifiedLocalPath) && sameContent.confidence !== 'none';
     const action = canOpenLocal
       ? 'open_local'
+      : comparableLocalCopy
+        ? 'conflict_or_download_required'
       : node.storage?.storageObjectId
         ? 'download_then_open'
         : 'needs_upload_or_relink';
@@ -2242,14 +2256,22 @@ export class FilesService {
       [userId, rootId],
     );
     const root = rootResult.rows[0];
-    const rootPath = this.clean(body.rootPath) ?? this.clean(root?.rootUri);
+    const requestedRootPath = this.clean(body.rootPath);
+    const rootPath = this.clean(root?.rootUri);
     if (!root || !rootPath) {
       return { ok: false, reason: 'root_not_found_or_path_missing', applied: 0 };
+    }
+    if (requestedRootPath && requestedRootPath !== rootPath) {
+      await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan_path_override_ignored', null, {
+        rootId,
+        requestedRootPath,
+        serverRootPath: rootPath,
+      });
     }
     const maxNodes = this.readNumber(body.maxNodes, 5000);
     const nodes: Record<string, unknown>[] = [];
     try {
-      await this.collectLocalNodesForRoot(rootPath, maxNodes, nodes);
+      await this.collectLocalNodesForRoot(userId, rootId, rootPath, maxNodes, nodes);
     } catch (error) {
       await this.database.query(
         `
@@ -2901,7 +2923,8 @@ export class FilesService {
       displayName: row.name,
       relativePath: row.relativePath,
       displayPath: row.displayPath,
-      localPath: row.localPath,
+      localPath: deviceLocalPath,
+      serverPath: row.localPath,
       providerFileId: row.providerFileId,
       mimeType: row.mimeType,
       extension: row.extension,
@@ -2996,6 +3019,8 @@ export class FilesService {
   }
 
   private async collectLocalNodesForRoot(
+    userId: string,
+    rootId: string,
     rootPath: string,
     maxNodes: number,
     nodes: Record<string, unknown>[],
@@ -3033,6 +3058,9 @@ export class FilesService {
         const relativePath = relative(rootPath, fullPath).replace(/\\/g, '/');
         const nodeUid = `node:${rootPath}:${relativePath}`;
         const isFolder = entry.isDirectory();
+        const storedObject = isFolder
+          ? null
+          : await this.storeScannedFileObject(userId, rootId, fullPath, relativePath, entry.name, entryStat.size);
         nodes.push({
           nodeUid,
           parentNodeUid: current.parentUid,
@@ -3046,13 +3074,81 @@ export class FilesService {
           sizeBytes: isFolder ? null : entryStat.size,
           mtime: entryStat.mtime.toISOString(),
           ctime: entryStat.ctime.toISOString(),
-          metadata: { source: 'server_scan' },
+          hashSha256: storedObject?.checksum,
+          providerKey: 'server_storage',
+          metadata: {
+            source: 'server_scan',
+            storageObjectId: storedObject?.storageObjectId,
+            storagePath: storedObject?.storagePath,
+          },
         });
         if (isFolder) {
           queue.push({ path: fullPath, parentUid: nodeUid });
         }
       }
     }
+  }
+
+  private async storeScannedFileObject(
+    userId: string,
+    rootId: string,
+    fullPath: string,
+    relativePath: string,
+    displayName: string,
+    sizeBytes: number,
+  ) {
+    const objectKey = `server-scan:${rootId}:${relativePath}`;
+    const stored = await this.objectStorage.copyLocalFile(userId, fullPath, objectKey);
+    const chunkSize = 5 * 1024 * 1024;
+    const chunkCount = Math.max(1, Math.ceil(sizeBytes / chunkSize));
+    const row = await this.database.query<QueryResultRow>(
+      `
+      INSERT INTO file_storage_objects (
+        user_id,
+        provider_key,
+        object_key,
+        display_name,
+        size_bytes,
+        checksum,
+        chunk_size,
+        chunk_count,
+        status,
+        metadata
+      ) VALUES ($1, 'server_storage', $2, $3, $4, $5, $6, $7, 'available', $8::jsonb)
+      ON CONFLICT (user_id, provider_key, object_key) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        size_bytes = EXCLUDED.size_bytes,
+        checksum = EXCLUDED.checksum,
+        status = 'available',
+        metadata = file_storage_objects.metadata || EXCLUDED.metadata,
+        updated_at = now()
+      RETURNING id::text AS "storageObjectId"
+      `,
+      [
+        userId,
+        objectKey,
+        displayName,
+        sizeBytes,
+        stored.checksum,
+        chunkSize,
+        chunkCount,
+        JSON.stringify({
+          source: 'server_scan',
+          rootId,
+          relativePath,
+          originalServerPath: fullPath,
+          storageType: 'local_filesystem',
+          storageRoot: this.objectStorage.root(),
+          storagePath: stored.relativePath,
+          absoluteStoragePath: stored.storagePath,
+        }),
+      ],
+    );
+    return {
+      storageObjectId: row.rows[0]?.storageObjectId as string | undefined,
+      checksum: stored.checksum,
+      storagePath: stored.relativePath,
+    };
   }
 
   private guessMimeType(path: string) {

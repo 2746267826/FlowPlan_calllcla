@@ -23,4 +23,18 @@ async function bootstrap() {
   console.log(`FlowPlan server listening on http://${host}:${port}/api`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('FlowPlan server startup failed.');
+  console.error(message);
+  console.error(
+    [
+      'Startup checklist:',
+      '1. Copy flowplan.local.env.example to flowplan.local.env and set DATABASE_URL.',
+      '2. Confirm PostgreSQL is running and reachable from DATABASE_URL.',
+      '3. Run: cd server; npm run db:schema',
+      '4. Run: cd server; npm run dev',
+    ].join('\n'),
+  );
+  process.exit(1);
+});

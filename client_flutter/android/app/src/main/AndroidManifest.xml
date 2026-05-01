@@ -16,7 +16,7 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <application
-        android:label="flowplan"
+        android:label="FlawPlanv2"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

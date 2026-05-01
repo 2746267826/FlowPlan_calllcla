@@ -71,7 +71,7 @@ class AndroidUsageStatsService {
   const AndroidUsageStatsService();
 
   static const MethodChannel _channel =
-      MethodChannel('com.flowplan.flowplan/android_usage_stats');
+      MethodChannel('com.flowplan.flawplanv2/android_usage_stats');
 
   Future<bool> hasUsageAccessPermission() async {
     if (!Platform.isAndroid) {

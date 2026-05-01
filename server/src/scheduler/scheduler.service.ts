@@ -51,7 +51,10 @@ export class SchedulerService {
   async createRun(body: Record<string, unknown>, context: FlowPlanRequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const { start, end } = this.readRange(body.rangeStart, body.rangeEnd);
+    const { start, end } = this.readRange(
+      body.rangeStart ?? body.startAt,
+      body.rangeEnd ?? body.endAt,
+    );
     const mode = this.clean(body.mode) ?? 'initial_plan';
     const strategy = this.clean(body.strategy) ?? 'balanced';
     const activeModel = await this.modelsService.activeProfile(userId, 'scheduler.v1');
@@ -491,7 +494,10 @@ export class SchedulerService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const { start, end } = this.readRange(body.rangeStart, body.rangeEnd);
+    const { start, end } = this.readRange(
+      body.rangeStart ?? body.startAt,
+      body.rangeEnd ?? body.endAt,
+    );
     const segments = await this.database.query<QueryResultRow>(
       `
       SELECT id::text AS id, payload
@@ -514,23 +520,49 @@ export class SchedulerService {
     );
     let created = 0;
     await this.database.transaction(async (client) => {
+      const plannedBlocks: Array<{
+        id: string;
+        taskId: string | null;
+        title: string;
+        start: Date;
+        end: Date;
+        payload: Record<string, unknown>;
+      }> = [];
       for (const planned of segments.rows) {
         const payload = this.asRecord(planned.payload);
         const plannedStart = this.readDate(payload.startAt);
         const plannedEnd = this.readDate(payload.endAt);
         if (!plannedStart || !plannedEnd) continue;
+        plannedBlocks.push({
+          id: String(planned.id),
+          taskId: this.clean(payload.taskId),
+          title: String(payload.taskTitle ?? ''),
+          start: plannedStart,
+          end: plannedEnd,
+          payload,
+        });
         const overlap = actuals.rows.find((actual) => {
           const actualStart = this.readDate(actual.start_at);
           const actualEnd = this.readDate(actual.end_at);
           return actualStart && actualEnd && actualStart < plannedEnd && actualEnd > plannedStart;
         });
         if (!overlap) {
-          await client.query(
+          const deviation = await client.query<QueryResultRow>(
             `
             INSERT INTO plan_deviations (
               user_id, schedule_segment_id, planned_task_id, planned_start, planned_end,
               deviation_type, severity, confidence, status, evidence
-            ) VALUES ($1, $2, $3, $4, $5, 'missed', 'medium', 0.65, 'detected', $6::jsonb)
+            )
+            SELECT $1, $2, $3, $4, $5, 'missed', 'medium', 0.65, 'detected', $6::jsonb
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM plan_deviations
+              WHERE user_id = $1
+                AND schedule_segment_id = $2
+                AND deviation_type = 'missed'
+                AND status = 'detected'
+            )
+            RETURNING id::text AS id
             `,
             [
               userId,
@@ -541,15 +573,26 @@ export class SchedulerService {
               JSON.stringify({ reason: 'no confirmed actual log overlapped this schedule segment' }),
             ],
           );
-          created += 1;
+          created += deviation.rows.length;
         } else if (!String(overlap.title ?? '').includes(String(payload.taskTitle ?? ''))) {
-          await client.query(
+          const deviation = await client.query<QueryResultRow>(
             `
             INSERT INTO plan_deviations (
               user_id, schedule_segment_id, planned_task_id, planned_start, planned_end,
               actual_log_id, actual_title, actual_start, actual_end,
               deviation_type, severity, confidence, status, evidence
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'different_activity', 'medium', 0.7, 'detected', $10::jsonb)
+            )
+            SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, 'different_activity', 'medium', 0.7, 'detected', $10::jsonb
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM plan_deviations
+              WHERE user_id = $1
+                AND schedule_segment_id = $2
+                AND actual_log_id = $6
+                AND deviation_type = 'different_activity'
+                AND status = 'detected'
+            )
+            RETURNING id::text AS id
             `,
             [
               userId,
@@ -564,7 +607,47 @@ export class SchedulerService {
               JSON.stringify({ planned: payload, actual: overlap }),
             ],
           );
-          created += 1;
+          created += deviation.rows.length;
+        }
+      }
+      for (const actual of actuals.rows) {
+        const actualStart = this.readDate(actual.start_at);
+        const actualEnd = this.readDate(actual.end_at);
+        if (!actualStart || !actualEnd) continue;
+        const plannedOverlap = plannedBlocks.find((planned) => {
+          return actualStart < planned.end && actualEnd > planned.start;
+        });
+        if (plannedOverlap) continue;
+        const deviation = await client.query<QueryResultRow>(
+          `
+          INSERT INTO plan_deviations (
+            user_id, actual_log_id, actual_title, actual_start, actual_end,
+            deviation_type, severity, confidence, status, evidence
+          )
+          SELECT $1, $2, $3, $4, $5, 'actual_unplanned', 'low', 0.72, 'detected', $6::jsonb
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM plan_deviations
+            WHERE user_id = $1
+              AND actual_log_id = $2
+              AND deviation_type = 'actual_unplanned'
+              AND status = 'detected'
+          )
+          RETURNING id::text AS id
+          `,
+          [
+            userId,
+            actual.id,
+            actual.title,
+            actualStart,
+            actualEnd,
+            JSON.stringify({
+              reason: 'confirmed actual log did not overlap any accepted schedule segment',
+            }),
+          ],
+        );
+        if (deviation.rows.length > 0) {
+          created += deviation.rows.length;
         }
       }
       await this.recordAudit(client, userId, deviceId, 'scheduler.deviations.detected', {

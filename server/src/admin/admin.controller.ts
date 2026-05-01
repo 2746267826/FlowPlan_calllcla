@@ -66,6 +66,14 @@ export class AdminController {
     return this.adminService.deviceOnlineSummary(readRequestContext(headers));
   }
 
+  @Get('new-info')
+  newInfo(
+    @Query() query: AdminQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.adminService.newInfo(query, readRequestContext(headers));
+  }
+
   @Get('devices/:deviceId/connection-history')
   deviceConnectionHistory(
     @Param('deviceId') deviceId: string,
@@ -211,8 +219,11 @@ export class AdminController {
   }
 
   @Get('conflicts')
-  conflicts(@Headers() headers: Record<string, unknown>) {
-    return this.adminService.conflicts(readRequestContext(headers));
+  conflicts(
+    @Query() query: AdminQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.adminService.conflicts(query, readRequestContext(headers));
   }
 
   @Post('conflicts/:conflictId/resolve')

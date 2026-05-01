@@ -644,7 +644,7 @@ class _ReminderNotificationGateway {
   final _desktopShell = const DesktopShellService();
 
   static const _androidReminderChannel =
-      MethodChannel('com.flowplan.flowplan/android_reminders');
+      MethodChannel('com.flowplan.flawplanv2/android_reminders');
 
   bool _initialized = false;
 

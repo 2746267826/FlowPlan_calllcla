@@ -643,6 +643,90 @@ class FileContextRepository {
     }
   }
 
+  Future<FileFolder> bindRootLocalDirectory({
+    required int folderId,
+    required String localPath,
+  }) async {
+    final folder = await getFolderById(folderId);
+    if (folder == null) {
+      throw StateError('Folder not found.');
+    }
+    if (folder.remoteId == null || folder.remoteId!.trim().isEmpty) {
+      throw StateError('Only server drive roots can be bound to a local directory.');
+    }
+    final normalizedPath = _normalizePath(localPath);
+    final exists = Directory(normalizedPath).existsSync();
+    final now = DateTime.now().toIso8601String();
+    await _db.customStatement(
+      '''
+      UPDATE file_folders
+      SET local_path = ?,
+          parent_path = ?,
+          availability = ?,
+          updated_at = ?
+      WHERE id = ?
+      ''',
+      [
+        normalizedPath,
+        _parentPath(normalizedPath),
+        exists ? FileAvailability.local : FileAvailability.missing,
+        now,
+        folderId,
+      ],
+    );
+    await _db.customStatement(
+      '''
+      UPDATE file_nodes
+      SET local_path = ?,
+          availability = ?,
+          updated_at = ?
+      WHERE root_folder_id = ? AND parent_node_id IS NULL
+      ''',
+      [
+        normalizedPath,
+        exists ? FileAvailability.local : FileAvailability.missing,
+        now,
+        folderId,
+      ],
+    );
+    final updated = await getFolderById(folderId);
+    if (updated == null) {
+      throw StateError('Folder binding failed.');
+    }
+    await _operationLogs?.record(
+      actor: 'user',
+      action: 'bind_drive_root_local_directory',
+      entityType: 'file_folder',
+      entityId: folderId.toString(),
+      summary: 'Bound server drive root ${folder.displayName} to local directory.',
+      metadata: {
+        'remoteId': folder.remoteId,
+        'localPath': normalizedPath,
+        'exists': exists,
+      },
+    );
+    return updated;
+  }
+
+  Future<void> requestServerRootScan(int folderId) async {
+    final apiLoader = _apiLoader;
+    if (apiLoader == null) {
+      return;
+    }
+    final folder = await getFolderById(folderId);
+    final rootId = folder?.remoteId;
+    if (folder == null || rootId == null || rootId.trim().isEmpty) {
+      throw StateError('Only server drive roots can be scanned by the server.');
+    }
+    final api = await apiLoader();
+    final response = await api.scanDriveRoot(rootId: rootId);
+    if (response['ok'] != true) {
+      throw StateError(response['reason']?.toString() ?? 'Server root scan failed.');
+    }
+    await syncDriveRootsFromServer();
+    await refreshDriveNodes(rootFolderId: folderId);
+  }
+
   Future<void> refreshDriveNodes({
     required int rootFolderId,
     int? parentNodeId,
@@ -1584,53 +1668,15 @@ class FileContextRepository {
   }
 
   Future<void> _upsertRootToServer(FileFolder folder) async {
-    final apiLoader = _apiLoader;
-    final localPath = folder.localPath;
-    if (apiLoader == null || localPath == null || localPath.trim().isEmpty) {
-      return;
-    }
-    try {
-      final api = await apiLoader();
-      final response = await api.upsertRoot(
-        rootUid: folder.folderUid,
-        name: folder.displayName,
-        rootUri: localPath,
-        providerType: FileProviderKind.local,
-        rootDisplayPath: localPath,
-        isManaged: false,
-        syncPolicy: 'metadata_and_server_cache',
-        metadata: <String, Object?>{
-          'localFolderId': folder.id,
-          'sourceContext': folder.sourceContext,
-        },
-      );
-      final root = response['root'];
-      if (root is Map && root['id'] != null) {
-        await _db.customStatement(
-          '''
-          UPDATE file_folders
-          SET remote_id = ?, provider = ?, availability = ?, updated_at = ?
-          WHERE id = ?
-          ''',
-          [
-            root['id'].toString(),
-            FileProviderKind.serverStorage,
-            folder.availability,
-            DateTime.now().toIso8601String(),
-            folder.id,
-          ],
-        );
-      }
-    } catch (_) {
-      // Root registration is best-effort; local-first use must not be blocked.
-    }
+    // Client local folders are device-side copies only. They must never become
+    // global cloud-drive roots; service roots are created/scanned on the server.
+    return;
   }
 
   Future<FileFolder> _cacheDriveRoot(Map<String, dynamic> root) async {
     final remoteId = root['id']?.toString();
     final rootUid = root['rootUid']?.toString() ?? 'server-root:$remoteId';
     final name = root['name']?.toString() ?? root['rootDisplayPath']?.toString() ?? 'Drive Root';
-    final rootDisplayPath = root['rootDisplayPath']?.toString();
     final now = DateTime.now().toIso8601String();
     final existing = await _db.customSelect(
       '''
@@ -1666,14 +1712,12 @@ class FileContextRepository {
           rootUid,
           FileProviderKind.serverStorage,
           name,
-          rootDisplayPath,
+          null,
           remoteId,
           null,
           'server_drive',
           0,
-          rootDisplayPath == null || rootDisplayPath.trim().isEmpty
-              ? FileAvailability.remoteOnly
-              : FileAvailability.local,
+          FileAvailability.remoteOnly,
           jsonEncode(root),
           now,
           now,
@@ -1689,7 +1733,6 @@ class FileContextRepository {
       UPDATE file_folders
       SET provider = ?,
           display_name = ?,
-          local_path = COALESCE(local_path, ?),
           remote_id = ?,
           availability = ?,
           metadata_json = ?,
@@ -1699,9 +1742,8 @@ class FileContextRepository {
       [
         FileProviderKind.serverStorage,
         name,
-        rootDisplayPath,
         remoteId,
-        rootDisplayPath == null || rootDisplayPath.trim().isEmpty
+        folder.localPath == null || folder.localPath!.trim().isEmpty
             ? FileAvailability.remoteOnly
             : folder.availability,
         jsonEncode(root),

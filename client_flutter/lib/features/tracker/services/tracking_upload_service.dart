@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
+import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
@@ -43,18 +44,41 @@ class TrackingUploadService {
   static const _lastRawLogIdKey = 'tracking.upload.last_raw_log_id';
   static const lastCompletedAtKey = 'tracking.upload.last_completed_at';
   static const lastErrorKey = 'tracking.upload.last_error';
+  static const _maxSyncUidBytes = 180;
 
   final AppDatabase _database;
   final TrackingIngestApi _api;
   final DataOperationLogRepository _operationLogs;
+  Future<TrackingUploadResult>? _inFlight;
 
   Future<TrackingUploadResult> uploadPending({
     int limitPerKind = 500,
     int chunkSize = 200,
   }) async {
+    final activeUpload = _inFlight;
+    if (activeUpload != null) {
+      return activeUpload;
+    }
+    final upload = _uploadPending(
+      limitPerKind: limitPerKind,
+      chunkSize: chunkSize,
+    );
+    _inFlight = upload;
+    try {
+      return await upload;
+    } finally {
+      _inFlight = null;
+    }
+  }
+
+  Future<TrackingUploadResult> _uploadPending({
+    required int limitPerKind,
+    required int chunkSize,
+  }) async {
     final details = <Map<String, Object?>>[];
     var uploadedBatches = 0;
     var uploadedRecords = 0;
+    var rejectedRecords = 0;
 
     final kinds = <_TrackingKindExport>[
       await _loadActivityRecords(limitPerKind),
@@ -66,10 +90,16 @@ class TrackingUploadService {
       if (export.records.isEmpty) {
         continue;
       }
-      final detail = await _uploadKind(export, chunkSize: chunkSize);
-      details.add(detail);
-      uploadedBatches++;
-      uploadedRecords += export.records.length;
+      try {
+        final detail = await _uploadKind(export, chunkSize: chunkSize);
+        details.add(detail);
+        uploadedBatches++;
+        uploadedRecords += export.records.length;
+        rejectedRecords += _readInt(detail['rejected']) ?? 0;
+      } catch (error) {
+        await _recordUploadError(export.dataKind, error);
+        rethrow;
+      }
     }
 
     if (uploadedBatches > 0) {
@@ -77,7 +107,9 @@ class TrackingUploadService {
         lastCompletedAtKey,
         DateTime.now().toIso8601String(),
       );
-      await _database.deleteSetting(lastErrorKey);
+      if (rejectedRecords == 0) {
+        await _database.deleteSetting(lastErrorKey);
+      }
       await _operationLogs.record(
         actor: 'system',
         action: 'tracking_upload_completed',
@@ -86,6 +118,7 @@ class TrackingUploadService {
         metadata: <String, Object?>{
           'uploadedBatches': uploadedBatches,
           'uploadedRecords': uploadedRecords,
+          'rejectedRecords': rejectedRecords,
           'details': details,
         },
       );
@@ -94,7 +127,11 @@ class TrackingUploadService {
     return TrackingUploadResult(
       uploadedBatches: uploadedBatches,
       uploadedRecords: uploadedRecords,
-      details: details,
+      details: <Map<String, Object?>>[
+        if (rejectedRecords > 0)
+          <String, Object?>{'summary': 'rejectedRecords', 'count': rejectedRecords},
+        ...details,
+      ],
     );
   }
 
@@ -138,6 +175,20 @@ class TrackingUploadService {
     }
 
     final completed = await _api.completeBatch(batchId: batchId);
+    if (completed['ok'] == false) {
+      throw StateError(
+        'Tracking ingest complete failed for ${export.dataKind}: '
+        '${completed['reason'] ?? completed['error'] ?? completed}',
+      );
+    }
+    final rejected = _readInt(completed['rejected']) ?? 0;
+    if (rejected > 0) {
+      await _database.setSetting(
+        lastErrorKey,
+        'Tracking ingest completed with $rejected rejected '
+        '${export.dataKind} records.',
+      );
+    }
     await _database.setSetting(export.lastIdKey, export.maxId.toString());
 
     return <String, Object?>{
@@ -148,6 +199,20 @@ class TrackingUploadService {
       'accepted': completed['accepted'],
       'rejected': completed['rejected'],
     };
+  }
+
+  Future<void> _recordUploadError(String dataKind, Object error) async {
+    await _database.setSetting(lastErrorKey, error.toString());
+    await _operationLogs.record(
+      actor: 'system',
+      action: 'tracking_upload_failed',
+      entityType: 'tracking_ingest',
+      summary: 'Tracking upload failed and local cursor was preserved.',
+      metadata: <String, Object?>{
+        'dataKind': dataKind,
+        'error': error.toString(),
+      },
+    );
   }
 
   Future<_TrackingKindExport> _loadActivityRecords(int limit) async {
@@ -229,8 +294,8 @@ class TrackingUploadService {
       'kind': 'activity_record',
       'objectType': 'activity_record',
       'localId': id.toString(),
-      if (startAt != null) 'startTime': startAt.toIso8601String(),
-      if (endAt != null) 'endTime': endAt.toIso8601String(),
+      if (startAt != null) 'startTime': _utcIso(startAt),
+      if (endAt != null) 'endTime': _utcIso(endAt),
       'durationSeconds': durationMinutes * 60,
       'processName': data['process_name'],
       'windowTitle': data['window_title'],
@@ -255,13 +320,19 @@ class TrackingUploadService {
     final data = row.data;
     final id = _readInt(data['id']) ?? 0;
     final occurredAt = _readDate(data['occurred_at']);
+    final sourceUid = data['event_uid']?.toString();
+    final uid = _safeTrackingUid(
+      prefix: 'tracked-input-event',
+      localId: id,
+      rawUid: sourceUid,
+    );
     return <String, dynamic>{
-      'uid': data['event_uid']?.toString() ?? 'tracked-input-event:$id',
+      'uid': uid,
       'kind': 'tracked_input_event',
       'objectType': 'tracked_input_event',
       'localId': id.toString(),
-      if (occurredAt != null) 'timestamp': occurredAt.toIso8601String(),
-      if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
+      if (occurredAt != null) 'timestamp': _utcIso(occurredAt),
+      if (occurredAt != null) 'occurredAt': _utcIso(occurredAt),
       'eventKind': data['event_kind'],
       'processName': data['process_name'],
       'className': data['class_name'],
@@ -281,6 +352,7 @@ class TrackingUploadService {
         'moveDistance': data['move_distance'],
         'eventCount': data['event_count'],
         'tokenText': data['token_text'],
+        if (sourceUid != null && sourceUid != uid) 'sourceUid': sourceUid,
         'payload': _decodeJsonMap(data['payload_json']),
       },
     };
@@ -290,13 +362,19 @@ class TrackingUploadService {
     final data = row.data;
     final id = _readInt(data['id']) ?? 0;
     final occurredAt = _readDate(data['occurred_at']);
+    final sourceUid = data['entry_uid']?.toString();
+    final uid = _safeTrackingUid(
+      prefix: 'raw-activity-log',
+      localId: id,
+      rawUid: sourceUid,
+    );
     return <String, dynamic>{
-      'uid': data['entry_uid']?.toString() ?? 'raw-activity-log:$id',
+      'uid': uid,
       'kind': 'raw_activity_log',
       'objectType': 'raw_activity_log',
       'localId': id.toString(),
-      if (occurredAt != null) 'timestamp': occurredAt.toIso8601String(),
-      if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
+      if (occurredAt != null) 'timestamp': _utcIso(occurredAt),
+      if (occurredAt != null) 'occurredAt': _utcIso(occurredAt),
       'entryType': data['entry_type'],
       'processName': data['process_name'],
       'windowTitle': data['window_title'],
@@ -305,9 +383,27 @@ class TrackingUploadService {
       'isIgnored': _readBool(data['is_ignored']),
       'metadata': <String, Object?>{
         'recordId': data['record_id'],
+        if (sourceUid != null && sourceUid != uid) 'sourceUid': sourceUid,
         'payload': _decodeJsonMap(data['payload_json']),
       },
     };
+  }
+
+  static String _safeTrackingUid({
+    required String prefix,
+    required int localId,
+    required String? rawUid,
+  }) {
+    final trimmed = rawUid?.trim();
+    final fallback = '$prefix:$localId';
+    if (trimmed == null || trimmed.isEmpty) {
+      return fallback;
+    }
+    if (utf8.encode(trimmed).length <= _maxSyncUidBytes) {
+      return trimmed;
+    }
+    final digest = sha256.convert(utf8.encode(trimmed)).toString().substring(0, 32);
+    return '$fallback:$digest';
   }
 
   static int? _readInt(Object? value) {
@@ -348,6 +444,10 @@ class TrackingUploadService {
       return DateTime.fromMillisecondsSinceEpoch(milliseconds);
     }
     return DateTime.tryParse(value.toString());
+  }
+
+  static String _utcIso(DateTime value) {
+    return value.toUtc().toIso8601String();
   }
 
   static Map<String, Object?> _decodeJsonMap(Object? value) {

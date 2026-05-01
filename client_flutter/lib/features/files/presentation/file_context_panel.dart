@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -111,9 +109,9 @@ class _EntityFileContextPanelState extends ConsumerState<EntityFileContextPanel>
                   onPressed: _bindNode,
                 ),
                 IconButton(
-                  tooltip: '添加本地文件夹',
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  onPressed: _addFolder,
+                  tooltip: '绑定服务端文件节点',
+                  icon: const Icon(Icons.account_tree_outlined),
+                  onPressed: _bindNode,
                 ),
                 IconButton(
                   tooltip: '刷新推荐',
@@ -190,88 +188,6 @@ class _EntityFileContextPanelState extends ConsumerState<EntityFileContextPanel>
       entityType: widget.entityType,
       entityId: widget.entityId,
     );
-    _refresh();
-  }
-
-  Future<void> _addFolder() async {
-    final controller = TextEditingController();
-    final sourceController = TextEditingController(text: widget.title);
-    final result = await showDialog<_FolderInput>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('添加本地文件夹'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: '文件夹路径',
-                  hintText: r'C:\Users\...\Documents\Project',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: sourceController,
-                decoration: const InputDecoration(labelText: '上下文备注'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final path = controller.text.trim();
-                if (path.isEmpty) return;
-                Navigator.of(dialogContext).pop(
-                  _FolderInput(
-                    path: path,
-                    sourceContext: sourceController.text.trim(),
-                  ),
-                );
-              },
-              child: const Text('添加'),
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    sourceController.dispose();
-    if (result == null || !mounted) {
-      return;
-    }
-    final repo = ref.read(fileContextRepositoryProvider);
-    final folder = await repo.upsertLocalFolder(
-      localPath: result.path,
-      sourceContext: result.sourceContext.isEmpty ? null : result.sourceContext,
-      pinned: true,
-    );
-    if (widget.entityType == FileContextEntityType.task) {
-      await repo.bindFolderToTask(
-        taskId: int.parse(widget.entityId),
-        folderId: folder.id,
-        reason: '任务详情手动绑定',
-      );
-    } else if (widget.entityType == FileContextEntityType.event) {
-      await repo.bindFolderToEvent(
-        eventId: int.parse(widget.entityId),
-        folderId: folder.id,
-        reason: '日程详情手动绑定',
-      );
-    } else {
-      await repo.createRecommendationLink(
-        entityType: widget.entityType,
-        entityId: widget.entityId,
-        folderId: folder.id,
-        confidence: 1,
-        reason: '手动添加',
-      );
-    }
     _refresh();
   }
 
@@ -387,13 +303,12 @@ class _NodeLinkTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isCandidate = link.status == FileContextStatus.candidate;
-    final exists = FileSystemEntity.typeSync(node.localPath) !=
-        FileSystemEntityType.notFound;
+    final hasLocalCandidate = node.localPath.trim().isNotEmpty;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: Icon(
-          !exists
+          !hasLocalCandidate
               ? Icons.report_problem_outlined
               : node.isFolder
                   ? Icons.folder_outlined
@@ -402,7 +317,9 @@ class _NodeLinkTile extends ConsumerWidget {
         title: Text(node.displayName),
         subtitle: Text(
           [
-            exists ? node.relativePath : '路径失效：${node.localPath}',
+            hasLocalCandidate
+                ? node.relativePath
+                : '本机没有可直接打开的副本，打开时将由服务端 open-plan 判断是否需要下载。',
             if (link.reason != null) link.reason!,
           ].join('\n'),
           maxLines: 2,
@@ -424,7 +341,7 @@ class _NodeLinkTile extends ConsumerWidget {
             IconButton(
               tooltip: '打开',
               icon: const Icon(Icons.open_in_new),
-              onPressed: exists
+              onPressed: hasLocalCandidate
                   ? () => ref
                       .read(fileContextInteractionServiceProvider)
                       .openNode(
@@ -437,7 +354,7 @@ class _NodeLinkTile extends ConsumerWidget {
             IconButton(
               tooltip: '在资源管理器中定位',
               icon: const Icon(Icons.drive_file_move_outline),
-              onPressed: exists
+              onPressed: hasLocalCandidate
                   ? () => ref
                       .read(fileContextInteractionServiceProvider)
                       .revealNode(
@@ -683,14 +600,4 @@ class _FileContextPanelData {
   final List<FileContextLink> links;
   final Map<int, FileFolder> folders;
   final Map<int, FileNode> nodes;
-}
-
-class _FolderInput {
-  const _FolderInput({
-    required this.path,
-    required this.sourceContext,
-  });
-
-  final String path;
-  final String sourceContext;
 }

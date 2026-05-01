@@ -110,6 +110,17 @@ class OfflineMutationStore {
     );
   }
 
+  Future<void> markFailedByMutationUid(String mutationUid, Object error) {
+    return _database.customStatement(
+      '''
+      UPDATE offline_mutations
+      SET status = ?, last_error = ?
+      WHERE mutation_uid = ?
+      ''',
+      [OfflineMutationStatus.failed.wireName, error.toString(), mutationUid],
+    );
+  }
+
   Future<void> markFailed(List<int> ids, Object error) async {
     if (ids.isEmpty) {
       return;

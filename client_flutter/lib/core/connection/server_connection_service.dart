@@ -91,15 +91,26 @@ class ServerConnectionService extends ChangeNotifier {
       }
       _failureCount = 0;
       await _refreshLocalSummary();
+      final syncError = runtime.lastError;
+      final hasSyncError = syncError != null && syncError.isNotEmpty;
       _setState(_state.copyWith(
-        level: _state.conflictCount > 0
+        level: hasSyncError
+            ? ServerConnectionLevel.degraded
+            : _state.conflictCount > 0
             ? ServerConnectionLevel.conflicted
             : ServerConnectionLevel.online,
-        lastSyncAt: runtime.lastSyncAt ?? DateTime.now(),
+        lastSyncAt: hasSyncError
+            ? runtime.lastSyncAt ?? _state.lastSyncAt
+            : runtime.lastSyncAt ?? DateTime.now(),
         syncing: false,
-        clearError: true,
+        lastError: syncError,
+        clearError: !hasSyncError,
       ));
-      await heartbeat(eventSource: 'sync_success');
+      if (hasSyncError) {
+        _scheduleHeartbeat(const Duration(seconds: 30));
+      } else {
+        await heartbeat(eventSource: 'sync_success');
+      }
     } catch (error) {
       await _handleFailure(error, source: source);
     } finally {
@@ -129,6 +140,22 @@ class ServerConnectionService extends ChangeNotifier {
           if (_state.lastError != null) 'errorMessage': _state.lastError,
         },
       );
+      if (response['authRequired'] == true ||
+          response['connectionStatus'] == 'revoked') {
+        _setState(_state.copyWith(
+          level: ServerConnectionLevel.authRequired,
+          serverUrl: serverUrl,
+          deviceId: _deviceId,
+          platform: _platform,
+          syncing: false,
+          lastError: _readMessage(response, fallback: '服务端要求重新登录或设备已被撤销'),
+        ));
+        _scheduleHeartbeat(const Duration(minutes: 5));
+        return;
+      }
+      if (response['ok'] == false) {
+        throw _readMessage(response, fallback: '服务端拒绝 heartbeat');
+      }
       _failureCount = 0;
       final nextSeconds = _readInt(response['nextHeartbeatSeconds']) ?? 30;
       _setState(_state.copyWith(
@@ -248,5 +275,20 @@ class ServerConnectionService extends ChangeNotifier {
       return value.toInt();
     }
     return int.tryParse(value.toString());
+  }
+
+  String _readMessage(
+    Map<String, dynamic> response, {
+    required String fallback,
+  }) {
+    final reason = response['reason']?.toString().trim();
+    if (reason != null && reason.isNotEmpty) {
+      return reason;
+    }
+    final message = response['message']?.toString().trim();
+    if (message != null && message.isNotEmpty) {
+      return message;
+    }
+    return fallback;
   }
 }

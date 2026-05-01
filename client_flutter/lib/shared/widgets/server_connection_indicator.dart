@@ -151,7 +151,7 @@ class ServerConnectionIndicator extends ConsumerWidget {
               TextButton(
                 onPressed: () {
                   Navigator.of(dialogContext).pop();
-                  context.go(AppRoutes.serverSync);
+                  context.push(AppRoutes.serverSync);
                 },
                 child: const Text('同步详情'),
               ),

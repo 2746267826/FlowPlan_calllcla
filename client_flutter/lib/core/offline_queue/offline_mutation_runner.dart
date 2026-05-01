@@ -86,16 +86,14 @@ class OfflineMutationRunner {
       for (final item in rejected) {
         final mutationUid = item['mutationUid'] as String?;
         if (mutationUid != null) {
-          await _store.markConflictByMutationUid(
-            mutationUid,
-            'Server rejected mutation',
-          );
+          final reason = item['reason'] ?? 'Server rejected mutation';
+          await _store.markFailedByMutationUid(mutationUid, reason);
           final mutation = mutationByUid[mutationUid];
           if (mutation != null) {
             await _stateStore?.markFailed(
               objectType: mutation.objectType,
               localId: mutation.localId,
-              error: item['reason'] ?? 'Server rejected mutation',
+              error: reason,
             );
           }
         }

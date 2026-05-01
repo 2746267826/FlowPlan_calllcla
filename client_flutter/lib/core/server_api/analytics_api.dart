@@ -26,6 +26,47 @@ class AnalyticsApi {
     );
   }
 
+  Future<Map<String, dynamic>> trackerHome({
+    DateTime? date,
+  }) {
+    return _apiClient.getJson(
+      '/analytics/tracker-home',
+      query: {
+        if (date != null) 'date': _dateOnly(date),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> activityDaySummary({
+    required DateTime date,
+  }) {
+    return _apiClient.getJson(
+      '/analytics/activity-day-summary',
+      query: {'date': _dateOnly(date)},
+    );
+  }
+
+  Future<Map<String, dynamic>> rangeAnalysis({
+    required DateTime start,
+    required DateTime end,
+    String bucket = 'day',
+  }) {
+    return _apiClient.getJson(
+      '/analytics/range-analysis',
+      query: _rangeQuery(start: start, end: end, bucket: bucket),
+    );
+  }
+
+  Future<Map<String, dynamic>> filterOptions({
+    DateTime? start,
+    DateTime? end,
+  }) {
+    return _apiClient.getJson(
+      '/analytics/filter-options',
+      query: _rangeQuery(start: start, end: end),
+    );
+  }
+
   Future<Map<String, dynamic>> inputHeatmap({
     DateTime? start,
     DateTime? end,
@@ -177,5 +218,12 @@ class AnalyticsApi {
       if (limit != null) 'limit': limit.toString(),
       if (offset != null) 'offset': offset.toString(),
     };
+  }
+
+  String _dateOnly(DateTime date) {
+    final local = date.toLocal();
+    return '${local.year.toString().padLeft(4, '0')}-'
+        '${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
   }
 }

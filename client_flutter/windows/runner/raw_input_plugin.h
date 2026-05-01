@@ -81,6 +81,8 @@ class RawInputPlugin : public flutter::Plugin {
   void RefreshCachedForegroundWindowContext();
   InputWindowContext GetCachedForegroundWindowContext() const;
   InputWindowContext CaptureForegroundWindowContext() const;
+  void SetLastErrorMessage(const std::string& message);
+  std::string GetLastErrorMessage() const;
   static std::string WideToUtf8(const std::wstring& value);
 
   std::atomic<int64_t> key_count_{0};
@@ -109,6 +111,9 @@ class RawInputPlugin : public flutter::Plugin {
   BufferedMouseMoveData buffered_mouse_move_;
 
   InputWindowContext cached_window_context_;
+
+  mutable std::mutex last_error_mutex_;
+  std::string last_error_;
 
   static RawInputPlugin* instance_;
 };

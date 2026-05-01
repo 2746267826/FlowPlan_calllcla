@@ -23,8 +23,8 @@ class TrackingIngestApi {
         'batchUid': batchUid,
         'dataKind': dataKind,
         'compression': compression,
-        if (startAt != null) 'startAt': startAt.toIso8601String(),
-        if (endAt != null) 'endAt': endAt.toIso8601String(),
+        if (startAt != null) 'startAt': _utcIso(startAt),
+        if (endAt != null) 'endAt': _utcIso(endAt),
         if (records.isNotEmpty) 'records': records,
         if (metadata.isNotEmpty) 'metadata': metadata,
       },
@@ -66,9 +66,13 @@ class TrackingIngestApi {
     return _apiClient.getJson(
       '/tracking/summary',
       query: {
-        if (start != null) 'start': start.toIso8601String(),
-        if (end != null) 'end': end.toIso8601String(),
+        if (start != null) 'start': _utcIso(start),
+        if (end != null) 'end': _utcIso(end),
       },
     );
+  }
+
+  static String _utcIso(DateTime value) {
+    return value.toUtc().toIso8601String();
   }
 }

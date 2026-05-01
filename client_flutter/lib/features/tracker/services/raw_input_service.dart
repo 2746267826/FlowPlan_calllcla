@@ -320,14 +320,20 @@ class RawInputService {
   static const _channel = MethodChannel('com.flowplan/raw_input');
 
   bool _started = false;
+  String? _lastError;
   bool get isRunning => _started;
+  String? get lastError => _lastError;
 
   Future<void> start() async {
     if (!Platform.isWindows || _started) return;
     try {
       await _channel.invokeMethod('start');
       _started = true;
-    } catch (_) {}
+      _lastError = null;
+    } catch (error) {
+      _started = false;
+      _lastError = error.toString();
+    }
   }
 
   Future<void> stop() async {
@@ -335,14 +341,20 @@ class RawInputService {
     try {
       await _channel.invokeMethod('stop');
       _started = false;
-    } catch (_) {}
+      _lastError = null;
+    } catch (error) {
+      _lastError = error.toString();
+    }
   }
 
   Future<void> setSequenceRecording(bool enabled) async {
     if (!Platform.isWindows) return;
     try {
       await _channel.invokeMethod('setSequenceRecording', {'enabled': enabled});
-    } catch (_) {}
+      _lastError = null;
+    } catch (error) {
+      _lastError = error.toString();
+    }
   }
 
   Future<InputTelemetry?> getStats() async {
@@ -350,6 +362,9 @@ class RawInputService {
     try {
       final result = await _channel.invokeMethod<Map>('getStats');
       if (result == null) return null;
+      final nativeError = result['lastError'] as String?;
+      _lastError =
+          nativeError == null || nativeError.trim().isEmpty ? null : nativeError;
 
       final rawKeyDist = result['keyDistribution'] as Map?;
       final keyDistribution = <int, int>{};
@@ -377,7 +392,8 @@ class RawInputService {
         timestamp: DateTime.now(),
         inputEvents: inputEvents,
       );
-    } catch (_) {
+    } catch (error) {
+      _lastError = error.toString();
       return null;
     }
   }
@@ -386,7 +402,10 @@ class RawInputService {
     if (!Platform.isWindows) return;
     try {
       await _channel.invokeMethod('resetStats');
-    } catch (_) {}
+      _lastError = null;
+    } catch (error) {
+      _lastError = error.toString();
+    }
   }
 }
 

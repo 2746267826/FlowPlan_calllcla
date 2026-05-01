@@ -76,19 +76,31 @@ final activityLogRefreshTickProvider = StateProvider<int>((ref) => 0);
 
 final inputEventProcessOptionsProvider = FutureProvider<List<String>>((ref) {
   ref.watch(activityLogRefreshTickProvider);
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.listProcessNames();
+  return _loadServerInputProcessOptions(ref);
+});
+
+final activityDaySummaryProvider =
+    FutureProvider<Map<String, dynamic>>((ref) async {
+  final date = ref.watch(selectedDateProvider);
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  return store.activityDaySummary(date: date);
 });
 
 final inputHeatmapSummaryProvider =
-    FutureProvider.family<InputHeatmapSummary, InputEventQuery>((ref, query) {
+    FutureProvider.family<InputHeatmapSummary, InputEventQuery>((ref, query) async {
   ref.watch(activityLogRefreshTickProvider);
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.buildHeatmapSummary(query);
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.inputHeatmap(
+    start: query.start,
+    end: query.end,
+    bucket: 'hour',
+    processName: query.processName,
+  );
+  return _inputHeatmapSummaryFromServer(query, response);
 });
 
 final selectedDateInputBehaviorSummaryProvider =
-    FutureProvider<InputHeatmapSummary>((ref) {
+    FutureProvider<InputHeatmapSummary>((ref) async {
   ref.watch(activityLogRefreshTickProvider);
   final selectedDate = ref.watch(selectedDateProvider);
   final start = DateTime(
@@ -97,13 +109,14 @@ final selectedDateInputBehaviorSummaryProvider =
     selectedDate.day,
   );
   final end = start.add(const Duration(days: 1));
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.buildHeatmapSummary(
-    InputEventQuery(
-      start: start,
-      end: end,
-    ),
+  final query = InputEventQuery(start: start, end: end);
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.inputHeatmap(
+    start: start,
+    end: end,
+    bucket: 'hour',
   );
+  return _inputHeatmapSummaryFromServer(query, response);
 });
 
 // 鈹€鈹€ 鐑姏鍥炬暟鎹紙杩囧幓涓€骞达級鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -112,19 +125,27 @@ final activityHeatmapScaleOverrideProvider =
     StateProvider<ActivityHeatmapScale?>((ref) => null);
 
 final activityHistorySummaryProvider =
-    FutureProvider<ActivityHistorySummary>((ref) {
-  final repo = ref.watch(trackerRepositoryProvider);
-  return repo.getHistorySummary();
+    FutureProvider<ActivityHistorySummary>((ref) async {
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.trackingSummary();
+  return _activityHistorySummaryFromServer(response);
 });
 
 final activityHeatmapSeriesProvider =
     FutureProvider<ActivityHeatmapSeries>((ref) async {
-  final repo = ref.watch(trackerRepositoryProvider);
   final selectedDate = ref.watch(selectedDateProvider);
   final override = ref.watch(activityHeatmapScaleOverrideProvider);
   final summary = await ref.watch(activityHistorySummaryProvider.future);
   final scale = override ?? summary.recommendedScale;
-  return repo.getHeatmapSeries(
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final range = _activityHeatmapRange(scale, selectedDate);
+  final response = await store.activityHeatmap(
+    start: range.start,
+    end: range.end,
+    bucket: _serverBucketForScale(scale),
+  );
+  return _activityHeatmapSeriesFromServer(
+    response,
     scale: scale,
     anchorDate: selectedDate,
     historySummary: summary,
@@ -138,24 +159,23 @@ final dragHoveringTimelineProvider = StateProvider<bool>((ref) => false);
 // 鈹€鈹€ 褰撴棩娲诲姩璁板綍娴?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 final activityRecordsForDateProvider =
-    StreamProvider<List<ActivityRecord>>((ref) {
-  final date = ref.watch(selectedDateProvider);
-  final repo = ref.watch(activityRecordRepositoryProvider);
-  return repo.watchForDate(date);
+    FutureProvider<List<ActivityRecord>>((ref) async {
+  final response = await ref.watch(activityDaySummaryProvider.future);
+  return _activityRecordsFromServerPreview(response);
 });
 
 final activityInsightsProvider = Provider<ActivityInsights>((ref) {
-  final recordsAsync = ref.watch(activityRecordsForDateProvider);
-  return recordsAsync.maybeWhen(
-    data: ActivityInsights.fromRecords,
+  final summaryAsync = ref.watch(activityDaySummaryProvider);
+  return summaryAsync.maybeWhen(
+    data: _activityInsightsFromServer,
     orElse: ActivityInsights.empty,
   );
 });
 
 final workSessionsForDateProvider = Provider<List<WorkSession>>((ref) {
-  final recordsAsync = ref.watch(activityRecordsForDateProvider);
-  return recordsAsync.maybeWhen(
-    data: WorkSessionGrouper.fromRecords,
+  final summaryAsync = ref.watch(activityDaySummaryProvider);
+  return summaryAsync.maybeWhen(
+    data: _workSessionsFromServer,
     orElse: () => const <WorkSession>[],
   );
 });
@@ -212,13 +232,13 @@ final inputEventArchiveEntriesForDateProvider =
 });
 
 final recentTrackedInputEventsProvider =
-    FutureProvider<List<TrackedInputEvent>>((ref) {
+    FutureProvider<List<TrackedInputEvent>>((ref) async {
   ref.watch(activityLogRefreshTickProvider);
-  final service = ref.watch(inputActivityEventServiceProvider);
-  return service.listRecentEvents(
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.inputEvents(
     limit: 12,
-    includeIgnored: false,
   );
+  return _trackedInputEventsFromServer(response);
 });
 
 class TrackerHistoryFilterOptions {
@@ -271,26 +291,28 @@ final trackerHistorySelectedAnalysisBucketProvider =
     StateProvider<ActivityHeatmapBucket?>((ref) => null);
 
 final trackerRangeAnalysisRecordsProvider =
-    StreamProvider<List<ActivityRecord>>((ref) {
+    FutureProvider<List<ActivityRecord>>((ref) async {
   final bucket = ref.watch(trackerHistorySelectedAnalysisBucketProvider);
   if (bucket == null) {
-    return Stream.value(const <ActivityRecord>[]);
+    return const <ActivityRecord>[];
   }
 
-  final repo = ref.watch(activityRecordRepositoryProvider);
-  return repo.watchInRange(bucket.start, bucket.end);
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.rangeAnalysis(
+    start: bucket.start,
+    end: bucket.end,
+    bucket: _serverBucketForScale(_scaleForBucket(bucket)),
+  );
+  return _activityRecordsFromServerPreview(response);
 });
 
 final trackerRangeAnalysisLogEntriesProvider =
-    FutureProvider<List<ActivityLogEntry>>((ref) {
-  ref.watch(activityLogRefreshTickProvider);
+    FutureProvider<List<ActivityLogEntry>>((ref) async {
   final bucket = ref.watch(trackerHistorySelectedAnalysisBucketProvider);
   if (bucket == null) {
-    return Future.value(const <ActivityLogEntry>[]);
+    return const <ActivityLogEntry>[];
   }
-
-  final service = ref.watch(activityLogServiceProvider);
-  return service.readEntriesBetween(bucket.start, bucket.end);
+  return const <ActivityLogEntry>[];
 });
 
 final trackerRangeAnalysisProvider =
@@ -302,24 +324,21 @@ final trackerRangeAnalysisProvider =
 
   final recordsAsync = ref.watch(trackerRangeAnalysisRecordsProvider);
   final logsAsync = ref.watch(trackerRangeAnalysisLogEntriesProvider);
+  final rangeAnalysisAsync = ref.watch(trackerRangeAnalysisViewModelProvider);
 
-  if (recordsAsync.hasError) {
-    return AsyncValue.error(
-      recordsAsync.error!,
-      recordsAsync.stackTrace ?? StackTrace.current,
-    );
-  }
-
-  if (logsAsync.hasError) {
-    return AsyncValue.error(
-      logsAsync.error!,
-      logsAsync.stackTrace ?? StackTrace.current,
-    );
+  for (final async in [recordsAsync, logsAsync, rangeAnalysisAsync]) {
+    if (async.hasError) {
+      return AsyncValue.error(
+        async.error!,
+        async.stackTrace ?? StackTrace.current,
+      );
+    }
   }
 
   final records = recordsAsync.asData?.value;
   final logEntries = logsAsync.asData?.value;
-  if (records == null || logEntries == null) {
+  final rangeAnalysis = rangeAnalysisAsync.asData?.value;
+  if (records == null || logEntries == null || rangeAnalysis == null) {
     return const AsyncLoading();
   }
 
@@ -328,42 +347,686 @@ final trackerRangeAnalysisProvider =
       bucket: bucket,
       records: records,
       logEntries: logEntries,
-      insights: ActivityInsights.fromRecords(records),
-      sessions: WorkSessionGrouper.fromRecords(records),
+      insights: _activityInsightsFromServer(rangeAnalysis),
+      sessions: _workSessionsFromServer(rangeAnalysis),
     ),
+  );
+});
+
+final trackerRangeAnalysisViewModelProvider =
+    FutureProvider<Map<String, dynamic>>((ref) async {
+  final bucket = ref.watch(trackerHistorySelectedAnalysisBucketProvider);
+  if (bucket == null) {
+    return const <String, dynamic>{};
+  }
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  return store.rangeAnalysis(
+    start: bucket.start,
+    end: bucket.end,
+    bucket: _serverBucketForScale(_scaleForBucket(bucket)),
   );
 });
 
 final trackerHistoryFilterOptionsProvider =
     Provider<TrackerHistoryFilterOptions>((ref) {
-  final recordsAsync = ref.watch(activityRecordsForDateProvider);
-  return recordsAsync.maybeWhen(
-    data: (records) {
-      final processes = <String>{};
-      final categories = <String>{};
-
-      for (final record in records) {
-        final process = record.processName?.trim();
-        if (process != null && process.isNotEmpty) {
-          processes.add(process);
-        }
-
-        final category = record.category?.trim();
-        if (category != null && category.isNotEmpty) {
-          categories.add(category);
-        }
-      }
-
-      final sortedProcesses = processes.toList()
-        ..sort((left, right) => left.toLowerCase().compareTo(right.toLowerCase()));
-      final sortedCategories = categories.toList()
-        ..sort((left, right) => left.compareTo(right));
-
-      return TrackerHistoryFilterOptions(
-        processOptions: sortedProcesses,
-        categoryOptions: sortedCategories,
-      );
-    },
+  final optionsAsync = ref.watch(trackerServerFilterOptionsProvider);
+  return optionsAsync.maybeWhen(
+    data: _filterOptionsFromServer,
     orElse: TrackerHistoryFilterOptions.empty,
   );
 });
+
+final trackerServerFilterOptionsProvider =
+    FutureProvider<Map<String, dynamic>>((ref) async {
+  final selectedDate = ref.watch(selectedDateProvider);
+  final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+  final end = start.add(const Duration(days: 1));
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  return store.filterOptions(start: start, end: end);
+});
+
+Future<List<String>> _loadServerInputProcessOptions(Ref ref) async {
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  final response = await store.filterOptions();
+  return _filterOptionsFromServer(response).processOptions;
+}
+
+TrackerHistoryFilterOptions _filterOptionsFromServer(
+  Map<String, dynamic> response,
+) {
+  final processes = _stringList(response['processOptions']);
+  final categories = _stringList(response['categoryOptions']);
+  return TrackerHistoryFilterOptions(
+    processOptions: processes,
+    categoryOptions: categories,
+  );
+}
+
+ActivityInsights _activityInsightsFromServer(Map<String, dynamic> response) {
+  final insights = _asStringMap(response['insights']);
+  final previewRecords = _activityRecordsFromServerPreview(response);
+  final busiestRecords = previewRecords
+      .take(3)
+      .map(
+        (record) => ActivityInsightRecord(
+          record: record,
+          inputScore: record.keyCount + (record.mouseClicks * 4),
+        ),
+      )
+      .toList(growable: false);
+  return ActivityInsights(
+    records: previewRecords,
+    totalMinutes: _intValue(insights['totalMinutes']),
+    focusMinutes: _intValue(insights['focusMinutes']),
+    totalKeys: _intValue(insights['totalKeys']),
+    totalClicks: _intValue(insights['totalClicks']),
+    totalMovePx: _intValue(insights['totalMovePx']),
+    totalScrollPx: _intValue(insights['totalScrollPx']),
+    sequenceRecordCount: _intValue(insights['sequenceRecordCount']),
+    productiveRecordCountOverride:
+        _intValue(insights['productiveRecordCount']),
+    topProcesses: _insightSlices(insights['topProcesses']),
+    topCategories: _insightSlices(insights['topCategories']),
+    busiestRecords: busiestRecords,
+  );
+}
+
+List<ActivityInsightSlice> _insightSlices(Object? value) {
+  return _mapList(value)
+      .map(
+        (item) => ActivityInsightSlice(
+          label: _stringValue(item['label'] ?? item['name']) ?? 'unknown',
+          minutes: _intValue(item['minutes'] ?? item['totalMinutes']),
+          keys: _intValue(item['keys']),
+          clicks: _intValue(item['clicks']),
+          movePx: _intValue(item['movePx']),
+          scrollPx: _intValue(item['scrollPx']),
+          sessions: _intValue(item['sessions'] ?? item['recordCount']),
+        ),
+      )
+      .toList(growable: false);
+}
+
+List<WorkSession> _workSessionsFromServer(Map<String, dynamic> response) {
+  return _mapList(response['sessions'])
+      .map((item) {
+        final start = _dateValue(item['startTime']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final duration = _intValue(item['durationMinutes'], fallback: 1);
+        final end = _dateValue(item['endTime']) ??
+            start.add(Duration(minutes: duration));
+        final processNames = _stringList(item['processNames']);
+        final categories = _stringList(item['categories']);
+        return WorkSession(
+          startTime: start,
+          endTime: end,
+          label: _stringValue(item['label']) ??
+              (categories.isNotEmpty
+                  ? categories.first
+                  : processNames.isNotEmpty
+                      ? processNames.first
+                      : '服务端工作会话'),
+          processName: _stringValue(item['processName']) ??
+              (processNames.isEmpty ? null : processNames.first),
+          category: _stringValue(item['category']) ??
+              (categories.isEmpty ? null : categories.first),
+          records: const <ActivityRecord>[],
+          durationMinutes: duration,
+          keyCount: _intValue(item['keyCount']),
+          mouseClicks: _intValue(item['mouseClicks']),
+          mouseMovePx: _intValue(item['mouseMovePx']),
+          scrollPx: _intValue(item['scrollPx']),
+          processNames: processNames,
+          categories: categories,
+          interruptionCount: _intValue(item['interruptionCount']),
+          rawRecordCountOverride: _intValue(item['rawRecordCount']),
+        );
+      })
+      .toList(growable: false);
+}
+
+List<ActivityRecord> _activityRecordsFromServerPreview(
+  Map<String, dynamic> response,
+) {
+  final preview = response['previewRecords'];
+  if (preview is List) {
+    return _activityRecordsFromServer({'items': preview});
+  }
+  return _activityRecordsFromServer(response);
+}
+
+List<ActivityRecord> activityRecordsFromServerPreview(
+  Map<String, dynamic> response,
+) =>
+    _activityRecordsFromServerPreview(response);
+
+ActivityInsights activityInsightsFromServer(Map<String, dynamic> response) =>
+    _activityInsightsFromServer(response);
+
+List<WorkSession> workSessionsFromServer(Map<String, dynamic> response) =>
+    _workSessionsFromServer(response);
+
+ActivityHistorySummary _activityHistorySummaryFromServer(
+  Map<String, dynamic> response,
+) {
+  final counts = _asStringMap(response['canonicalObjectCounts']);
+  final latest = _asStringMap(response['latestReceivedAtByKind']);
+  final totalRecords = counts.values.fold<int>(
+    0,
+    (sum, value) => sum + _intValue(value),
+  );
+  DateTime? lastRecordAt;
+  for (final value in latest.values) {
+    final parsed = _dateValue(value);
+    if (parsed != null &&
+        (lastRecordAt == null || parsed.isAfter(lastRecordAt))) {
+      lastRecordAt = parsed;
+    }
+  }
+  return ActivityHistorySummary(
+    firstRecordAt: totalRecords > 0 && lastRecordAt != null
+        ? lastRecordAt.subtract(const Duration(days: 30))
+        : null,
+    lastRecordAt: lastRecordAt,
+    totalRecords: totalRecords,
+  );
+}
+
+({DateTime start, DateTime end}) _activityHeatmapRange(
+  ActivityHeatmapScale scale,
+  DateTime anchorDate,
+) {
+  switch (scale) {
+    case ActivityHeatmapScale.hour:
+      final start = DateTime(anchorDate.year, anchorDate.month, anchorDate.day);
+      return (start: start, end: start.add(const Duration(days: 1)));
+    case ActivityHeatmapScale.day:
+      final start = DateTime(anchorDate.year, anchorDate.month);
+      return (start: start, end: DateTime(anchorDate.year, anchorDate.month + 1));
+    case ActivityHeatmapScale.month:
+    case ActivityHeatmapScale.year:
+      final start = DateTime(anchorDate.year);
+      return (start: start, end: DateTime(anchorDate.year + 1));
+  }
+}
+
+String _serverBucketForScale(ActivityHeatmapScale scale) {
+  return switch (scale) {
+    ActivityHeatmapScale.hour => 'hour',
+    ActivityHeatmapScale.day => 'day',
+    ActivityHeatmapScale.month => 'month',
+    ActivityHeatmapScale.year => 'month',
+  };
+}
+
+ActivityHeatmapScale _scaleForBucket(ActivityHeatmapBucket bucket) {
+  final span = bucket.end.difference(bucket.start);
+  if (span.inHours <= 1) {
+    return ActivityHeatmapScale.hour;
+  }
+  if (span.inDays <= 1) {
+    return ActivityHeatmapScale.day;
+  }
+  if (span.inDays <= 32) {
+    return ActivityHeatmapScale.month;
+  }
+  return ActivityHeatmapScale.year;
+}
+
+ActivityHeatmapSeries _activityHeatmapSeriesFromServer(
+  Map<String, dynamic> response, {
+  required ActivityHeatmapScale scale,
+  required DateTime anchorDate,
+  required ActivityHistorySummary historySummary,
+}) {
+  final buckets = <ActivityHeatmapBucket>[];
+  for (final row in _serverBuckets(response)) {
+    final start = _dateValue(row['bucketStart']);
+    if (start == null) {
+      continue;
+    }
+    final end = switch (scale) {
+      ActivityHeatmapScale.hour => start.add(const Duration(hours: 1)),
+      ActivityHeatmapScale.day => start.add(const Duration(days: 1)),
+      ActivityHeatmapScale.month => DateTime(start.year, start.month + 1),
+      ActivityHeatmapScale.year => DateTime(start.year, start.month + 1),
+    };
+    buckets.add(
+      ActivityHeatmapBucket(
+        start: start,
+        end: end,
+        shortLabel: _bucketShortLabel(scale, start),
+        longLabel: _bucketLongLabel(scale, start),
+        completedCount: _intValue(row['recordCount']),
+        totalMinutes: _intValue(row['totalMinutes']),
+      ),
+    );
+  }
+  return ActivityHeatmapSeries(
+    scale: scale,
+    anchorDate: anchorDate,
+    title: _heatmapTitle(scale, anchorDate),
+    subtitle: '数据来自服务端汇总后的追踪事实，而不是本机临时缓冲。',
+    buckets: buckets,
+    maxMinutes: buckets.fold<int>(
+      0,
+      (max, item) => item.totalMinutes > max ? item.totalMinutes : max,
+    ),
+    historySummary: historySummary,
+  );
+}
+
+List<ActivityRecord> _activityRecordsFromServer(Map<String, dynamic> response) {
+  final records = <ActivityRecord>[];
+  for (final item in _serverItems(response)) {
+    final payload = _payload(item);
+    final start = _dateValue(
+          payload['startTime'] ??
+              payload['start_time'] ??
+              payload['startedAt'] ??
+              item['occurredAt'],
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final durationMinutes = _intValue(
+      payload['durationMinutes'] ??
+          payload['duration_minutes'] ??
+          item['metricMinutes'],
+      fallback: 1,
+    );
+    final end = _dateValue(
+          payload['endTime'] ?? payload['end_time'] ?? payload['endedAt'],
+        ) ??
+        start.add(Duration(minutes: durationMinutes));
+    records.add(
+      ActivityRecord(
+        id: _stablePositiveId(_stringValue(item['serverId']) ?? start.toIso8601String()),
+        startTime: start,
+        endTime: end,
+        durationMinutes: durationMinutes,
+        manualLabel: _stringValue(
+          payload['manualLabel'] ?? payload['manual_label'] ?? payload['label'],
+        ),
+        processName: _stringValue(
+          payload['processName'] ?? payload['process_name'] ?? payload['packageName'],
+        ),
+        windowTitle: _stringValue(
+          payload['windowTitle'] ?? payload['window_title'] ?? payload['title'],
+        ),
+        packageName: _stringValue(payload['packageName'] ?? payload['package_name']),
+        category: _stringValue(payload['category']),
+        appUsageRuleId: _stringValue(payload['appUsageRuleId']),
+        linkedTaskId: _intOrNull(payload['linkedTaskId'] ?? payload['linked_task_id']),
+        keyCount: _intValue(payload['keyCount'] ?? payload['key_count']),
+        mouseClicks: _intValue(payload['mouseClicks'] ?? payload['mouse_clicks']),
+        mouseMovePx: _intValue(payload['mouseMovePx'] ?? payload['mouse_move_px']),
+        scrollPx: _intValue(payload['scrollPx'] ?? payload['scroll_px']),
+        keySequence: _stringValue(payload['keySequence']),
+        isAuto: payload['isAuto'] is bool ? payload['isAuto'] as bool : true,
+        source: _stringValue(item['objectType']) ?? 'server',
+      ),
+    );
+  }
+  records.sort((left, right) => left.startTime.compareTo(right.startTime));
+  return records;
+}
+
+InputHeatmapSummary _inputHeatmapSummaryFromServer(
+  InputEventQuery query,
+  Map<String, dynamic> response,
+) {
+  var total = 0;
+  var keyboard = 0;
+  var mouseButton = 0;
+  var wheel = 0;
+  var mouseMove = 0;
+  var distance = 0;
+  final activeHours = <String>{};
+  final byHour = <int, _InputHourCounter>{};
+  for (final row in _serverBuckets(response)) {
+    final start = _dateValue(row['bucketStart']);
+    final hour = start?.toLocal().hour ?? 0;
+    final counter = byHour.putIfAbsent(hour, () => _InputHourCounter(hour));
+    counter.totalEvents += _intValue(row['eventCount']);
+    counter.keyEvents += _intValue(row['keyboardEventCount']);
+    counter.mouseButtonEvents += _intValue(row['mouseButtonEventCount']);
+    counter.wheelEvents += _intValue(row['wheelEventCount']);
+    counter.mouseMoveEvents += _intValue(row['mouseMoveEventCount']);
+    counter.moveDistance += _intValue(row['mouseMoveDistance']);
+    if (start != null) {
+      activeHours.add(start.toIso8601String());
+    }
+    total += _intValue(row['eventCount']);
+    keyboard += _intValue(row['keyboardEventCount']);
+    mouseButton += _intValue(row['mouseButtonEventCount']);
+    wheel += _intValue(row['wheelEventCount']);
+    mouseMove += _intValue(row['mouseMoveEventCount']);
+    distance += _intValue(row['mouseMoveDistance']);
+  }
+  final hourly = byHour.values.map((item) => item.toBucket()).toList()
+    ..sort((left, right) => left.hour.compareTo(right.hour));
+  final keyCounts = _intMap(response['keyCounts']);
+  final mouseCounts = _stringIntMap(response['mouseCounts']);
+  final topKeys = _inputKeyStats(response['topKeys'], keyboard);
+  final processIntensities = _inputProcessIntensities(response['processIntensities']);
+  return InputHeatmapSummary(
+    query: query,
+    totalEventCount: total,
+    activeMinuteCount: activeHours.length * 60,
+    keyboardEventCount: keyboard,
+    mouseButtonEventCount: mouseButton,
+    wheelEventCount: wheel,
+    mouseMoveEventCount: mouseMove,
+    mouseMoveDistance: distance,
+    keyCounts: keyCounts,
+    mouseCounts: mouseCounts,
+    topKeys: topKeys,
+    processIntensities: processIntensities,
+    hourlyDistribution: hourly,
+  );
+}
+
+Map<int, int> _intMap(Object? value) {
+  final source = _asStringMap(value);
+  if (source.isEmpty) {
+    return const <int, int>{};
+  }
+  final result = <int, int>{};
+  for (final entry in source.entries) {
+    final key = int.tryParse(entry.key);
+    final count = _intValue(entry.value);
+    if (key != null && count > 0) {
+      result[key] = count;
+    }
+  }
+  return result;
+}
+
+Map<String, int> _stringIntMap(Object? value) {
+  final source = _asStringMap(value);
+  if (source.isEmpty) {
+    return const <String, int>{};
+  }
+  final result = <String, int>{};
+  for (final entry in source.entries) {
+    final key = entry.key.trim();
+    final count = _intValue(entry.value);
+    if (key.isNotEmpty && count > 0) {
+      result[key] = count;
+    }
+  }
+  return result;
+}
+
+List<InputKeyStat> _inputKeyStats(Object? value, int keyboardTotal) {
+  final items = _mapList(value);
+  if (items.isEmpty) {
+    return const <InputKeyStat>[];
+  }
+  return items
+      .map((item) {
+        final keyCode = _intOrNull(item['keyCode'] ?? item['key_code']);
+        final count = _intValue(item['count'] ?? item['eventCount']);
+        if (keyCode == null || count <= 0) {
+          return null;
+        }
+        return InputKeyStat(
+          keyCode: keyCode,
+          label: _stringValue(item['label']) ?? inputKeyLabelForCode(keyCode),
+          count: count,
+          share: item['share'] is num
+              ? (item['share'] as num).toDouble()
+              : (keyboardTotal > 0 ? count / keyboardTotal : 0),
+        );
+      })
+      .whereType<InputKeyStat>()
+      .toList(growable: false);
+}
+
+List<InputProcessIntensity> _inputProcessIntensities(Object? value) {
+  final items = _mapList(value);
+  if (items.isEmpty) {
+    return const <InputProcessIntensity>[];
+  }
+  return items
+      .map((item) {
+        final processName = _stringValue(item['processName'] ?? item['process_name']);
+        if (processName == null) {
+          return null;
+        }
+        return InputProcessIntensity(
+          processName: processName,
+          totalEvents: _intValue(item['totalEvents'] ?? item['eventCount']),
+          keyEvents: _intValue(item['keyEvents'] ?? item['keyboardEventCount']),
+          mouseButtonEvents: _intValue(item['mouseButtonEvents'] ?? item['mouseButtonEventCount']),
+          wheelEvents: _intValue(item['wheelEvents'] ?? item['wheelEventCount']),
+          mouseMoveEvents: _intValue(item['mouseMoveEvents'] ?? item['mouseMoveEventCount']),
+          moveDistance: _intValue(item['moveDistance'] ?? item['mouseMoveDistance']),
+          activeMinutes: _intValue(item['activeMinutes']),
+          intensityScore: _intValue(item['intensityScore']),
+        );
+      })
+      .whereType<InputProcessIntensity>()
+      .toList(growable: false);
+}
+
+List<TrackedInputEvent> _trackedInputEventsFromServer(
+  Map<String, dynamic> response,
+) {
+  final events = <TrackedInputEvent>[];
+  for (final item in _serverItems(response)) {
+    final payload = _payload(item);
+    final timestamp = _dateValue(
+          payload['timestamp'] ?? payload['occurredAt'] ?? item['occurredAt'],
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final uid = _stringValue(item['serverId']) ?? timestamp.toIso8601String();
+    events.add(
+      TrackedInputEvent(
+        eventUid: uid,
+        sequenceId: _stablePositiveId(uid),
+        timestamp: timestamp,
+        kind: TrackedInputEventKindValue.fromValue(
+          _stringValue(payload['kind'] ?? payload['eventKind']) ?? 'key_down',
+        ),
+        eventCount: _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
+        recordId: _intOrNull(payload['recordId']),
+        isIgnored: payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
+        processName: _stringValue(payload['processName'] ?? payload['process_name']),
+        className: _stringValue(payload['className']),
+        windowTitle: _stringValue(payload['windowTitle'] ?? payload['window_title']),
+        category: _stringValue(payload['category']),
+        activityLabel: _stringValue(payload['activityLabel']),
+        keyCode: _intOrNull(payload['keyCode']),
+        keyLabel: _stringValue(payload['keyLabel']),
+        mouseButton: _stringValue(payload['mouseButton']),
+        wheelDelta: _intValue(payload['wheelDelta']),
+        deltaX: _intValue(payload['deltaX']),
+        deltaY: _intValue(payload['deltaY']),
+        moveDistance: _intValue(payload['moveDistance'] ?? payload['move_distance']),
+        tokenText: _stringValue(payload['tokenText']),
+      ),
+    );
+  }
+  return events;
+}
+
+List<Map<String, Object?>> _serverItems(Map<String, dynamic> response) {
+  final items = response['items'];
+  if (items is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  return items
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
+      .toList(growable: false);
+}
+
+List<Map<String, Object?>> _mapList(Object? value) {
+  if (value is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
+      .toList(growable: false);
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! List) {
+    return const <String>[];
+  }
+  final items = value
+      .map(_stringValue)
+      .whereType<String>()
+      .where((item) => item.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort((left, right) => left.toLowerCase().compareTo(right.toLowerCase()));
+  return items;
+}
+
+List<Map<String, Object?>> _serverBuckets(Map<String, dynamic> response) {
+  final buckets = response['buckets'];
+  if (buckets is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  return buckets
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
+      .toList(growable: false);
+}
+
+Map<String, Object?> _payload(Map<String, Object?> item) {
+  final payload = item['payload'];
+  if (payload is Map<String, dynamic>) {
+    return Map<String, Object?>.from(payload);
+  }
+  if (payload is Map) {
+    return Map<String, Object?>.from(payload);
+  }
+  return const <String, Object?>{};
+}
+
+Map<String, Object?> _asStringMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return Map<String, Object?>.from(value);
+  }
+  if (value is Map) {
+    return Map<String, Object?>.from(value);
+  }
+  return const <String, Object?>{};
+}
+
+DateTime? _dateValue(Object? value) {
+  if (value is DateTime) {
+    return value;
+  }
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value);
+  }
+  return null;
+}
+
+String? _stringValue(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+int _intValue(Object? value, {int fallback = 0}) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.round();
+  }
+  if (value is String) {
+    final parsed = num.tryParse(value);
+    if (parsed != null) {
+      return parsed.round();
+    }
+  }
+  return fallback;
+}
+
+int? _intOrNull(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.round();
+  }
+  if (value is String) {
+    return num.tryParse(value)?.round();
+  }
+  return null;
+}
+
+int _stablePositiveId(String value) {
+  var hash = 0;
+  for (final unit in value.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
+  }
+  return hash == 0 ? 1 : hash;
+}
+
+String _bucketShortLabel(ActivityHeatmapScale scale, DateTime start) {
+  return switch (scale) {
+    ActivityHeatmapScale.hour => start.hour.toString().padLeft(2, '0'),
+    ActivityHeatmapScale.day => start.day.toString(),
+    ActivityHeatmapScale.month => '${start.month}',
+    ActivityHeatmapScale.year => '${start.month}',
+  };
+}
+
+String _bucketLongLabel(ActivityHeatmapScale scale, DateTime start) {
+  return switch (scale) {
+    ActivityHeatmapScale.hour =>
+      '${start.month}月${start.day}日 ${start.hour.toString().padLeft(2, '0')}:00',
+    ActivityHeatmapScale.day => '${start.year}年${start.month}月${start.day}日',
+    ActivityHeatmapScale.month => '${start.year}年${start.month}月',
+    ActivityHeatmapScale.year => '${start.year}年${start.month}月',
+  };
+}
+
+String _heatmapTitle(ActivityHeatmapScale scale, DateTime anchorDate) {
+  return switch (scale) {
+    ActivityHeatmapScale.hour =>
+      '${anchorDate.month}月${anchorDate.day}日逐小时分布',
+    ActivityHeatmapScale.day =>
+      '${anchorDate.year}年${anchorDate.month}月每日分布',
+    ActivityHeatmapScale.month => '${anchorDate.year}年每月分布',
+    ActivityHeatmapScale.year => '${anchorDate.year}年每月分布',
+  };
+}
+
+class _InputHourCounter {
+  _InputHourCounter(this.hour);
+
+  final int hour;
+  int totalEvents = 0;
+  int keyEvents = 0;
+  int mouseButtonEvents = 0;
+  int wheelEvents = 0;
+  int mouseMoveEvents = 0;
+  int moveDistance = 0;
+
+  InputHourDistributionBucket toBucket() {
+    return InputHourDistributionBucket(
+      hour: hour,
+      totalEvents: totalEvents,
+      keyEvents: keyEvents,
+      mouseButtonEvents: mouseButtonEvents,
+      wheelEvents: wheelEvents,
+      mouseMoveEvents: mouseMoveEvents,
+      moveDistance: moveDistance,
+      activeMinutes: totalEvents > 0 ? 60 : 0,
+      intensityScore: totalEvents + (moveDistance ~/ 100),
+    );
+  }
+}

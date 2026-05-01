@@ -31,6 +31,8 @@ type NormalizedTrackingEvent = {
   endAt: Date | null;
 };
 
+const MAX_SYNC_UID_BYTES = 180;
+
 @Injectable()
 export class TrackingService {
   constructor(
@@ -384,7 +386,14 @@ export class TrackingService {
     const userId = await this.devicesService.ensureUser(context.userId);
     const start = this.readDate(query.start);
     const end = this.readDate(query.end);
-    const [batches, objects, recent] = await Promise.all([
+    const trackingObjectTypes = [
+      'raw_activity_log',
+      'activity_record',
+      'tracked_input_event',
+      'activity_records',
+      'tracked_input_events',
+    ];
+    const [batches, objects, latestObjects, recentError, recent] = await Promise.all([
       this.database.query<QueryResultRow>(
         `
         SELECT status AS name, COUNT(*)::int AS count
@@ -409,16 +418,42 @@ export class TrackingService {
         `,
         [
           userId,
-          [
-            'raw_activity_log',
-            'activity_record',
-            'tracked_input_event',
-            'activity_records',
-            'tracked_input_events',
-          ],
+          trackingObjectTypes,
           start,
           end,
         ],
+      ),
+      this.database.query<QueryResultRow>(
+        `
+        SELECT object_type AS name, MAX(updated_at) AS "latestReceivedAt"
+        FROM sync_objects
+        WHERE user_id = $1
+          AND deleted_at IS NULL
+          AND object_type = ANY($2::text[])
+        GROUP BY object_type
+        ORDER BY object_type ASC
+        `,
+        [userId, trackingObjectTypes],
+      ),
+      this.database.query<QueryResultRow>(
+        `
+        SELECT
+          id::text AS id,
+          batch_uid AS "batchUid",
+          data_kind AS "dataKind",
+          status,
+          error_message AS "errorMessage",
+          updated_at AS "updatedAt"
+        FROM tracking_ingest_batches
+        WHERE user_id = $1
+          AND (
+            error_message IS NOT NULL
+            OR status IN ('failed', 'completed_with_rejections')
+          )
+        ORDER BY updated_at DESC
+        LIMIT 1
+        `,
+        [userId],
       ),
       this.batches({ limit: '10' }, context),
     ]);
@@ -426,6 +461,8 @@ export class TrackingService {
       generatedAt: new Date().toISOString(),
       batchStatus: this.countMap(batches.rows),
       canonicalObjectCounts: this.countMap(objects.rows),
+      latestReceivedAtByKind: this.dateMap(latestObjects.rows),
+      recentError: recentError.rows[0] ?? null,
       recentBatches: recent.items,
     };
   }
@@ -511,11 +548,12 @@ export class TrackingService {
       (startAt
         ? new Date(startAt.getTime() + Math.max(60, Number(record.durationSeconds ?? 60)) * 1000)
         : null);
-    const uid =
+    const rawUid =
       this.clean(record.uid) ??
       this.clean(record.id) ??
       this.clean(record.eventId) ??
       `${batchUid}:${index}`;
+    const uid = this.normalizeSyncUid(objectType, rawUid);
     return {
       uid,
       objectType,
@@ -523,10 +561,20 @@ export class TrackingService {
       endAt,
       payload: {
         ...record,
+        uid,
+        ...(uid !== rawUid ? { sourceUid: rawUid } : {}),
         startTime: startAt?.toISOString() ?? record.startTime ?? record.timestamp,
         endTime: endAt?.toISOString() ?? record.endTime,
       },
     };
+  }
+
+  private normalizeSyncUid(objectType: string, rawUid: string) {
+    if (Buffer.byteLength(rawUid, 'utf8') <= MAX_SYNC_UID_BYTES) {
+      return rawUid;
+    }
+    const digest = createHash('sha256').update(rawUid).digest('hex').slice(0, 32);
+    return `tracking:${objectType}:${digest}`;
   }
 
   private objectTypeForKind(kind: string) {
@@ -604,6 +652,15 @@ export class TrackingService {
     );
   }
 
+  private dateMap(rows: QueryResultRow[]) {
+    return Object.fromEntries(
+      rows.map((row) => [
+        String(row.name ?? 'unknown'),
+        row.latestReceivedAt ? this.iso(row.latestReceivedAt) : null,
+      ]),
+    );
+  }
+
   private hashJson(value: unknown) {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
   }
@@ -622,10 +679,17 @@ export class TrackingService {
   }
 
   private readDate(value: unknown) {
-    if (!(typeof value === 'string' || value instanceof Date)) {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value !== 'string') {
       return null;
     }
-    const parsed = new Date(value);
+    const text = value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
+      return null;
+    }
+    const parsed = new Date(text);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -647,6 +711,14 @@ export class TrackingService {
   private readOffset(value: string | undefined) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }
+
+  private iso(value: unknown) {
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    const parsed = new Date(String(value));
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   private toNumber(value: unknown) {

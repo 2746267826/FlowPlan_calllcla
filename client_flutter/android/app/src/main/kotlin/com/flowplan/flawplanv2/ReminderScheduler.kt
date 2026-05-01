@@ -1,4 +1,4 @@
-package com.flowplan.flowplan
+package com.flowplan.flawplanv2
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -146,7 +146,7 @@ object ReminderScheduler {
         body: String,
     ): Intent {
         return Intent(context, ReminderAlarmReceiver::class.java).apply {
-            action = "com.flowplan.flowplan.REMINDER_ALARM"
+            action = "com.flowplan.flawplanv2.REMINDER_ALARM"
             putExtra(ReminderAlarmReceiver.EXTRA_ID, id)
             putExtra(ReminderAlarmReceiver.EXTRA_TRIGGER_AT_MILLIS, triggerAtMillis)
             putExtra(ReminderAlarmReceiver.EXTRA_TITLE, title)

@@ -1,9 +1,12 @@
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/client_bootstrap_service.dart';
 import '../../core/database/app_database.dart';
+import '../../core/router/app_router.dart';
+import '../../core/server_api/server_config_store.dart';
 import '../../core/sync/sync_cursor_store.dart';
 import '../../shared/providers/app_providers.dart';
 import '../../shared/providers/database_provider.dart';
@@ -190,11 +193,20 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
     }
     setState(() => _savingUrl = true);
     try {
-      await ref.read(serverConfigStoreProvider).saveBaseUri(uri);
+      final normalized = ServerConfigStore.normalizeBaseUri(uri);
+      await ref.read(serverConfigStoreProvider).saveBaseUri(normalized);
+      _serverUrlController.text = normalized.toString();
       ref.invalidate(apiClientProvider);
       ref.invalidate(clientApiProvider);
+      ref.invalidate(remoteSettingsRepositoryProvider);
+      ref.invalidate(serverSyncEngineProvider);
       ref.invalidate(clientBootstrapServiceProvider);
-      _show('服务端地址已保存');
+      ref.invalidate(serverConnectionServiceProvider);
+      final service = await ref.read(serverConnectionServiceProvider.future);
+      service.start();
+      await service.syncNow(source: 'server_url_saved');
+      ref.invalidate(serverSyncMvpSummaryProvider);
+      _show('服务端地址已保存并已重新连接');
     } catch (error) {
       _show('保存失败：$error');
     } finally {
@@ -246,7 +258,14 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
     final summary = ref.watch(serverSyncMvpSummaryProvider);
     final runtime = ref.watch(clientBootstrapServiceProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('服务端同步')),
+      appBar: AppBar(
+        title: const Text('服务端同步'),
+        leading: IconButton(
+          tooltip: '返回',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _leavePage,
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(serverSyncMvpSummaryProvider);
@@ -353,10 +372,28 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _leavePage,
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('返回主界面'),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  void _leavePage() {
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go(AppRoutes.timeline);
   }
 
   void _show(String message) {
@@ -377,6 +414,8 @@ class _RuntimeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reachable = state.serverReachable == true;
+    final hasSyncError =
+        reachable && state.lastError != null && state.lastError!.isNotEmpty;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -386,13 +425,21 @@ class _RuntimeCard extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  reachable ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-                  color: reachable ? Colors.green : Colors.orange,
+                  hasSyncError
+                      ? Icons.sync_problem_outlined
+                      : reachable
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
+                  color: hasSyncError
+                      ? Colors.amber.shade700
+                      : reachable
+                          ? Colors.green
+                          : Colors.orange,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _modeLabel(state.mode),
+                    _modeLabel(state),
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -420,8 +467,13 @@ class _RuntimeCard extends StatelessWidget {
     );
   }
 
-  String _modeLabel(String mode) {
-    switch (mode) {
+  String _modeLabel(ClientRuntimeState state) {
+    if (state.serverReachable == true &&
+        state.lastError != null &&
+        state.lastError!.isNotEmpty) {
+      return '服务端在线 · 同步异常';
+    }
+    switch (state.mode) {
       case 'server_first':
         return '服务端事实库模式';
       case 'local_cache':

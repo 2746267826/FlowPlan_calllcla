@@ -231,7 +231,7 @@ class _TodayPageState extends State<_TodayPage> {
   late Future<Map<String, dynamic>> future = _load();
 
   Future<Map<String, dynamic>> _load() async {
-    await widget.onConnectionRefresh();
+    unawaited(widget.onConnectionRefresh());
     return widget.api.getJson('/web/dashboard');
   }
 
@@ -292,7 +292,7 @@ class _TodayPageState extends State<_TodayPage> {
               ),
               const SizedBox(height: 12),
               _TwoColumn(
-                left: _ItemSection(
+                left: _ItemSection2(
                   title: '今日任务',
                   emptyText: '今天没有截止任务。',
                   items: _mapList(today['tasks']).isEmpty
@@ -306,7 +306,7 @@ class _TodayPageState extends State<_TodayPage> {
                     item['location'],
                   ],
                 ),
-                right: _ItemSection(
+                right: _ItemSection2(
                   title: '今日日程',
                   emptyText: '今天没有日程。',
                   items: _mapList(today['events']),
@@ -320,7 +320,7 @@ class _TodayPageState extends State<_TodayPage> {
                 ),
               ),
               const SizedBox(height: 12),
-              _ItemSection(
+              _ItemSection2(
                 title: '今日实际记录',
                 emptyText: '还没有确认的实际记录。',
                 items: _mapList(today['actualRecords']),
@@ -402,7 +402,7 @@ class _TasksPageState extends State<_TasksPage> {
       child: FutureBuilder<List<Map<String, dynamic>>>(
         future: future,
         builder: (context, snapshot) {
-          return _ItemSection(
+          return _ItemSection2(
             title: '任务列表',
             emptyText: '没有任务。',
             items: snapshot.data ?? const [],
@@ -428,7 +428,7 @@ class _EventsPage extends StatefulWidget {
   final WebApiClient api;
 
   @override
-  State<_EventsPage> createState() => _EventsPageState();
+  State<_EventsPage> createState() => _EventsPageState2();
 }
 
 class _EventsPageState extends State<_EventsPage> {
@@ -484,7 +484,7 @@ class _EventsPageState extends State<_EventsPage> {
       child: FutureBuilder<List<Map<String, dynamic>>>(
         future: future,
         builder: (context, snapshot) {
-          return _ItemSection(
+          return _ItemSection2(
             title: '日程列表',
             emptyText: '没有日程。',
             items: snapshot.data ?? const [],
@@ -499,6 +499,566 @@ class _EventsPageState extends State<_EventsPage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _EventsPageState2 extends State<_EventsPage> {
+  late Future<List<Map<String, dynamic>>> future = _load();
+  String query = '';
+  _EventViewMode viewMode = _EventViewMode.timeline;
+  DateTime selectedDay = DateTime.now();
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    final range = _eventRangeFor(viewMode, selectedDay);
+    final result = await widget.api.getJson('/web/events', query: {
+      'q': query,
+      'from': range.start.toIso8601String(),
+      'to': range.end.toIso8601String(),
+      'view': viewMode.name,
+      'limit': '500',
+    });
+    final items = _mapList(result['items']);
+    items.sort((a, b) => (_eventStart(a) ?? DateTime(0)).compareTo(_eventStart(b) ?? DateTime(0)));
+    return items;
+  }
+
+  Future<void> _edit([Map<String, dynamic>? item]) async {
+    final result = await _editDialog(
+      context,
+      title: item == null ? '新建日程' : '编辑日程',
+      fields: {
+        'title': ['标题', '${item?['title'] ?? ''}'],
+        'startAt': ['开始时间', '${item?['startAt'] ?? ''}'],
+        'endAt': ['结束时间', '${item?['endAt'] ?? ''}'],
+        'location': ['地点', '${item?['location'] ?? ''}'],
+        'status': ['状态', '${item?['status'] ?? 'confirmed'}'],
+        'notes': ['备注', _eventNotes(item)],
+      },
+    );
+    if (result == null) return;
+    if (item == null) {
+      await widget.api.postJson('/web/events', body: result);
+    } else {
+      await widget.api.patchJson('/web/events/${item['id']}', body: result);
+    }
+    setState(() {
+      future = _load();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final range = _eventRangeFor(viewMode, selectedDay);
+    return _PageBody(
+      title: '日程',
+      subtitle: '浏览和编辑服务端日程。Web 端提供时间轴、本周、月视图和密集列表。',
+      actions: [
+        SizedBox(
+          width: 260,
+          child: TextField(
+            decoration: const InputDecoration(
+              hintText: '搜索日程标题或地点',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onSubmitted: (value) {
+              setState(() {
+                query = value.trim();
+                future = _load();
+              });
+            },
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: () => _edit(),
+          icon: const Icon(Icons.add),
+          label: const Text('新建日程'),
+        ),
+        IconButton.filledTonal(
+          tooltip: '刷新',
+          onPressed: () {
+            setState(() {
+              future = _load();
+            });
+          },
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: future,
+        builder: (context, snapshot) {
+          final items = snapshot.data ?? const <Map<String, dynamic>>[];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _EventToolbar(
+                mode: viewMode,
+                selectedDay: selectedDay,
+                range: range,
+                onModeChanged: (mode) {
+                  setState(() {
+                    viewMode = mode;
+                    future = _load();
+                  });
+                },
+                onMove: (delta) {
+                  setState(() {
+                    selectedDay = switch (viewMode) {
+                      _EventViewMode.timeline => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta),
+                      _EventViewMode.week => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta * 7),
+                      _EventViewMode.month => DateTime(selectedDay.year, selectedDay.month + delta, selectedDay.day),
+                      _EventViewMode.list => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta),
+                    };
+                    future = _load();
+                  });
+                },
+                onToday: () {
+                  setState(() {
+                    selectedDay = DateTime.now();
+                    future = _load();
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              if (snapshot.connectionState != ConnectionState.done)
+                const SizedBox(height: 240, child: Center(child: CircularProgressIndicator()))
+              else if (snapshot.hasError)
+                _EmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  title: '日程加载失败',
+                  message: '${snapshot.error}',
+                  action: FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        future = _load();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('重试'),
+                  ),
+                )
+              else
+                switch (viewMode) {
+                  _EventViewMode.timeline => _EventTimelineView(
+                      day: selectedDay,
+                      items: items.where((item) => _isSameDay(_eventStart(item), selectedDay)).toList(),
+                      onEdit: _edit,
+                    ),
+                  _EventViewMode.week => _EventWeekView(
+                      selectedDay: selectedDay,
+                      items: items,
+                      onDaySelected: (day) {
+                        setState(() {
+                          selectedDay = day;
+                          viewMode = _EventViewMode.timeline;
+                          future = _load();
+                        });
+                      },
+                    ),
+                  _EventViewMode.month => _EventMonthView(
+                      selectedDay: selectedDay,
+                      items: items,
+                      onDaySelected: (day) {
+                        setState(() {
+                          selectedDay = day;
+                          viewMode = _EventViewMode.timeline;
+                          future = _load();
+                        });
+                      },
+                    ),
+                  _EventViewMode.list => _ItemSection2(
+                      title: '日程列表',
+                      emptyText: '没有日程。',
+                      items: items,
+                      columns: const ['标题', '开始', '结束', '地点', '备注', '操作'],
+                      row: (item) => [
+                        item['title'],
+                        item['startAt'],
+                        item['endAt'],
+                        item['location'],
+                        _eventNotes(item),
+                        TextButton(onPressed: () => _edit(item), child: const Text('编辑')),
+                      ],
+                    ),
+                },
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+enum _EventViewMode { timeline, week, month, list }
+
+class _EventRange {
+  const _EventRange(this.start, this.end);
+
+  final DateTime start;
+  final DateTime end;
+}
+
+class _EventToolbar extends StatelessWidget {
+  const _EventToolbar({
+    required this.mode,
+    required this.selectedDay,
+    required this.range,
+    required this.onModeChanged,
+    required this.onMove,
+    required this.onToday,
+  });
+
+  final _EventViewMode mode;
+  final DateTime selectedDay;
+  final _EventRange range;
+  final ValueChanged<_EventViewMode> onModeChanged;
+  final ValueChanged<int> onMove;
+  final VoidCallback onToday;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (mode) {
+      _EventViewMode.timeline => _formatDate(selectedDay),
+      _EventViewMode.week => '${_formatDate(range.start)} - ${_formatDate(range.end.subtract(const Duration(days: 1)))}',
+      _EventViewMode.month => '${selectedDay.year}-${selectedDay.month.toString().padLeft(2, '0')}',
+      _EventViewMode.list => '列表',
+    };
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SegmentedButton<_EventViewMode>(
+          segments: const [
+            ButtonSegment(value: _EventViewMode.timeline, label: Text('时间轴'), icon: Icon(Icons.view_timeline_outlined)),
+            ButtonSegment(value: _EventViewMode.week, label: Text('本周'), icon: Icon(Icons.view_week_outlined)),
+            ButtonSegment(value: _EventViewMode.month, label: Text('月视图'), icon: Icon(Icons.calendar_view_month_outlined)),
+            ButtonSegment(value: _EventViewMode.list, label: Text('列表'), icon: Icon(Icons.table_rows_outlined)),
+          ],
+          selected: {mode},
+          onSelectionChanged: (value) => onModeChanged(value.first),
+        ),
+        IconButton.filledTonal(onPressed: () => onMove(-1), icon: const Icon(Icons.chevron_left)),
+        SizedBox(
+          width: 220,
+          child: Center(
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          ),
+        ),
+        IconButton.filledTonal(onPressed: () => onMove(1), icon: const Icon(Icons.chevron_right)),
+        OutlinedButton.icon(onPressed: onToday, icon: const Icon(Icons.today), label: const Text('今天')),
+      ],
+    );
+  }
+}
+
+class _EventTimelineView extends StatelessWidget {
+  const _EventTimelineView({
+    required this.day,
+    required this.items,
+    required this.onEdit,
+  });
+
+  final DateTime day;
+  final List<Map<String, dynamic>> items;
+  final ValueChanged<Map<String, dynamic>> onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const _EmptyState(
+        icon: Icons.event_available_outlined,
+        title: '当天没有日程',
+        message: '可以切换周视图、月视图，或新建一个日程。',
+      );
+    }
+    return _Panel(
+      title: '${_formatDate(day)} 时间轴',
+      child: Column(
+        children: [
+          for (var hour = 0; hour < 24; hour++)
+            _HourLane(
+              hour: hour,
+              items: items.where((item) => (_eventStart(item)?.hour ?? -1) == hour).toList(),
+              onEdit: onEdit,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HourLane extends StatelessWidget {
+  const _HourLane({
+    required this.hour,
+    required this.items,
+    required this.onEdit,
+  });
+
+  final int hour;
+  final List<Map<String, dynamic>> items;
+  final ValueChanged<Map<String, dynamic>> onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 48),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 54,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text('${hour.toString().padLeft(2, '0')}:00', style: const TextStyle(color: Colors.black54)),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final item in items)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
+                      child: _EventCard(item: item, compact: false, onTap: () => onEdit(item)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventWeekView extends StatelessWidget {
+  const _EventWeekView({
+    required this.selectedDay,
+    required this.items,
+    required this.onDaySelected,
+  });
+
+  final DateTime selectedDay;
+  final List<Map<String, dynamic>> items;
+  final ValueChanged<DateTime> onDaySelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = _startOfWeek(selectedDay);
+    final days = [for (var i = 0; i < 7; i++) DateTime(start.year, start.month, start.day + i)];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 820;
+        final children = [
+          for (final day in days)
+            _WeekDayColumn(
+              day: day,
+              items: items.where((item) => _isSameDay(_eventStart(item), day)).toList(),
+              onTap: () => onDaySelected(day),
+            ),
+        ];
+        if (narrow) {
+          return Column(children: [for (final child in children) Padding(padding: const EdgeInsets.only(bottom: 8), child: child)]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final child in children) Expanded(child: child)]);
+      },
+    );
+  }
+}
+
+class _WeekDayColumn extends StatelessWidget {
+  const _WeekDayColumn({
+    required this.day,
+    required this.items,
+    required this.onTap,
+  });
+
+  final DateTime day;
+  final List<Map<String, dynamic>> items;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_formatDate(day), style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              if (items.isEmpty)
+                const Text('无日程', style: TextStyle(color: Colors.black45))
+              else
+                for (final item in items.take(6)) ...[
+                  _EventCard(item: item, compact: true),
+                  const SizedBox(height: 6),
+                ],
+              if (items.length > 6) Text('+${items.length - 6} 条', style: const TextStyle(color: Colors.black54)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EventMonthView extends StatelessWidget {
+  const _EventMonthView({
+    required this.selectedDay,
+    required this.items,
+    required this.onDaySelected,
+  });
+
+  final DateTime selectedDay;
+  final List<Map<String, dynamic>> items;
+  final ValueChanged<DateTime> onDaySelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = DateTime(selectedDay.year, selectedDay.month);
+    final leading = first.weekday - 1;
+    final daysInMonth = DateTime(selectedDay.year, selectedDay.month + 1, 0).day;
+    final cells = <DateTime?>[
+      for (var i = 0; i < leading; i++) null,
+      for (var day = 1; day <= daysInMonth; day++) DateTime(selectedDay.year, selectedDay.month, day),
+    ];
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth < 760 ? 1 : 7;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: columns == 1 ? 4.2 : 1.15,
+          ),
+          itemCount: cells.length,
+          itemBuilder: (context, index) {
+            final day = cells[index];
+            if (day == null) return const SizedBox.shrink();
+            final dayItems = items.where((item) => _isSameDay(_eventStart(item), day)).toList();
+            return Card(
+              child: InkWell(
+                onTap: () => onDaySelected(day),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${day.day}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 6),
+                      Text('${dayItems.length} 条日程', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      const SizedBox(height: 6),
+                      for (final item in dayItems.take(3))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '${_timeLabel(_eventStart(item))} ${item['title'] ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _EventCard extends StatelessWidget {
+  const _EventCard({
+    required this.item,
+    this.compact = false,
+    this.onTap,
+  });
+
+  final Map<String, dynamic> item;
+  final bool compact;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final blocking = _isBlockingEvent(item);
+    final notes = _eventNotes(item);
+    return Material(
+      color: blocking ? const Color(0xFFFFF7ED) : const Color(0xFFEFF6FF),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(compact ? 8 : 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: blocking ? const Color(0xFFF97316) : const Color(0xFF93C5FD)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${item['title'] ?? '未命名日程'}',
+                maxLines: compact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${_timeLabel(_eventStart(item))} - ${_timeLabel(_eventEnd(item))}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+              if ('${item['location'] ?? ''}'.trim().isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  '地点：${item['location']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+              if (!compact && notes.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  notes,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
+              if (blocking) ...[
+                const SizedBox(height: 6),
+                const _StatusChip(label: '阻挡', tone: _ChipTone.warning),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -792,7 +1352,7 @@ class _DrivePageState extends State<_DrivePage> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: _ItemSection(
+            child: _ItemSection2(
               title: '云盘文件',
               emptyText: '没有文件。',
               loading: loading,
@@ -836,7 +1396,7 @@ class _TrackingPage extends StatefulWidget {
   final WebApiClient api;
 
   @override
-  State<_TrackingPage> createState() => _TrackingPageState();
+  State<_TrackingPage> createState() => _TrackingPageServerFirstState();
 }
 
 class _TrackingPageState extends State<_TrackingPage> {
@@ -879,7 +1439,7 @@ class _TrackingPageState extends State<_TrackingPage> {
               ),
               const SizedBox(height: 12),
               _TwoColumn(
-                left: _ItemSection(
+                left: _ItemSection2(
                   title: 'Top Apps',
                   emptyText: '暂无应用统计。',
                   items: _mapList(_asMap(data['apps'])['items'] ?? _asMap(data['apps'])['apps']),
@@ -890,7 +1450,7 @@ class _TrackingPageState extends State<_TrackingPage> {
                     item['recordCount'] ?? item['records'],
                   ],
                 ),
-                right: _ItemSection(
+                right: _ItemSection2(
                   title: '任务投入',
                   emptyText: '暂无任务投入统计。',
                   items: _mapList(_asMap(data['work'])['items'] ?? _asMap(data['work'])['tasks']),
@@ -904,6 +1464,1083 @@ class _TrackingPageState extends State<_TrackingPage> {
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+}
+
+enum _WebTrackingTab { overview, activity, input, details, understanding }
+
+class _TrackingPageServerFirstState extends State<_TrackingPage> {
+  _WebTrackingTab tab = _WebTrackingTab.overview;
+  DateTime selectedDay = DateTime.now();
+  int refreshSeed = 0;
+
+  _EventRange get range {
+    final start = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+    return _EventRange(start, start.add(const Duration(days: 1)));
+  }
+
+  void _refresh() => setState(() => refreshSeed++);
+
+  void _moveDay(int days) {
+    setState(() {
+      selectedDay = selectedDay.add(Duration(days: days));
+      refreshSeed++;
+    });
+  }
+
+  void _selectHeatmapBucket(DateTime day) {
+    setState(() {
+      selectedDay = DateTime(day.year, day.month, day.day);
+      tab = _WebTrackingTab.activity;
+      refreshSeed++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentRange = range;
+    return _PageBody(
+      title: '追踪',
+      subtitle: 'Web 端只展示服务端追踪结果，不采集本机活动；热力图、分析和明细均由服务端处理后返回。',
+      actions: [
+        OutlinedButton.icon(
+          onPressed: () => _moveDay(-1),
+          icon: const Icon(Icons.chevron_left),
+          label: const Text('前一天'),
+        ),
+        _StatusChip(label: _formatDate(selectedDay), tone: _ChipTone.success),
+        OutlinedButton.icon(
+          onPressed: () => _moveDay(1),
+          icon: const Icon(Icons.chevron_right),
+          label: const Text('后一天'),
+        ),
+        IconButton.filledTonal(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _InfoStrip(
+            text:
+                '追踪数据由原生客户端采集后上传服务端。浏览器只读取服务端聚合结果、分页明细和活动理解候选，不读取本地追踪缓冲。',
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_WebTrackingTab>(
+              segments: const [
+                ButtonSegment(value: _WebTrackingTab.overview, icon: Icon(Icons.dashboard_outlined), label: Text('总览')),
+                ButtonSegment(value: _WebTrackingTab.activity, icon: Icon(Icons.timeline_outlined), label: Text('活动分析')),
+                ButtonSegment(value: _WebTrackingTab.input, icon: Icon(Icons.keyboard_outlined), label: Text('输入行为')),
+                ButtonSegment(value: _WebTrackingTab.details, icon: Icon(Icons.subject_outlined), label: Text('详细数据')),
+                ButtonSegment(value: _WebTrackingTab.understanding, icon: Icon(Icons.psychology_alt_outlined), label: Text('活动理解')),
+              ],
+              selected: {tab},
+              onSelectionChanged: (value) => setState(() => tab = value.first),
+            ),
+          ),
+          const SizedBox(height: 12),
+          switch (tab) {
+            _WebTrackingTab.overview => _TrackingOverviewTab(
+                api: widget.api,
+                range: currentRange,
+                selectedDay: selectedDay,
+                refreshSeed: refreshSeed,
+                onBucketSelected: _selectHeatmapBucket,
+              ),
+            _WebTrackingTab.activity => _TrackingActivityTab(
+                api: widget.api,
+                range: currentRange,
+                selectedDay: selectedDay,
+                refreshSeed: refreshSeed,
+                onBucketSelected: _selectHeatmapBucket,
+              ),
+            _WebTrackingTab.input => _TrackingInputTab(
+                api: widget.api,
+                range: currentRange,
+                refreshSeed: refreshSeed,
+              ),
+            _WebTrackingTab.details => _TrackingDetailsTab(
+                api: widget.api,
+                range: currentRange,
+                refreshSeed: refreshSeed,
+              ),
+            _WebTrackingTab.understanding => _TrackingUnderstandingTab(
+                api: widget.api,
+                range: currentRange,
+                refreshSeed: refreshSeed,
+                onChanged: _refresh,
+              ),
+          },
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackingOverviewTab extends StatelessWidget {
+  const _TrackingOverviewTab({
+    required this.api,
+    required this.range,
+    required this.selectedDay,
+    required this.refreshSeed,
+    required this.onBucketSelected,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final DateTime selectedDay;
+  final int refreshSeed;
+  final ValueChanged<DateTime> onBucketSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TrackingFuturePanel(
+      key: ValueKey('tracking-home-${_formatDate(selectedDay)}-$refreshSeed'),
+      reloadKey: 'tracking-home-${_formatDate(selectedDay)}-$refreshSeed',
+      loader: () => api.getJson('/analytics/tracker-home', query: {
+        'date': selectedDay.toIso8601String(),
+      }),
+      builder: (context, data) {
+        final daySummary = _asMap(data['daySummary']);
+        final insights = _asMap(daySummary['insights']);
+        final topApps = _mapList(_asMap(data['topApps'])['items']);
+        final topCategories = _mapList(_asMap(data['topCategories'])['items']);
+        final preview = _mapList(daySummary['previewRecords']);
+        return Column(
+          children: [
+            _TrackingMetricGrid(
+              metrics: {
+                '记录': _readInt(insights['recordCount']),
+                '分钟': _readInt(insights['totalMinutes']),
+                '按键': _readInt(insights['totalKeys']),
+                '点击': _readInt(insights['totalClicks']),
+              },
+            ),
+            const SizedBox(height: 12),
+            _TrackingHeatmapPanel(
+              title: '活动热力图',
+              data: _asMap(data['activityHeatmap']),
+              valueLabel: '分钟',
+              valueReader: (bucket) => _numberValue(bucket['totalMinutes']),
+              onBucketSelected: onBucketSelected,
+            ),
+            const SizedBox(height: 12),
+            _TwoColumn(
+              left: _TrackingMetricList(
+                title: 'Top Apps',
+                emptyText: '服务端暂未返回应用统计。',
+                items: topApps,
+                nameReader: (item) => '${item['name'] ?? item['processName'] ?? 'unknown'}',
+                valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
+              ),
+              right: _TrackingMetricList(
+                title: 'Top Categories',
+                emptyText: '服务端暂未返回分类统计。',
+                items: topCategories,
+                nameReader: (item) => '${item['name'] ?? item['category'] ?? 'uncategorized'}',
+                valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _TwoColumn(
+              left: _TrackingWorkSummaryPanel(api: api, range: range, refreshSeed: refreshSeed),
+              right: _TrackingRecordPreviewPanel(title: '最近活动预览', items: preview),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TrackingActivityTab extends StatelessWidget {
+  const _TrackingActivityTab({
+    required this.api,
+    required this.range,
+    required this.selectedDay,
+    required this.refreshSeed,
+    required this.onBucketSelected,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final DateTime selectedDay;
+  final int refreshSeed;
+  final ValueChanged<DateTime> onBucketSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final monthStart = DateTime(selectedDay.year, selectedDay.month);
+    final monthEnd = DateTime(selectedDay.year, selectedDay.month + 1);
+    return Column(
+      children: [
+        _TrackingFuturePanel(
+          key: ValueKey('activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed'),
+          reloadKey: 'activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed',
+          loader: () => api.getJson('/analytics/activity-heatmap', query: {
+            'start': monthStart.toIso8601String(),
+            'end': monthEnd.toIso8601String(),
+            'bucket': 'day',
+          }),
+          builder: (context, data) => _TrackingHeatmapPanel(
+            title: '月活动热力图',
+            data: data,
+            valueLabel: '分钟',
+            valueReader: (bucket) => _numberValue(bucket['totalMinutes']),
+            onBucketSelected: onBucketSelected,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _TrackingFuturePanel(
+          key: ValueKey('range-analysis-${range.start.toIso8601String()}-$refreshSeed'),
+          reloadKey: 'range-analysis-${range.start.toIso8601String()}-$refreshSeed',
+          loader: () => api.getJson('/analytics/range-analysis', query: {
+            'start': range.start.toIso8601String(),
+            'end': range.end.toIso8601String(),
+            'bucket': 'hour',
+          }),
+          builder: (context, data) {
+            final insights = _asMap(data['insights']);
+            final sessions = _mapList(data['sessions']);
+            final preview = _mapList(data['previewRecords']);
+            return Column(
+              children: [
+                _TrackingMetricGrid(
+                  metrics: {
+                    '区间记录': _readInt(insights['recordCount']),
+                    '区间分钟': _readInt(insights['totalMinutes']),
+                    '专注分钟': _readInt(insights['focusMinutes']),
+                    '生产记录': _readInt(insights['productiveRecordCount']),
+                  },
+                ),
+                const SizedBox(height: 12),
+                _TwoColumn(
+                  left: _TrackingSessionsPanel(items: sessions),
+                  right: _TrackingRecordPreviewPanel(title: '区间活动预览', items: preview),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _TrackingInputTab extends StatelessWidget {
+  const _TrackingInputTab({
+    required this.api,
+    required this.range,
+    required this.refreshSeed,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final int refreshSeed;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TrackingFuturePanel(
+      key: ValueKey('input-heatmap-${range.start.toIso8601String()}-$refreshSeed'),
+      reloadKey: 'input-heatmap-${range.start.toIso8601String()}-$refreshSeed',
+      loader: () => api.getJson('/analytics/input-heatmap', query: {
+        'start': range.start.toIso8601String(),
+        'end': range.end.toIso8601String(),
+        'bucket': 'hour',
+      }),
+      builder: (context, data) {
+        final buckets = _mapList(data['buckets']);
+        final topKeys = _mapList(data['topKeys']);
+        final processIntensities = _mapList(data['processIntensities']);
+        final mouseCounts = _asMap(data['mouseCounts']);
+        return Column(
+          children: [
+            _TrackingHeatmapPanel(
+              title: '输入行为热力图',
+              data: data,
+              valueLabel: '事件',
+              valueReader: (bucket) => _numberValue(bucket['eventCount']),
+            ),
+            const SizedBox(height: 12),
+            _TrackingMetricGrid(
+              metrics: {
+                '输入桶': buckets.length,
+                '键盘事件': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['keyboardEventCount'])),
+                '鼠标点击': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['mouseButtonEventCount'])),
+                '滚轮事件': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['wheelEventCount'])),
+              },
+            ),
+            const SizedBox(height: 12),
+            _TwoColumn(
+              left: _TrackingMetricList(
+                title: '键盘按键分布',
+                emptyText: '服务端尚无按键分布数据。',
+                items: topKeys,
+                nameReader: (item) => '${item['label'] ?? item['keyCode'] ?? ''}',
+                valueReader: (item) => '${_readInt(item['count'])} 次',
+              ),
+              right: _TrackingMetricList(
+                title: '鼠标行为分布',
+                emptyText: '服务端尚无鼠标行为数据。',
+                items: [
+                  for (final entry in mouseCounts.entries) {'name': entry.key, 'count': entry.value},
+                ],
+                nameReader: (item) => _mouseLabel('${item['name']}'),
+                valueReader: (item) => '${_readInt(item['count'])} 次',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _ItemSection2(
+              title: '进程级输入强度',
+              emptyText: '服务端尚无进程输入强度数据。',
+              items: processIntensities,
+              columns: const ['进程', '强度', '键盘', '鼠标', '活跃分钟'],
+              row: (item) => [
+                item['processName'],
+                item['intensityScore'],
+                item['keyEvents'],
+                _readInt(item['mouseButtonEvents']) + _readInt(item['wheelEvents']) + _readInt(item['mouseMoveEvents']),
+                item['activeMinutes'],
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TrackingDetailsTab extends StatefulWidget {
+  const _TrackingDetailsTab({
+    required this.api,
+    required this.range,
+    required this.refreshSeed,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final int refreshSeed;
+
+  @override
+  State<_TrackingDetailsTab> createState() => _TrackingDetailsTabState();
+}
+
+class _TrackingDetailsTabState extends State<_TrackingDetailsTab> {
+  int activityOffset = 0;
+  int inputOffset = 0;
+  String processFilter = '';
+  String categoryFilter = '';
+  String eventKindFilter = '';
+  static const limit = 50;
+
+  @override
+  void didUpdateWidget(covariant _TrackingDetailsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.range.start != widget.range.start ||
+        oldWidget.range.end != widget.range.end ||
+        oldWidget.refreshSeed != widget.refreshSeed) {
+      activityOffset = 0;
+      inputOffset = 0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const _InfoStrip(text: '详细数据是服务端分页明细预览，默认每页 50 条，不用于浏览器端统计计算。'),
+        const SizedBox(height: 12),
+        _TrackingDetailFilterBar(
+          processFilter: processFilter,
+          categoryFilter: categoryFilter,
+          eventKindFilter: eventKindFilter,
+          onApply: (process, category, eventKind) {
+            setState(() {
+              processFilter = process;
+              categoryFilter = category;
+              eventKindFilter = eventKind;
+              activityOffset = 0;
+              inputOffset = 0;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+        _TrackingPagedDetailsPanel(
+          key: ValueKey('activity-detail-${widget.range.start.toIso8601String()}-$activityOffset-${widget.refreshSeed}'),
+          title: '活动记录明细',
+          emptyText: '服务端没有返回活动记录。',
+          api: widget.api,
+          endpoint: '/analytics/activity-records',
+          range: widget.range,
+          offset: activityOffset,
+          limit: limit,
+          query: {
+            'processName': processFilter,
+            'category': categoryFilter,
+          },
+          columns: const ['时间', '应用', '分类', '分钟', '窗口/标题'],
+          row: (item) {
+            final payload = _asMap(item['payload']);
+            return [
+              _formatDateTime(_parseDate(item['occurredAt'])),
+              _payloadText(payload, const ['processName', 'process_name', 'packageName', 'appName']),
+              _payloadText(payload, const ['category']),
+              item['metricMinutes'],
+              _payloadText(payload, const ['windowTitle', 'window_title', 'title', 'summary']),
+            ];
+          },
+          onPrevious: activityOffset == 0
+              ? null
+              : () => setState(() => activityOffset = activityOffset - limit < 0 ? 0 : activityOffset - limit),
+          onNext: () => setState(() => activityOffset += limit),
+        ),
+        const SizedBox(height: 12),
+        _TrackingPagedDetailsPanel(
+          key: ValueKey('input-detail-${widget.range.start.toIso8601String()}-$inputOffset-${widget.refreshSeed}'),
+          title: '输入事件明细',
+          emptyText: '服务端没有返回输入事件。',
+          api: widget.api,
+          endpoint: '/analytics/input-events',
+          range: widget.range,
+          offset: inputOffset,
+          limit: limit,
+          query: {
+            'processName': processFilter,
+            'category': categoryFilter,
+            'eventKind': eventKindFilter,
+          },
+          columns: const ['时间', '进程', '类型', '次数', '摘要'],
+          row: (item) {
+            final payload = _asMap(item['payload']);
+            return [
+              _formatDateTime(_parseDate(item['occurredAt'])),
+              _payloadText(payload, const ['processName', 'process_name']),
+              _payloadText(payload, const ['eventKind', 'event_kind', 'kind']),
+              item['metricCount'],
+              _trackingPayloadSummary(payload),
+            ];
+          },
+          onPrevious: inputOffset == 0
+              ? null
+              : () => setState(() => inputOffset = inputOffset - limit < 0 ? 0 : inputOffset - limit),
+          onNext: () => setState(() => inputOffset += limit),
+        ),
+      ],
+    );
+  }
+}
+
+class _TrackingUnderstandingTab extends StatelessWidget {
+  const _TrackingUnderstandingTab({
+    required this.api,
+    required this.range,
+    required this.refreshSeed,
+    required this.onChanged,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final int refreshSeed;
+  final VoidCallback onChanged;
+
+  Future<void> _buildSegments(BuildContext context) async {
+    await api.postJson('/activity-understanding/build', body: {
+      'start': range.start.toIso8601String(),
+      'end': range.end.toIso8601String(),
+    });
+    onChanged();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已请求服务端重新生成活动片段。')));
+    }
+  }
+
+  Future<void> _confirm(BuildContext context, Map<String, dynamic> item) async {
+    await api.postJson('/activity-understanding/segments/${item['id']}/confirm', body: {
+      'title': item['title'] ?? item['summary'] ?? '已确认活动',
+      if ('${item['matchedTaskId'] ?? ''}'.isNotEmpty) 'taskId': '${item['matchedTaskId']}',
+    });
+    onChanged();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('活动片段已确认，服务端会写入实际记录和任务投入。')));
+    }
+  }
+
+  Future<void> _reject(BuildContext context, Map<String, dynamic> item) async {
+    await api.postJson('/activity-understanding/segments/${item['id']}/reject', body: {
+      'reason': 'web_user_rejected',
+    });
+    onChanged();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('活动片段已拒绝。')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: () => _buildSegments(context),
+            icon: const Icon(Icons.auto_fix_high),
+            label: const Text('服务端整理当天活动'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _TrackingFuturePanel(
+          key: ValueKey('segments-${range.start.toIso8601String()}-$refreshSeed'),
+          reloadKey: 'segments-${range.start.toIso8601String()}-$refreshSeed',
+          loader: () => api.getJson('/activity-understanding/segments', query: {
+            'start': range.start.toIso8601String(),
+            'end': range.end.toIso8601String(),
+            'limit': '100',
+          }),
+          builder: (context, data) {
+            final items = _mapList(data['items']);
+            return _ItemSection2(
+              title: '服务端活动片段',
+              emptyText: '服务端暂未生成活动片段。',
+              items: items,
+              columns: const ['时间', '标题', '应用/窗口', '置信度', '操作'],
+              row: (item) => [
+                '${_timeLabel(_parseDate(item['startAt']))}-${_timeLabel(_parseDate(item['endAt']))}',
+                item['title'] ?? item['summary'],
+                '${item['primaryApp'] ?? item['primaryProcessName'] ?? ''}\n${item['primaryWindowTitle'] ?? ''}',
+                '${((_numberValue(item['confidence']) * 100).clamp(0, 100)).toStringAsFixed(0)}%',
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    TextButton(onPressed: () => _showSegmentDetail(context, item), child: const Text('详情')),
+                    TextButton(onPressed: () => _confirm(context, item), child: const Text('确认')),
+                    TextButton(onPressed: () => _reject(context, item), child: const Text('拒绝')),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showSegmentDetail(BuildContext context, Map<String, dynamic> item) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${item['title'] ?? '活动片段详情'}'),
+        content: SizedBox(
+          width: 720,
+          child: SingleChildScrollView(
+            child: _KeyValueList({
+              '时间': '${item['startAt']} - ${item['endAt']}',
+              '主要应用': item['primaryApp'] ?? item['primaryProcessName'],
+              '主要窗口': item['primaryWindowTitle'],
+              '文件路径': item['primaryFilePath'],
+              '分类': item['category'],
+              '状态': item['status'],
+              '任务候选': item['matchedTaskId'],
+              '证据': item['evidence'],
+              '原因': item['reason'],
+            }),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackingDetailFilterBar extends StatefulWidget {
+  const _TrackingDetailFilterBar({
+    required this.processFilter,
+    required this.categoryFilter,
+    required this.eventKindFilter,
+    required this.onApply,
+  });
+
+  final String processFilter;
+  final String categoryFilter;
+  final String eventKindFilter;
+  final void Function(String process, String category, String eventKind) onApply;
+
+  @override
+  State<_TrackingDetailFilterBar> createState() => _TrackingDetailFilterBarState();
+}
+
+class _TrackingDetailFilterBarState extends State<_TrackingDetailFilterBar> {
+  late final process = TextEditingController(text: widget.processFilter);
+  late final category = TextEditingController(text: widget.categoryFilter);
+  late final eventKind = TextEditingController(text: widget.eventKindFilter);
+
+  @override
+  void dispose() {
+    process.dispose();
+    category.dispose();
+    eventKind.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: '服务端明细筛选',
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 220,
+            child: TextField(
+              controller: process,
+              decoration: const InputDecoration(labelText: '进程 / 应用'),
+            ),
+          ),
+          SizedBox(
+            width: 180,
+            child: TextField(
+              controller: category,
+              decoration: const InputDecoration(labelText: '分类'),
+            ),
+          ),
+          SizedBox(
+            width: 180,
+            child: TextField(
+              controller: eventKind,
+              decoration: const InputDecoration(labelText: '输入类型'),
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: () => widget.onApply(
+              process.text.trim(),
+              category.text.trim(),
+              eventKind.text.trim(),
+            ),
+            icon: const Icon(Icons.filter_alt_outlined),
+            label: const Text('应用筛选'),
+          ),
+          TextButton(
+            onPressed: () {
+              process.clear();
+              category.clear();
+              eventKind.clear();
+              widget.onApply('', '', '');
+            },
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackingFuturePanel extends StatefulWidget {
+  const _TrackingFuturePanel({
+    super.key,
+    required this.reloadKey,
+    required this.loader,
+    required this.builder,
+  });
+
+  final Object reloadKey;
+  final Future<Map<String, dynamic>> Function() loader;
+  final Widget Function(BuildContext, Map<String, dynamic>) builder;
+
+  @override
+  State<_TrackingFuturePanel> createState() => _TrackingFuturePanelState();
+}
+
+class _TrackingFuturePanelState extends State<_TrackingFuturePanel> {
+  late Future<Map<String, dynamic>> future = widget.loader();
+
+  @override
+  void didUpdateWidget(covariant _TrackingFuturePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reloadKey != widget.reloadKey) {
+      future = widget.loader();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _Panel(
+            title: '加载中',
+            child: SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
+          );
+        }
+        if (snapshot.hasError) {
+          return _Panel(
+            title: '服务端追踪数据不可用',
+            child: _EmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: '服务端不可用',
+              message: '${snapshot.error}',
+            ),
+          );
+        }
+        return widget.builder(context, snapshot.data ?? <String, dynamic>{});
+      },
+    );
+  }
+}
+
+class _TrackingMetricGrid extends StatelessWidget {
+  const _TrackingMetricGrid({required this.metrics});
+
+  final Map<String, int> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: '服务端摘要',
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 220,
+          childAspectRatio: 2.2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: metrics.length,
+        itemBuilder: (context, index) {
+          final entry = metrics.entries.elementAt(index);
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(entry.key, style: const TextStyle(color: Colors.black54)),
+                const Spacer(),
+                Text('${entry.value}', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TrackingHeatmapPanel extends StatelessWidget {
+  const _TrackingHeatmapPanel({
+    required this.title,
+    required this.data,
+    required this.valueLabel,
+    required this.valueReader,
+    this.onBucketSelected,
+  });
+
+  final String title;
+  final Map<String, dynamic> data;
+  final String valueLabel;
+  final double Function(Map<String, dynamic>) valueReader;
+  final ValueChanged<DateTime>? onBucketSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final buckets = _mapList(data['buckets']);
+    final maxValue = buckets.fold<double>(0, (max, item) {
+      final value = valueReader(item);
+      return value > max ? value : max;
+    });
+    return _Panel(
+      title: title,
+      child: buckets.isEmpty
+          ? const _EmptyState(
+              icon: Icons.grid_view_outlined,
+              title: '暂无热力图数据',
+              message: '服务端还没有返回该范围内的聚合桶。',
+            )
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth > 900 ? 14 : 7;
+                final cellSize = ((constraints.maxWidth - (columns - 1) * 6) / columns).clamp(32.0, 72.0);
+                return Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final bucket in buckets)
+                      _HeatmapCell(
+                        bucket: bucket,
+                        size: cellSize,
+                        value: valueReader(bucket),
+                        maxValue: maxValue,
+                        valueLabel: valueLabel,
+                        onTap: onBucketSelected == null
+                            ? null
+                            : () {
+                                final parsed = _parseDate(bucket['bucketStart']);
+                                if (parsed != null) onBucketSelected!(parsed);
+                              },
+                      ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _HeatmapCell extends StatelessWidget {
+  const _HeatmapCell({
+    required this.bucket,
+    required this.size,
+    required this.value,
+    required this.maxValue,
+    required this.valueLabel,
+    this.onTap,
+  });
+
+  final Map<String, dynamic> bucket;
+  final double size;
+  final double value;
+  final double maxValue;
+  final String valueLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+    final color = Color.lerp(const Color(0xFFEFF6FF), const Color(0xFF2563EB), ratio)!;
+    final date = _parseDate(bucket['bucketStart']);
+    return Tooltip(
+      message: '${_formatDateTime(date)}\n${value.toStringAsFixed(0)} $valueLabel',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: size,
+          height: size,
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blueGrey.withValues(alpha: 0.12)),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(date == null ? '--' : '${date.month}/${date.day}', style: TextStyle(color: ratio > 0.55 ? Colors.white : Colors.black87)),
+                Text(value.toStringAsFixed(0), style: TextStyle(fontWeight: FontWeight.w800, color: ratio > 0.55 ? Colors.white : Colors.black87)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackingMetricList extends StatelessWidget {
+  const _TrackingMetricList({
+    required this.title,
+    required this.emptyText,
+    required this.items,
+    required this.nameReader,
+    required this.valueReader,
+  });
+
+  final String title;
+  final String emptyText;
+  final List<Map<String, dynamic>> items;
+  final String Function(Map<String, dynamic>) nameReader;
+  final String Function(Map<String, dynamic>) valueReader;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: title,
+      child: items.isEmpty
+          ? _EmptyState(icon: Icons.insights_outlined, title: emptyText, message: '等待客户端上传追踪数据后会显示。')
+          : Column(
+              children: [
+                for (final item in items.take(12))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(nameReader(item), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        const SizedBox(width: 8),
+                        _StatusChip(label: valueReader(item)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+class _TrackingWorkSummaryPanel extends StatelessWidget {
+  const _TrackingWorkSummaryPanel({
+    required this.api,
+    required this.range,
+    required this.refreshSeed,
+  });
+
+  final WebApiClient api;
+  final _EventRange range;
+  final int refreshSeed;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TrackingFuturePanel(
+      key: ValueKey('task-work-${range.start.toIso8601String()}-$refreshSeed'),
+      reloadKey: 'task-work-${range.start.toIso8601String()}-$refreshSeed',
+      loader: () => api.getJson('/analytics/task-work-summary', query: {
+        'start': range.start.toIso8601String(),
+        'end': range.end.toIso8601String(),
+        'limit': '20',
+      }),
+      builder: (context, data) => _TrackingMetricList(
+        title: '任务实际投入',
+        emptyText: '服务端暂无任务投入统计。',
+        items: _mapList(data['items']),
+        nameReader: (item) => '${item['taskTitle'] ?? item['title'] ?? item['name'] ?? 'unlinked'}',
+        valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟',
+      ),
+    );
+  }
+}
+
+class _TrackingRecordPreviewPanel extends StatelessWidget {
+  const _TrackingRecordPreviewPanel({
+    required this.title,
+    required this.items,
+  });
+
+  final String title;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ItemSection2(
+      title: title,
+      emptyText: '服务端暂无活动预览。',
+      items: items,
+      columns: const ['时间', '应用', '分类', '分钟'],
+      row: (item) {
+        final payload = _asMap(item['payload']);
+        return [
+          _formatDateTime(_parseDate(item['occurredAt'])),
+          _payloadText(payload, const ['processName', 'process_name', 'packageName', 'appName']),
+          _payloadText(payload, const ['category']),
+          item['metricMinutes'],
+        ];
+      },
+    );
+  }
+}
+
+class _TrackingSessionsPanel extends StatelessWidget {
+  const _TrackingSessionsPanel({required this.items});
+
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ItemSection2(
+      title: '服务端工作会话',
+      emptyText: '服务端暂无会话分析。',
+      items: items,
+      columns: const ['时间', '标签', '分钟', '应用'],
+      row: (item) => [
+        '${_timeLabel(_parseDate(item['startTime']))}-${_timeLabel(_parseDate(item['endTime']))}',
+        item['label'] ?? item['category'],
+        item['durationMinutes'],
+        item['processName'] ?? _csvText(item['processNames']),
+      ],
+    );
+  }
+}
+
+class _TrackingPagedDetailsPanel extends StatelessWidget {
+  const _TrackingPagedDetailsPanel({
+    super.key,
+    required this.title,
+    required this.emptyText,
+    required this.api,
+    required this.endpoint,
+    required this.range,
+    required this.offset,
+    required this.limit,
+    required this.query,
+    required this.columns,
+    required this.row,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final String title;
+  final String emptyText;
+  final WebApiClient api;
+  final String endpoint;
+  final _EventRange range;
+  final int offset;
+  final int limit;
+  final Map<String, String> query;
+  final List<String> columns;
+  final List<Object?> Function(Map<String, dynamic>) row;
+  final VoidCallback? onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TrackingFuturePanel(
+      reloadKey: [
+        endpoint,
+        range.start.toIso8601String(),
+        range.end.toIso8601String(),
+        offset,
+        limit,
+        ...query.entries.map((entry) => '${entry.key}:${entry.value}'),
+      ].join('|'),
+      loader: () => api.getJson(endpoint, query: {
+        'start': range.start.toIso8601String(),
+        'end': range.end.toIso8601String(),
+        'limit': '$limit',
+        'offset': '$offset',
+        ...query,
+      }),
+      builder: (context, data) {
+        final items = _mapList(data['items']);
+        final hasMore = data['hasMore'] == true;
+        return Column(
+          children: [
+            _ItemSection2(
+              title: '$title（第 ${(offset ~/ limit) + 1} 页）',
+              emptyText: emptyText,
+              items: items,
+              columns: columns,
+              row: row,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(onPressed: onPrevious, child: const Text('上一页')),
+                const SizedBox(width: 8),
+                FilledButton.tonal(onPressed: hasMore ? onNext : null, child: const Text('下一页')),
+              ],
+            ),
+          ],
         );
       },
     );
@@ -1149,7 +2786,7 @@ class _ReportsPageState extends State<_ReportsPage> {
               ],
               const SizedBox(height: 12),
               _TwoColumn(
-                left: _ItemSection(
+                left: _ItemSection2(
                   title: '报告',
                   emptyText: '暂无报告。',
                   items: _mapList(_asMap(data['reports'])['reports'] ?? _asMap(data['reports'])['items']),
@@ -1185,7 +2822,7 @@ class _ReportsPageState extends State<_ReportsPage> {
                     ]),
                   ],
                 ),
-                right: _ItemSection(
+                right: _ItemSection2(
                   title: '日记',
                   emptyText: '暂无日记。',
                   items: _mapList(_asMap(data['diary'])['diary'] ?? _asMap(data['diary'])['items']),
@@ -1216,7 +2853,7 @@ class _ReportsPageState extends State<_ReportsPage> {
               ),
               const SizedBox(height: 12),
               _TwoColumn(
-                left: _ItemSection(
+                left: _ItemSection2(
                   title: '天气缓存',
                   emptyText: '暂无天气缓存。',
                   items: _mapList(_asMap(data['weatherSummary'])['items']),
@@ -1227,7 +2864,7 @@ class _ReportsPageState extends State<_ReportsPage> {
                     item['expiresAt'],
                   ],
                 ),
-                right: _ItemSection(
+                right: _ItemSection2(
                   title: '推送记录',
                   emptyText: '暂无推送记录。',
                   items: _mapList(_asMap(data['deliveries'])['items']),
@@ -1382,7 +3019,7 @@ class _SettingsPageState extends State<_SettingsPage> {
               const SizedBox(height: 12),
               _Panel(
                 title: '远程设置摘要',
-                child: _ItemSection(
+                child: _ItemSection2(
                   title: '用户可见设置',
                   emptyText: '暂无远程设置。',
                   items: _mapList(_asMap(data['settings'])['settings']),
@@ -1732,6 +3369,143 @@ class _TwoColumn extends StatelessWidget {
   }
 }
 
+class _ItemSection2 extends StatelessWidget {
+  const _ItemSection2({
+    required this.title,
+    required this.emptyText,
+    required this.items,
+    required this.columns,
+    required this.row,
+    this.loading = false,
+  });
+
+  final String title;
+  final String emptyText;
+  final List<Map<String, dynamic>> items;
+  final List<String> columns;
+  final List<Object?> Function(Map<String, dynamic>) row;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: title,
+      child: loading
+          ? const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()))
+          : items.isEmpty
+              ? _EmptyState(
+                  icon: Icons.inbox_outlined,
+                  title: emptyText,
+                  message: '刷新或创建后会显示在这里。',
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 680) {
+                      return Column(
+                        children: [
+                          for (final item in items)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _ItemCard(columns: columns, cells: row(item)),
+                            ),
+                        ],
+                      );
+                    }
+                    final tableMinWidth = columns.length * 150.0 + 80;
+                    return Scrollbar(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minWidth: tableMinWidth > constraints.maxWidth ? tableMinWidth : constraints.maxWidth,
+                          ),
+                          child: DataTable(
+                            columnSpacing: 18,
+                            headingRowHeight: 40,
+                            dataRowMinHeight: 48,
+                            dataRowMaxHeight: 72,
+                            columns: [
+                              for (var i = 0; i < columns.length; i++)
+                                DataColumn(
+                                  label: SizedBox(
+                                    width: i == columns.length - 1 ? 112 : 150,
+                                    child: Text(columns[i], overflow: TextOverflow.ellipsis),
+                                  ),
+                                ),
+                            ],
+                            rows: [
+                              for (final item in items)
+                                DataRow(
+                                  cells: [
+                                    for (final entry in row(item).asMap().entries)
+                                      DataCell(
+                                        SizedBox(
+                                          width: entry.key == row(item).length - 1 ? 112 : 150,
+                                          child: entry.value is Widget
+                                              ? Align(
+                                                  alignment: Alignment.centerLeft,
+                                                  child: FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment: Alignment.centerLeft,
+                                                    child: entry.value as Widget,
+                                                  ),
+                                                )
+                                              : Text(
+                                                  _cellText(entry.value),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+class _ItemCard extends StatelessWidget {
+  const _ItemCard({required this.columns, required this.cells});
+
+  final List<String> columns;
+  final List<Object?> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < cells.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: cells[i] is Widget
+                  ? Align(alignment: Alignment.centerLeft, child: cells[i] as Widget)
+                  : Text(
+                      '${i < columns.length ? '${columns[i]}：' : ''}${_cellText(cells[i])}',
+                      maxLines: i == 0 ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ItemSection extends StatelessWidget {
   const _ItemSection({
     required this.title,
@@ -1995,6 +3769,146 @@ String _cellText(Object? value) {
   if (value == null) return '';
   if (value is Map || value is List) return jsonEncode(value);
   return '$value';
+}
+
+DateTime? _parseDate(Object? value) {
+  final text = '$value'.trim();
+  if (text.isEmpty || text == 'null') return null;
+  return DateTime.tryParse(text)?.toLocal();
+}
+
+DateTime? _eventStart(Map<String, dynamic> item) {
+  final payload = _asMap(item['payload']);
+  return _parseDate(
+    item['startAt'] ??
+        item['dtstart'] ??
+        payload['startAt'] ??
+        payload['start_at'] ??
+        payload['startTime'] ??
+        payload['dtstart'],
+  );
+}
+
+DateTime? _eventEnd(Map<String, dynamic> item) {
+  final payload = _asMap(item['payload']);
+  return _parseDate(
+    item['endAt'] ??
+        item['dtend'] ??
+        payload['endAt'] ??
+        payload['end_at'] ??
+        payload['endTime'] ??
+        payload['dtend'],
+  );
+}
+
+String _eventNotes(Map<String, dynamic>? item) {
+  if (item == null) return '';
+  final payload = _asMap(item['payload']);
+  return '${item['notes'] ?? item['description'] ?? payload['notes'] ?? payload['note'] ?? payload['description'] ?? ''}'.trim();
+}
+
+bool _isBlockingEvent(Map<String, dynamic> item) {
+  final payload = _asMap(item['payload']);
+  final value = item['isBlock'] ?? payload['isBlock'] ?? payload['blocking'] ?? payload['isBlocking'] ?? false;
+  return value == true || '$value'.toLowerCase() == 'true';
+}
+
+bool _isSameDay(DateTime? value, DateTime day) {
+  if (value == null) return false;
+  return value.year == day.year && value.month == day.month && value.day == day.day;
+}
+
+DateTime _startOfWeek(DateTime day) {
+  final date = DateTime(day.year, day.month, day.day);
+  return date.subtract(Duration(days: date.weekday - 1));
+}
+
+_EventRange _eventRangeFor(_EventViewMode mode, DateTime selectedDay) {
+  switch (mode) {
+    case _EventViewMode.timeline:
+      final start = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+      return _EventRange(start, start.add(const Duration(days: 1)));
+    case _EventViewMode.list:
+      final start = DateTime(selectedDay.year, selectedDay.month);
+      final end = DateTime(selectedDay.year, selectedDay.month + 1);
+      return _EventRange(start, end);
+    case _EventViewMode.week:
+      final start = _startOfWeek(selectedDay);
+      return _EventRange(start, start.add(const Duration(days: 7)));
+    case _EventViewMode.month:
+      final start = DateTime(selectedDay.year, selectedDay.month);
+      final end = DateTime(selectedDay.year, selectedDay.month + 1);
+      return _EventRange(start, end);
+  }
+}
+
+String _formatDate(DateTime day) {
+  return '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+}
+
+String _formatDateTime(DateTime? value) {
+  if (value == null) return '';
+  return '${_formatDate(value)} ${_timeLabel(value)}';
+}
+
+String _timeLabel(DateTime? value) {
+  if (value == null) return '--:--';
+  return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+}
+
+String _payloadText(Map<String, dynamic> payload, List<String> keys) {
+  for (final key in keys) {
+    final value = payload[key];
+    final text = '$value'.trim();
+    if (value != null && text.isNotEmpty && text != 'null') {
+      return text;
+    }
+  }
+  final metadata = _asMap(payload['metadata']);
+  for (final key in keys) {
+    final value = metadata[key];
+    final text = '$value'.trim();
+    if (value != null && text.isNotEmpty && text != 'null') {
+      return text;
+    }
+  }
+  return '';
+}
+
+String _trackingPayloadSummary(Map<String, dynamic> payload) {
+  final metadata = _asMap(payload['metadata']);
+  final parts = <String>[
+    _payloadText(payload, const ['keyLabel', 'key_label', 'tokenText']),
+    _payloadText(payload, const ['mouseButton', 'mouse_button']),
+    _payloadText(payload, const ['windowTitle', 'window_title', 'title']),
+    _payloadText(payload, const ['filePath', 'file_path']),
+  ].where((item) => item.isNotEmpty).toList();
+  if (parts.isEmpty) {
+    final eventCount = metadata['eventCount'] ?? metadata['event_count'];
+    return eventCount == null ? '' : '事件数 $eventCount';
+  }
+  return parts.take(3).join(' / ');
+}
+
+String _mouseLabel(String value) {
+  return switch (value) {
+    'left' => '左键',
+    'right' => '右键',
+    'middle' => '中键',
+    'wheel_up' => '滚轮上',
+    'wheel_down' => '滚轮下',
+    'wheel' => '滚轮',
+    'move' => '移动',
+    'button' => '按钮',
+    _ => value,
+  };
+}
+
+String _csvText(Object? value) {
+  if (value is Iterable) {
+    return value.map((item) => '$item').where((item) => item.trim().isNotEmpty).join(', ');
+  }
+  return _cellText(value);
 }
 
 String _formatBytes(Object? value) {

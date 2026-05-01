@@ -265,11 +265,13 @@ class ReportRepository {
     required Map<String, Object?> sourceSnapshot,
   }) async {
     final now = DateTime.now();
+    final reportUid = _reportUid(reportType, periodStart);
     final existing = await getReportForPeriod(
       reportType: reportType,
       periodStart: periodStart,
       periodEnd: periodEnd,
-    );
+    ) ??
+        await getReportByUid(reportUid);
     if (existing == null) {
       await _db.customStatement(
         '''
@@ -286,9 +288,20 @@ class ReportRepository {
           created_at,
           updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(report_uid) DO UPDATE SET
+          report_type = excluded.report_type,
+          period_start = excluded.period_start,
+          period_end = excluded.period_end,
+          title = excluded.title,
+          summary_markdown = excluded.summary_markdown,
+          metrics_json = excluded.metrics_json,
+          source_snapshot_json = excluded.source_snapshot_json,
+          status = excluded.status,
+          updated_at = excluded.updated_at,
+          confirmed_at = NULL
         ''',
         [
-          _uuid.v4(),
+          reportUid,
           reportType,
           periodStart.toIso8601String(),
           periodEnd.toIso8601String(),
@@ -301,7 +314,8 @@ class ReportRepository {
           now.toIso8601String(),
         ],
       );
-      final report = ReportDocument.fromRow(await _lastRow('report_documents'));
+      final report = await getReportByUid(reportUid) ??
+          ReportDocument.fromRow(await _lastRow('report_documents'));
       await _recordReportCreate(report);
       return report;
     }
@@ -567,6 +581,14 @@ class ReportRepository {
     return row == null ? null : ReportDocument.fromRow(row);
   }
 
+  Future<ReportDocument?> getReportByUid(String reportUid) async {
+    final row = await _db.customSelect(
+      'SELECT * FROM report_documents WHERE report_uid = ? LIMIT 1',
+      variables: [Variable<String>(reportUid)],
+    ).getSingleOrNull();
+    return row == null ? null : ReportDocument.fromRow(row);
+  }
+
   Future<ReportDocument?> getReportForPeriod({
     required String reportType,
     required DateTime periodStart,
@@ -715,6 +737,10 @@ class ReportRepository {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
+  }
+
+  String _reportUid(String reportType, DateTime periodStart) {
+    return 'report:$reportType:${_dayKey(periodStart)}';
   }
 }
 

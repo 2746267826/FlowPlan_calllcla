@@ -310,7 +310,6 @@ class ServerSyncChangeApplier {
       name: Value(_string(payload, 'name') ?? '未命名日历本'),
       colorHex: Value(_string(payload, 'colorHex', 'color_hex') ?? '#6B5EE4'),
       description: Value(_string(payload, 'description')),
-      location: Value(_string(payload, 'location')),
       isVisible: Value(_bool(payload, 'isVisible', 'is_visible') ?? true),
       isDefault: Value(_bool(payload, 'isDefault', 'is_default') ?? false),
       source: Value(_string(payload, 'source') ?? 'server'),
@@ -359,11 +358,11 @@ class ServerSyncChangeApplier {
       id: id == null ? const Value.absent() : Value(id),
       uid: Value(change.uid ?? _string(payload, 'uid') ?? change.serverId),
       dtstamp: Value(_date(payload, 'dtstamp') ?? DateTime.now()),
-      summary: Value(_string(payload, 'summary') ?? '未命名日程'),
-      description: Value(_string(payload, 'description')),
+      summary: Value(_string(payload, 'summary', 'title', 'name') ?? '未命名日程'),
+      description: Value(_string(payload, 'description', 'notes', 'note')),
       location: Value(_string(payload, 'location')),
-      dtstart: Value(_date(payload, 'dtstart') ?? DateTime.now()),
-      dtend: Value(_date(payload, 'dtend')),
+      dtstart: Value(_date(payload, 'dtstart', 'startAt', 'start_at', 'startTime') ?? DateTime.now()),
+      dtend: Value(_date(payload, 'dtend', 'endAt', 'end_at', 'endTime')),
       rrule: Value(_string(payload, 'rrule')),
       status: Value(_string(payload, 'status') ?? 'CONFIRMED'),
       transp: Value(_string(payload, 'transp') ?? 'OPAQUE'),
@@ -784,8 +783,10 @@ class ServerSyncChangeApplier {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
+    final reportUid =
+        change.uid ?? _string(payload, 'reportUid', 'report_uid') ?? change.serverId;
     final values = [
-      change.uid ?? _string(payload, 'reportUid', 'report_uid') ?? change.serverId,
+      reportUid,
       _string(payload, 'reportType', 'report_type') ?? 'daily',
       (_date(payload, 'periodStart', 'period_start') ?? DateTime.now()).toIso8601String(),
       (_date(payload, 'periodEnd', 'period_end') ?? DateTime.now()).toIso8601String(),
@@ -815,10 +816,27 @@ class ServerSyncChangeApplier {
           updated_at,
           confirmed_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(report_uid) DO UPDATE SET
+          report_type = excluded.report_type,
+          period_start = excluded.period_start,
+          period_end = excluded.period_end,
+          title = excluded.title,
+          summary_markdown = excluded.summary_markdown,
+          metrics_json = excluded.metrics_json,
+          source_snapshot_json = excluded.source_snapshot_json,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          confirmed_at = excluded.confirmed_at
         ''',
         values,
       );
-      return _lastInsertId();
+      final row = await _database.customSelect(
+        'SELECT id FROM report_documents WHERE report_uid = ? LIMIT 1',
+        variables: [Variable<String>(reportUid)],
+      ).getSingleOrNull();
+      final localId = row?.read<int>('id');
+      return localId == null ? _lastInsertId() : localId.toString();
     }
     await _database.customStatement(
       '''
@@ -850,8 +868,10 @@ class ServerSyncChangeApplier {
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
     final entryDate = _date(payload, 'entryDate', 'entry_date') ?? DateTime.now();
+    final diaryUid =
+        change.uid ?? _string(payload, 'diaryUid', 'diary_uid') ?? change.serverId;
     final values = [
-      change.uid ?? _string(payload, 'diaryUid', 'diary_uid') ?? change.serverId,
+      diaryUid,
       _dayKey(entryDate),
       _string(payload, 'title') ?? '远端日记',
       _string(payload, 'bodyMarkdown', 'body_markdown') ?? '',
@@ -865,7 +885,15 @@ class ServerSyncChangeApplier {
       now,
       _date(payload, 'confirmedAt', 'confirmed_at')?.toIso8601String(),
     ];
-    if (id == null) {
+    var targetId = id;
+    if (targetId == null) {
+      final existing = await _database.customSelect(
+        'SELECT id FROM diary_entries WHERE diary_uid = ? LIMIT 1',
+        variables: [Variable<String>(diaryUid)],
+      ).getSingleOrNull();
+      targetId = existing == null ? null : existing.read<int>('id');
+    }
+    if (targetId == null) {
       await _database.customStatement(
         '''
         INSERT INTO diary_entries (
@@ -906,9 +934,9 @@ class ServerSyncChangeApplier {
           confirmed_at = ?
       WHERE id = ?
       ''',
-      [...values, id],
+      [...values, targetId],
     );
-    return id.toString();
+    return targetId.toString();
   }
 
   Future<String> _upsertReportPushDelivery(
@@ -1144,7 +1172,36 @@ class ServerSyncChangeApplier {
       now,
       _date(payload, 'confirmedAt', 'confirmed_at')?.toIso8601String(),
     ];
-    if (id == null) {
+    var targetId = id;
+    if (targetId == null) {
+      final existingByUid = await _database.customSelect(
+        'SELECT id FROM file_context_links WHERE link_uid = ? LIMIT 1',
+        variables: [Variable<String>(values[0] as String)],
+      ).getSingleOrNull();
+      targetId = existingByUid?.read<int>('id');
+    }
+    if (targetId == null) {
+      final existingByNaturalKey = await _database.customSelect(
+        '''
+        SELECT id
+        FROM file_context_links
+        WHERE entity_type = ?
+          AND entity_id = ?
+          AND target_type = ?
+          AND target_id = ?
+          AND status <> 'rejected'
+        LIMIT 1
+        ''',
+        variables: [
+          Variable<String>(values[1] as String),
+          Variable<String>(values[2] as String),
+          Variable<String>(values[3] as String),
+          Variable<int>(values[4] as int),
+        ],
+      ).getSingleOrNull();
+      targetId = existingByNaturalKey?.read<int>('id');
+    }
+    if (targetId == null) {
       await _database.customStatement(
         '''
         INSERT INTO file_context_links (
@@ -1183,9 +1240,9 @@ class ServerSyncChangeApplier {
           confirmed_at = ?
       WHERE id = ?
       ''',
-      [...values, id],
+      [...values, targetId],
     );
-    return id.toString();
+    return targetId.toString();
   }
 
   Future<String> _upsertFileFolderUsage(

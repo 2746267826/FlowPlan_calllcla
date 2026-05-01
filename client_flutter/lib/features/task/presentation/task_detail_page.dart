@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -380,49 +379,36 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
 
     setState(() => _saving = true);
 
-    final repo = ref.read(taskRepositoryProvider);
-    final now = DateTime.now();
     final title = _titleController.text.trim();
     final description = _descController.text.trim();
     final location = _locationController.text.trim();
+    final payload = <String, Object?>{
+      'uid': widget.taskId == null ? const Uuid().v4() : null,
+      'summary': title,
+      'title': title,
+      'description': description.isEmpty ? null : description,
+      'location': location.isEmpty ? null : location,
+      'dueAt': _due?.toIso8601String(),
+      'priorityLocal': _priorityLocal,
+      'durationMinutes': _durationMinutes,
+      'isSplittable': _isSplittable,
+      'isAutoScheduled': _isAutoScheduled,
+      'isLocked': _isLocked,
+      'taskListId': _taskListId,
+      'rrule': _rrule,
+      'reminderMinutesBefore': _reminderMinutes,
+    };
 
     try {
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
+      late final result;
       if (widget.taskId == null) {
-        await repo.create(
-          TaskItemsCompanion.insert(
-            uid: const Uuid().v4(),
-            dtstamp: now,
-            summary: title,
-            description: Value(description.isEmpty ? null : description),
-            location: Value(location.isEmpty ? null : location),
-            due: Value(_due),
-            priorityLocal: Value(_priorityLocal),
-            durationMinutes: Value(_durationMinutes),
-            isSplittable: Value(_isSplittable),
-            isAutoScheduled: Value(_isAutoScheduled),
-            isLocked: Value(_isLocked),
-            taskListId: Value(_taskListId),
-            rrule: Value(_rrule),
-            reminderMinutesBefore: Value(_reminderMinutes),
-          ),
-        );
+        result = await store.createTask(payload);
       } else {
-        await repo.update(
-          TaskItemsCompanion(
-            id: Value(widget.taskId!),
-            summary: Value(title),
-            description: Value(description.isEmpty ? null : description),
-            location: Value(location.isEmpty ? null : location),
-            due: Value(_due),
-            priorityLocal: Value(_priorityLocal),
-            durationMinutes: Value(_durationMinutes),
-            isSplittable: Value(_isSplittable),
-            isAutoScheduled: Value(_isAutoScheduled),
-            isLocked: Value(_isLocked),
-            taskListId: Value(_taskListId),
-            rrule: Value(_rrule),
-            reminderMinutesBefore: Value(_reminderMinutes),
-          ),
+        result = await store.updateLocalTask(
+          localId: widget.taskId!,
+          patch: payload,
+          changedFields: payload.keys.toList(growable: false),
         );
       }
 
@@ -435,7 +421,11 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('\u4efb\u52a1\u300c$title\u300d\u5df2\u4fdd\u5b58'),
+          content: Text(
+            result.isPending
+                ? '\u4efb\u52a1\u300c$title\u300d\u5df2\u4fdd\u5b58\u5230\u672c\u673a\uff0c\u7b49\u5f85\u540c\u6b65'
+                : '\u4efb\u52a1\u300c$title\u300d\u5df2\u540c\u6b65\u4fdd\u5b58',
+          ),
         ),
       );
       _close(context);
@@ -487,13 +477,18 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     setState(() => _saving = true);
 
     try {
-      await ref.read(taskRepositoryProvider).delete(widget.taskId!);
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
+      final result = await store.deleteLocalTask(localId: widget.taskId!);
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('\u4efb\u52a1\u5df2\u5220\u9664'),
+        SnackBar(
+          content: Text(
+            result.isPending
+                ? '\u5220\u9664\u5df2\u8fdb\u5165\u5f85\u540c\u6b65'
+                : '\u4efb\u52a1\u5df2\u540c\u6b65\u5220\u9664',
+          ),
         ),
       );
       _close(context);

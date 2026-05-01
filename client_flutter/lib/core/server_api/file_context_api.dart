@@ -27,7 +27,7 @@ class FileContextApi {
     String? rootUid,
     required String name,
     required String rootUri,
-    String providerType = 'local',
+    String providerType = 'server_storage',
     String? rootDisplayPath,
     bool isManaged = false,
     String syncPolicy = 'metadata_only',

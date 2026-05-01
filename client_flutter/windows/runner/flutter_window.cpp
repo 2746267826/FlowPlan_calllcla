@@ -149,8 +149,16 @@ void FlutterWindow::RestoreFromTray() {
 
 void FlutterWindow::ExitFromTray() {
   exit_requested_ = true;
+  minimize_to_tray_on_close_ = false;
   CancelStartupTraySync();
-  PostMessage(GetHandle(), WM_CLOSE, 0, 0);
+  CancelTrayIconRetry();
+  RemoveTrayIcon();
+  const HWND handle = GetHandle();
+  if (handle == nullptr) {
+    PostQuitMessage(0);
+    return;
+  }
+  PostMessage(handle, WM_CLOSE, 0, 0);
 }
 
 bool FlutterWindow::ShowTrayNotification(const std::wstring& title,
@@ -172,13 +180,14 @@ bool FlutterWindow::ShowTrayNotification(const std::wstring& title,
 }
 
 void FlutterWindow::EnsureTrayIcon() {
-  if (tray_icon_added_ || GetHandle() == nullptr) {
+  const HWND handle = GetHandle();
+  if (tray_icon_added_ || handle == nullptr) {
     return;
   }
 
   NOTIFYICONDATAW icon_data = {};
   icon_data.cbSize = sizeof(NOTIFYICONDATAW);
-  icon_data.hWnd = GetHandle();
+  icon_data.hWnd = handle;
   icon_data.uID = kTrayIconId;
   icon_data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
   icon_data.uCallbackMessage = kTrayCallbackMessage;
@@ -188,6 +197,7 @@ void FlutterWindow::EnsureTrayIcon() {
 
   if (Shell_NotifyIconW(NIM_ADD, &icon_data)) {
     tray_icon_added_ = true;
+    tray_icon_hwnd_ = handle;
     CancelTrayIconRetry();
     icon_data.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &icon_data);
@@ -239,16 +249,20 @@ void FlutterWindow::CancelStartupTraySync() {
 }
 
 void FlutterWindow::RemoveTrayIcon() {
-  if (!tray_icon_added_ || GetHandle() == nullptr) {
+  const HWND handle = tray_icon_hwnd_ != nullptr ? tray_icon_hwnd_ : GetHandle();
+  if (!tray_icon_added_ || handle == nullptr) {
+    tray_icon_added_ = false;
+    tray_icon_hwnd_ = nullptr;
     return;
   }
 
   NOTIFYICONDATAW icon_data = {};
   icon_data.cbSize = sizeof(NOTIFYICONDATAW);
-  icon_data.hWnd = GetHandle();
+  icon_data.hWnd = handle;
   icon_data.uID = kTrayIconId;
   Shell_NotifyIconW(NIM_DELETE, &icon_data);
   tray_icon_added_ = false;
+  tray_icon_hwnd_ = nullptr;
 }
 
 void FlutterWindow::HideToTray() {

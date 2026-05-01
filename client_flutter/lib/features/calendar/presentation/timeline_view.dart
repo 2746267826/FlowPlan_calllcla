@@ -336,7 +336,12 @@ class _PlanColumn extends ConsumerWidget {
         if (!confirmed) {
           return;
         }
-        await ref.read(taskRepositoryProvider).updateDtstart(details.data.id, start);
+        final store = await ref.read(taskEventServerFirstStoreProvider.future);
+        await store.updateLocalTask(
+          localId: details.data.id,
+          patch: <String, Object?>{'dtstart': start.toIso8601String()},
+          changedFields: const <String>['dtstart'],
+        );
         await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
               taskId: details.data.id,
               actor: '\u7528\u6237\u786e\u8ba4',
@@ -415,11 +420,16 @@ class _PlanColumn extends ConsumerWidget {
                               if (!confirmed) {
                                 return;
                               }
-                              await ref.read(eventRepositoryProvider).updateTimes(
-                                    event.id,
-                                    start,
-                                    start.add(duration),
-                                  );
+                              final store = await ref
+                                  .read(taskEventServerFirstStoreProvider.future);
+                              await store.updateLocalEvent(
+                                localId: event.id,
+                                patch: <String, Object?>{
+                                  'startAt': start.toIso8601String(),
+                                  'endAt': start.add(duration).toIso8601String(),
+                                },
+                                changedFields: const <String>['startAt', 'endAt'],
+                              );
                               await ref.read(dataOperationLogRepositoryProvider).record(
                                     actor: '\u7528\u6237\u786e\u8ba4',
                                     action: 'manual_move_event',
@@ -452,11 +462,16 @@ class _PlanColumn extends ConsumerWidget {
                               if (!confirmed) {
                                 return;
                               }
-                              await ref.read(eventRepositoryProvider).updateTimes(
-                                    event.id,
-                                    event.dtstart,
-                                    newEnd,
-                                  );
+                              final store = await ref
+                                  .read(taskEventServerFirstStoreProvider.future);
+                              await store.updateLocalEvent(
+                                localId: event.id,
+                                patch: <String, Object?>{
+                                  'startAt': event.dtstart.toIso8601String(),
+                                  'endAt': newEnd.toIso8601String(),
+                                },
+                                changedFields: const <String>['startAt', 'endAt'],
+                              );
                               await ref.read(dataOperationLogRepositoryProvider).record(
                                     actor: '\u7528\u6237\u786e\u8ba4',
                                     action: 'manual_resize_event',
@@ -514,7 +529,15 @@ class _PlanColumn extends ConsumerWidget {
                         if (!confirmed) {
                           return;
                         }
-                        await ref.read(taskRepositoryProvider).updateDtstart(task.id, start);
+                        final store =
+                            await ref.read(taskEventServerFirstStoreProvider.future);
+                        await store.updateLocalTask(
+                          localId: task.id,
+                          patch: <String, Object?>{
+                            'dtstart': start.toIso8601String(),
+                          },
+                          changedFields: const <String>['dtstart'],
+                        );
                         await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
                               taskId: task.id,
                               actor: '\u7528\u6237\u786e\u8ba4',
@@ -542,7 +565,13 @@ class _PlanColumn extends ConsumerWidget {
                         if (!confirmed) {
                           return;
                         }
-                        await ref.read(taskRepositoryProvider).updateDuration(task.id, minutes);
+                        final store =
+                            await ref.read(taskEventServerFirstStoreProvider.future);
+                        await store.updateLocalTask(
+                          localId: task.id,
+                          patch: <String, Object?>{'durationMinutes': minutes},
+                          changedFields: const <String>['durationMinutes'],
+                        );
                         await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
                               taskId: task.id,
                               actor: '\u7528\u6237\u786e\u8ba4',

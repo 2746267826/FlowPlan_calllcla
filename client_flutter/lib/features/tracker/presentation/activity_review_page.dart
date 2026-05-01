@@ -8,7 +8,6 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../data/activity_fusion_repository.dart';
-import '../services/activity_fusion_service.dart';
 
 class ActivityReviewPage extends ConsumerStatefulWidget {
   const ActivityReviewPage({super.key});
@@ -21,7 +20,7 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
   var _loading = true;
   var _rebuilding = false;
   String? _error;
-  ActivityFusionRunResult? _lastRun;
+  _ServerActivityBuildResult? _lastRun;
   List<_SegmentReviewItem> _items = const <_SegmentReviewItem>[];
   List<TaskItem> _tasks = const <TaskItem>[];
 
@@ -40,24 +39,20 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
       _error = null;
     });
     try {
-      final fusion = ref.read(activityFusionRepositoryProvider);
-      final segments = await fusion.listSegmentsInRange(start, end);
+      final store = await ref.read(trackingServerFirstStoreProvider.future);
+      final tasks = await ref.read(allTasksProvider.future);
+      final taskByUid = <String, TaskItem>{
+        for (final task in tasks) task.uid: task,
+      };
+      final response = await store.segments(
+        startAt: start,
+        endAt: end,
+        limit: 200,
+      );
       final items = <_SegmentReviewItem>[];
-      for (final segment in segments) {
-        final interpretations =
-            await fusion.listInterpretationsForSegment(segment.id);
-        interpretations.sort(
-          (left, right) => right.confidence.compareTo(left.confidence),
-        );
-        items.add(
-          _SegmentReviewItem(
-            segment: segment,
-            interpretation:
-                interpretations.isEmpty ? null : interpretations.first,
-          ),
-        );
+      for (final item in _serverSegmentItems(response)) {
+        items.add(_segmentReviewItemFromServer(item, taskByUid));
       }
-      final tasks = await ref.read(taskRepositoryProvider).listAllVisible();
       if (!mounted) {
         return;
       }
@@ -86,10 +81,9 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
       _error = null;
     });
     try {
-      final result = await ref.read(activityFusionServiceProvider).rebuildRange(
-            start: start,
-            end: end,
-          );
+      final store = await ref.read(trackingServerFirstStoreProvider.future);
+      final response = await store.buildSegments(date: start);
+      final result = _ServerActivityBuildResult.fromServer(response);
       if (!mounted) {
         return;
       }
@@ -137,17 +131,20 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
       return;
     }
     try {
-      final result = await ref.read(activityFusionServiceProvider).confirmSegment(
-            item.segment.id,
-            title: selected.title,
-            taskId: selected.taskId,
-            note: selected.note,
-          );
+      final result =
+          await (await ref.read(trackingServerFirstStoreProvider.future))
+              .confirmSegment(
+        segmentId: item.serverId,
+        title: selected.title,
+        taskId: selected.taskUid,
+        note: selected.note,
+      );
       await _load();
       if (!mounted) {
         return;
       }
-      final suffix = result.taskWorkLog == null ? '未关联任务投入。' : '已写入任务实际投入。';
+      final suffix =
+          result['taskId'] == null ? '未关联任务投入。' : '已写入任务实际投入。';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已确认实际记录，$suffix')),
       );
@@ -162,16 +159,10 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
   }
 
   Future<void> _reject(_SegmentReviewItem item) async {
-    final fusion = ref.read(activityFusionRepositoryProvider);
-    await fusion.updateSegmentStatus(
-      item.segment.id,
-      status: 'rejected',
+    await (await ref.read(trackingServerFirstStoreProvider.future)).rejectSegment(
+      segmentId: item.serverId,
+      reason: 'user_rejected',
     );
-    await fusion.updateInterpretationsStatusForSegment(
-      item.segment.id,
-      status: 'rejected',
-    );
-    await fusion.rejectTaskWorkLogsForSegment(segmentId: item.segment.id);
     await _load();
   }
 
@@ -241,7 +232,7 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
               ..._items.map(
                 (item) => _SegmentCard(
                   item: item,
-                  task: _taskById(item.interpretation?.inferredTaskId),
+                  task: _taskByUid(item.inferredTaskUid),
                   onConfirm: item.segment.status == 'confirmed'
                       ? null
                       : () => _confirm(item),
@@ -256,12 +247,12 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
     );
   }
 
-  TaskItem? _taskById(int? taskId) {
-    if (taskId == null) {
+  TaskItem? _taskByUid(String? taskUid) {
+    if (taskUid == null) {
       return null;
     }
     for (final task in _tasks) {
-      if (task.id == taskId) {
+      if (task.uid == taskUid) {
         return task;
       }
     }
@@ -279,7 +270,7 @@ class _HeaderCard extends StatelessWidget {
 
   final DateTime date;
   final int itemCount;
-  final ActivityFusionRunResult? lastRun;
+  final _ServerActivityBuildResult? lastRun;
   final VoidCallback? onRebuild;
 
   @override
@@ -318,10 +309,10 @@ class _HeaderCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _Tag('活动记录 ${lastRun!.sourceRecordCount}'),
-                _Tag('原始日志 ${lastRun!.rawLogCount}'),
-                _Tag('输入事件 ${lastRun!.inputEventCount}'),
-                _Tag('任务投入候选 ${lastRun!.taskWorkLogCount}'),
+                _Tag('服务端原始事实 ${lastRun!.rawCount}'),
+                _Tag('新增片段 ${lastRun!.segmentsCreated}'),
+                _Tag('更新片段 ${lastRun!.segmentsUpdated}'),
+                _Tag('低置信度 ${lastRun!.lowConfidenceCount}'),
               ],
             ),
           ],
@@ -464,7 +455,7 @@ class _ConfirmSegmentDialog extends StatefulWidget {
 class _ConfirmSegmentDialogState extends State<_ConfirmSegmentDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _noteController;
-  int? _taskId;
+  String? _taskUid;
 
   @override
   void initState() {
@@ -478,7 +469,7 @@ class _ConfirmSegmentDialogState extends State<_ConfirmSegmentDialog> {
           '未分类活动',
     );
     _noteController = TextEditingController();
-    _taskId = item.interpretation?.inferredTaskId;
+    _taskUid = item.inferredTaskUid;
   }
 
   @override
@@ -502,24 +493,24 @@ class _ConfirmSegmentDialogState extends State<_ConfirmSegmentDialog> {
               decoration: const InputDecoration(labelText: '实际记录标题'),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<int?>(
-              initialValue: _taskId,
+            DropdownButtonFormField<String?>(
+              initialValue: _taskUid,
               decoration: const InputDecoration(labelText: '关联任务'),
               items: [
-                const DropdownMenuItem<int?>(
+                const DropdownMenuItem<String?>(
                   value: null,
                   child: Text('不关联任务'),
                 ),
                 for (final task in widget.tasks)
-                  DropdownMenuItem<int?>(
-                    value: task.id,
+                  DropdownMenuItem<String?>(
+                    value: task.uid,
                     child: Text(
                       task.summary,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
               ],
-              onChanged: (value) => setState(() => _taskId = value),
+              onChanged: (value) => setState(() => _taskUid = value),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -540,7 +531,7 @@ class _ConfirmSegmentDialogState extends State<_ConfirmSegmentDialog> {
             Navigator.of(context).pop(
               _SegmentConfirmationDraft(
                 title: _titleController.text,
-                taskId: _taskId,
+                taskUid: _taskUid,
                 note: _noteController.text.trim().isEmpty
                     ? null
                     : _noteController.text.trim(),
@@ -671,24 +662,167 @@ class _StatusPill extends StatelessWidget {
 
 class _SegmentReviewItem {
   const _SegmentReviewItem({
+    required this.serverId,
     required this.segment,
     required this.interpretation,
+    required this.inferredTaskUid,
   });
 
+  final String serverId;
   final ActivitySegment segment;
   final ActivityInterpretation? interpretation;
+  final String? inferredTaskUid;
 }
 
 class _SegmentConfirmationDraft {
   const _SegmentConfirmationDraft({
     required this.title,
-    required this.taskId,
+    required this.taskUid,
     required this.note,
   });
 
   final String title;
-  final int? taskId;
+  final String? taskUid;
   final String? note;
+}
+
+class _ServerActivityBuildResult {
+  const _ServerActivityBuildResult({
+    required this.rawCount,
+    required this.segmentsCreated,
+    required this.segmentsUpdated,
+    required this.lowConfidenceCount,
+  });
+
+  final int rawCount;
+  final int segmentsCreated;
+  final int segmentsUpdated;
+  final int lowConfidenceCount;
+  int get segmentCount => segmentsCreated + segmentsUpdated;
+
+  factory _ServerActivityBuildResult.fromServer(Map<String, dynamic> value) {
+    return _ServerActivityBuildResult(
+      rawCount: _intValue(value['rawCount']),
+      segmentsCreated: _intValue(value['segmentsCreated']),
+      segmentsUpdated: _intValue(value['segmentsUpdated']),
+      lowConfidenceCount: _intValue(value['lowConfidenceCount']),
+    );
+  }
+}
+
+List<Map<String, Object?>> _serverSegmentItems(Map<String, dynamic> response) {
+  final items = response['items'];
+  if (items is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  return items
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
+      .toList(growable: false);
+}
+
+_SegmentReviewItem _segmentReviewItemFromServer(
+  Map<String, Object?> item,
+  Map<String, TaskItem> taskByUid,
+) {
+  final serverId = _stringValue(item['id']) ?? '';
+  final startAt = _dateValue(item['startAt']) ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+  final endAt = _dateValue(item['endAt']) ?? startAt;
+  final evidenceJson = jsonEncode({
+    'evidence': item['evidence'],
+    'reason': item['reason'],
+  });
+  final matchedTaskUid = _stringValue(item['matchedTaskId']);
+  final matchedTask = matchedTaskUid == null ? null : taskByUid[matchedTaskUid];
+  final segment = ActivitySegment(
+    id: _stablePositiveId(serverId),
+    segmentUid: _stringValue(item['segmentUid']) ?? serverId,
+    startAt: startAt,
+    endAt: endAt,
+    primaryProcessName: _stringValue(item['primaryProcessName']),
+    primaryWindowTitle: _stringValue(item['primaryWindowTitle']),
+    category: _stringValue(item['category']),
+    label: _stringValue(item['title']),
+    sourceRecordIdsJson: '[]',
+    evidenceJson: evidenceJson,
+    confidence: _doubleValue(item['confidence'], fallback: 0.5),
+    status: _stringValue(item['status']) ?? 'candidate',
+    createdAt: startAt,
+    updatedAt: DateTime.now(),
+  );
+  final interpretation = ActivityInterpretation(
+    id: _stablePositiveId('$serverId:interpretation'),
+    interpretationUid: '$serverId:interpretation',
+    segmentId: segment.id,
+    summary: _stringValue(item['summary']) ??
+        _stringValue(item['title']) ??
+        _stringValue(item['primaryProcessName']) ??
+        '未分类活动',
+    inferredProject: null,
+    inferredDocument: null,
+    inferredTaskId: matchedTask?.id,
+    confidence: segment.confidence,
+    evidenceJson: evidenceJson,
+    status: segment.status,
+    createdAt: startAt,
+    updatedAt: DateTime.now(),
+  );
+  return _SegmentReviewItem(
+    serverId: serverId,
+    segment: segment,
+    interpretation: interpretation,
+    inferredTaskUid: matchedTaskUid,
+  );
+}
+
+DateTime? _dateValue(Object? value) {
+  if (value is DateTime) {
+    return value;
+  }
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value);
+  }
+  return null;
+}
+
+String? _stringValue(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+int _intValue(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.round();
+  }
+  if (value is String) {
+    return num.tryParse(value)?.round() ?? 0;
+  }
+  return 0;
+}
+
+double _doubleValue(Object? value, {double fallback = 0}) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value) ?? fallback;
+  }
+  return fallback;
+}
+
+int _stablePositiveId(String value) {
+  var hash = 0;
+  for (final unit in value.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
+  }
+  return hash == 0 ? 1 : hash;
 }
 
 Map<String, Object?> _decodeEvidence(String raw) {

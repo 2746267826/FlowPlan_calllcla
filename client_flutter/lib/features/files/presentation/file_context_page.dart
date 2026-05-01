@@ -156,56 +156,16 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
   }
 
   Future<void> _addRoot() async {
-    final selectedPath = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '选择资料库 Root',
-    );
-    if (selectedPath == null || selectedPath.trim().isEmpty) {
-      return;
-    }
+    final driveRepo = ref.read(fileContextRepositoryProvider);
+    await driveRepo.syncDriveRootsFromServer();
     if (!mounted) return;
-
-    final noteController = TextEditingController();
-    final sourceContext = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('资料库说明'),
-        content: TextField(
-          controller: noteController,
-          decoration: const InputDecoration(
-            labelText: '上下文备注',
-            hintText: '项目、课程、会议或常用资料说明',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(''),
-            child: const Text('跳过'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(noteController.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
+    ref.read(fileContextRefreshTickProvider.notifier).state++;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已刷新服务端云盘 Root。Root 需在服务端或管理端创建，本机目录请用“绑定本地目录”。'),
       ),
     );
-    noteController.dispose();
-
-    final repo = ref.read(fileContextRepositoryProvider);
-    final folder = await repo.upsertLocalFolder(
-      localPath: selectedPath,
-      sourceContext:
-          sourceContext == null || sourceContext.isEmpty ? null : sourceContext,
-      pinned: true,
-    );
-    setState(() {
-      _selectedRootId = folder.id;
-      _currentFolderNodeId = null;
-      _selectedNodeId = null;
-      _query = '';
-    });
-    ref.read(fileContextRefreshTickProvider.notifier).state++;
-    await _scanRoot(folder);
+    return;
   }
 
   Future<void> _refreshDrive() async {
@@ -226,28 +186,21 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
     setState(() {
       _scanning = true;
       _scannedCount = 0;
-      _scanPath = root.localPath ?? '';
+      _scanPath = root.remoteId ?? '';
     });
     try {
-      final result = await ref.read(fileContextRepositoryProvider).scanRoot(
-            folderId: root.id,
-            onProgress: (progress) {
-              if (!mounted) return;
-              setState(() {
-                _scannedCount = progress.scannedCount;
-                _scanPath = progress.currentPath;
-              });
-            },
-          );
+      await ref.read(fileContextRepositoryProvider).requestServerRootScan(root.id);
       if (!mounted) return;
+      final rootNode =
+          await ref.read(fileContextRepositoryProvider).getRootNode(root.id);
       setState(() {
-        _currentFolderNodeId = result.rootNode.id;
+        _currentFolderNodeId = rootNode?.id;
         _selectedNodeId = null;
       });
-      final suffix = result.truncated ? '，已达到本次扫描上限' : '';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('扫描完成：${result.scannedCount} 个节点$suffix')),
+        const SnackBar(content: Text('服务端 Root 扫描完成，文件树已刷新')),
       );
+      return;
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -269,17 +222,21 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
     if (selectedPath == null || selectedPath.trim().isEmpty) {
       return;
     }
-    final updated = await ref.read(fileContextRepositoryProvider).relocateFolder(
+    final bound = await ref.read(fileContextRepositoryProvider).bindRootLocalDirectory(
           folderId: root.id,
-          newLocalPath: selectedPath,
+          localPath: selectedPath,
         );
     setState(() {
-      _selectedRootId = updated.id;
+      _selectedRootId = bound.id;
       _currentFolderNodeId = null;
       _selectedNodeId = null;
     });
     ref.read(fileContextRefreshTickProvider.notifier).state++;
-    await _scanRoot(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已绑定本地目录。打开文件时会先计算 hash 确认同一性。')),
+    );
+    return;
   }
 
   Future<void> _createKopiaSnapshot(FileFolder root) async {
@@ -425,8 +382,10 @@ class _NodeBrowserPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasLocalBinding =
+        root.localPath != null && root.localPath!.trim().isNotEmpty;
     final rootMissing =
-        root.localPath == null || !Directory(root.localPath!).existsSync();
+        hasLocalBinding && !Directory(root.localPath!).existsSync();
     return Column(
       children: [
         Padding(
@@ -467,7 +426,9 @@ class _NodeBrowserPane extends ConsumerWidget {
                       ),
                       IconButton(
                         tooltip: '创建 Kopia 快照',
-                        onPressed: scanning || rootMissing ? null : onCreateSnapshot,
+                        onPressed: scanning || !hasLocalBinding || rootMissing
+                            ? null
+                            : onCreateSnapshot,
                         icon: const Icon(Icons.history_toggle_off),
                       ),
                     ],
@@ -663,12 +624,29 @@ Future<void> _openOrDownloadNode(
       return;
     }
 
-    final targetPath = await FilePicker.platform.saveFile(
+    final repo = ref.read(fileContextRepositoryProvider);
+    final root = await repo.getFolderById(node.rootFolderId);
+    final boundRootPath = root?.localPath?.trim();
+    var targetPath = boundRootPath != null &&
+            boundRootPath.isNotEmpty &&
+            node.relativePath.trim().isNotEmpty
+        ? p.joinAll(<String>[
+            boundRootPath,
+            ...node.relativePath
+                .split('/')
+                .where((part) => part.trim().isNotEmpty),
+          ])
+        : null;
+    targetPath ??= await FilePicker.platform.saveFile(
       dialogTitle: '保存云盘文件副本',
       fileName: node.displayName,
     );
     if (targetPath == null || targetPath.trim().isEmpty) {
       return;
+    }
+    final parentDirectory = File(targetPath).parent;
+    if (!await parentDirectory.exists()) {
+      await parentDirectory.create(recursive: true);
     }
 
     final api = await ref.read(fileContextApiProvider.future);

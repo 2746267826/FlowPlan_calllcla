@@ -14,6 +14,8 @@ export interface AdminQuery {
   limit?: string;
   offset?: string;
   includeDeleted?: string;
+  deviceId?: string;
+  since?: string;
 }
 
 type CountRow = QueryResultRow & { name: string; count: string | number };
@@ -209,6 +211,41 @@ export class AdminService {
 
   async deviceOnlineSummary(context: FlowPlanRequestContext) {
     return this.devicesService.onlineSummary(context);
+  }
+
+  async newInfo(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const since = this.readDate(query.since) ?? new Date(Date.now() - 15 * 60 * 1000);
+    const deviceId = this.readDeviceId(query.deviceId);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        (SELECT COUNT(*)::int FROM sync_changes WHERE user_id = $1 AND created_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "syncChanges",
+        (SELECT COUNT(*)::int FROM sync_mutations WHERE user_id = $1 AND created_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "syncMutations",
+        (SELECT COUNT(*)::int FROM sync_conflicts WHERE user_id = $1 AND created_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "conflicts",
+        (SELECT COUNT(*)::int FROM tracking_ingest_batches WHERE user_id = $1 AND created_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "trackingBatches",
+        (SELECT COUNT(*)::int FROM file_operation_logs WHERE user_id = $1 AND created_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "fileOperations",
+        (SELECT COUNT(*)::int FROM audit_logs WHERE user_id = $1 AND occurred_at > $2 AND ($3::uuid IS NULL OR device_id = $3::uuid)) AS "auditLogs"
+      `,
+      [userId, since, deviceId],
+    );
+    const row = result.rows[0] ?? {};
+    const sections = {
+      syncChanges: this.toNumber(row.syncChanges as string | number | undefined),
+      syncMutations: this.toNumber(row.syncMutations as string | number | undefined),
+      conflicts: this.toNumber(row.conflicts as string | number | undefined),
+      trackingBatches: this.toNumber(row.trackingBatches as string | number | undefined),
+      fileOperations: this.toNumber(row.fileOperations as string | number | undefined),
+      auditLogs: this.toNumber(row.auditLogs as string | number | undefined),
+    };
+    const total = Object.values(sections).reduce((sum, count) => sum + count, 0);
+    return {
+      since: since.toISOString(),
+      generatedAt: new Date().toISOString(),
+      deviceId: deviceId ?? 'all',
+      total,
+      sections,
+    };
   }
 
   async objects(query: AdminQuery, context: FlowPlanRequestContext) {
@@ -477,8 +514,9 @@ export class AdminService {
     return { ok: !!result, file: result };
   }
 
-  async conflicts(context: FlowPlanRequestContext) {
+  async conflicts(query: AdminQuery, context: FlowPlanRequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -491,14 +529,16 @@ export class AdminService {
         c.fields,
         c.created_at AS "createdAt",
         c.resolved_at AS "resolvedAt",
+        c.device_id::text AS "deviceId",
         d.device_name AS "deviceName"
       FROM sync_conflicts c
       LEFT JOIN devices d ON d.id = c.device_id
       WHERE c.user_id = $1
+        AND ($2::uuid IS NULL OR c.device_id = $2::uuid)
       ORDER BY c.created_at DESC
       LIMIT 200
       `,
-      [userId],
+      [userId, deviceId],
     );
     return { conflicts: result.rows };
   }
@@ -537,25 +577,30 @@ export class AdminService {
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
     const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
-        id::text AS id,
-        actor,
-        action,
-        entity_type AS "targetType",
-        entity_id AS "targetId",
-        summary,
-        metadata AS details,
-        occurred_at AS "occurredAt",
-        device_id::text AS "deviceId"
-      FROM audit_logs
-      WHERE user_id = $1
-        AND ($2::text IS NULL OR actor ILIKE $2 OR action ILIKE $2 OR summary ILIKE $2 OR metadata::text ILIKE $2)
-      ORDER BY occurred_at DESC
-      LIMIT $3 OFFSET $4
+        a.id::text AS id,
+        a.actor,
+        a.action,
+        a.entity_type AS "targetType",
+        a.entity_id AS "targetId",
+        a.summary,
+        a.metadata AS details,
+        a.occurred_at AS "occurredAt",
+        a.occurred_at AS "createdAt",
+        a.device_id::text AS "deviceId",
+        d.device_name AS "deviceName"
+      FROM audit_logs a
+      LEFT JOIN devices d ON d.id = a.device_id
+      WHERE a.user_id = $1
+        AND ($2::text IS NULL OR a.actor ILIKE $2 OR a.action ILIKE $2 OR a.summary ILIKE $2 OR a.metadata::text ILIKE $2 OR COALESCE(d.device_name, '') ILIKE $2)
+        AND ($3::uuid IS NULL OR a.device_id = $3::uuid)
+      ORDER BY a.occurred_at DESC
+      LIMIT $4 OFFSET $5
       `,
-      [userId, search, limit, offset],
+      [userId, search, deviceId, limit, offset],
     );
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
@@ -576,6 +621,7 @@ export class AdminService {
         title,
         summary_markdown AS summary,
         status,
+        created_at AS "createdAt",
         created_at AS "generatedAt",
         updated_at AS "updatedAt"
       FROM report_documents
@@ -878,12 +924,26 @@ export class AdminService {
         return this.pushDeliveries(query, context);
       case 'ai-drafts':
         return this.aiDrafts(query, context);
+      case 'tracking-ingest-batches':
+        return this.trackingIngestBatches(query, context);
       case 'activity-segments':
-      case 'activity-interpretations':
+        return this.activitySegments(query, context);
       case 'task-work-logs':
+        return this.taskWorkLogs(query, context);
       case 'schedule-runs':
+        return this.scheduleRuns(query, context);
       case 'schedule-draft-items':
+        return this.scheduleDraftItems(query, context);
       case 'plan-deviations':
+        return this.planDeviations(query, context);
+      case 'report-entries':
+        return this.reportEntries(query, context);
+      case 'report-evidence':
+        return this.reportEvidence(query, context);
+      case 'file-operation-logs':
+        return this.fileOperationLogs(query, context);
+      case 'activity-interpretations':
+      case 'tracking-ingest-chunks':
       case 'models':
       case 'model-versions':
       case 'model-runs':
@@ -895,14 +955,11 @@ export class AdminService {
       case 'file-nodes':
       case 'file-recent-items':
       case 'file-recommendations':
-      case 'file-operation-logs':
       case 'transfer-candidates':
       case 'transfer-events':
       case 'network-presence':
       case 'ai-policies':
       case 'ai-tool-calls':
-      case 'report-entries':
-      case 'report-evidence':
       case 'report-templates':
       case 'push-channels':
       case 'weather-locations':
@@ -917,6 +974,8 @@ export class AdminService {
         return this.syncChanges(query, context);
       case 'sync-mutations':
         return this.syncMutations(query, context);
+      case 'conflicts':
+        return this.conflicts(query, context);
       case 'configs':
       case 'settings':
         return this.remoteConfigs(context);
@@ -1049,7 +1108,7 @@ export class AdminService {
     const [audit, mutations, conflicts] = await Promise.all([
       this.auditLogs(query, context),
       this.syncMutations({ ...query, status: 'rejected', limit: query.limit ?? '50' }, context),
-      this.conflicts(context),
+      this.conflicts(query, context),
     ]);
     return {
       auditLogs: audit.items,
@@ -1150,6 +1209,7 @@ export class AdminService {
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
     const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1179,10 +1239,11 @@ export class AdminService {
       FROM devices
       WHERE user_id = $1
         AND ($2::text IS NULL OR device_name ILIKE $2 OR platform ILIKE $2 OR client_device_id ILIKE $2)
+        AND ($3::uuid IS NULL OR id = $3::uuid)
       ORDER BY last_seen_at DESC NULLS LAST, created_at DESC
-      LIMIT $3 OFFSET $4
+      LIMIT $4 OFFSET $5
       `,
-      [userId, search, limit, offset],
+      [userId, search, deviceId, limit, offset],
     );
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
@@ -1192,23 +1253,28 @@ export class AdminService {
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
     const objectType = this.clean(query.objectType);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
-        id::text AS id,
-        object_type AS "objectType",
-        server_object_id::text AS "serverObjectId",
-        action,
-        server_version AS "serverVersion",
-        payload,
-        device_id::text AS "deviceId",
-        created_at AS "createdAt"
-      FROM sync_changes
-      WHERE user_id = $1 AND ($2::text IS NULL OR object_type = $2)
-      ORDER BY id DESC
-      LIMIT $3 OFFSET $4
+        c.id::text AS id,
+        c.object_type AS "objectType",
+        c.server_object_id::text AS "serverObjectId",
+        c.action,
+        c.server_version AS "serverVersion",
+        c.payload,
+        c.device_id::text AS "deviceId",
+        d.device_name AS "deviceName",
+        c.created_at AS "createdAt"
+      FROM sync_changes c
+      LEFT JOIN devices d ON d.id = c.device_id
+      WHERE c.user_id = $1
+        AND ($2::text IS NULL OR c.object_type = $2)
+        AND ($3::uuid IS NULL OR c.device_id = $3::uuid)
+      ORDER BY c.id DESC
+      LIMIT $4 OFFSET $5
       `,
-      [userId, objectType, limit, offset],
+      [userId, objectType, deviceId, limit, offset],
     );
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
@@ -1219,29 +1285,388 @@ export class AdminService {
     const offset = this.readOffset(query.offset);
     const status = this.clean(query.status);
     const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
-        mutation_uid AS id,
-        mutation_uid AS "mutationUid",
-        object_type AS "objectType",
-        local_id AS "localId",
-        action,
-        result AS status,
-        error_message AS "lastError",
-        server_object_id::text AS "serverObjectId",
-        base_server_version AS "baseServerVersion",
-        created_at AS "createdAt"
-      FROM sync_mutations
+        m.mutation_uid AS id,
+        m.mutation_uid AS "mutationUid",
+        m.object_type AS "objectType",
+        m.local_id AS "localId",
+        m.action,
+        m.result AS status,
+        m.error_message AS "lastError",
+        m.server_object_id::text AS "serverObjectId",
+        m.base_server_version AS "baseServerVersion",
+        m.device_id::text AS "deviceId",
+        d.device_name AS "deviceName",
+        m.created_at AS "createdAt"
+      FROM sync_mutations m
+      LEFT JOIN devices d ON d.id = m.device_id
+      WHERE m.user_id = $1
+        AND ($2::text IS NULL OR m.result = $2)
+        AND ($3::text IS NULL OR m.mutation_uid ILIKE $3 OR m.object_type ILIKE $3 OR m.local_id ILIKE $3 OR m.error_message ILIKE $3 OR COALESCE(d.device_name, '') ILIKE $3)
+        AND ($4::uuid IS NULL OR m.device_id = $4::uuid)
+      ORDER BY m.created_at DESC
+      LIMIT $5 OFFSET $6
+      `,
+      [userId, status, search, deviceId, limit, offset],
+    );
+    return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async trackingIngestBatches(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        b.id::text AS id,
+        b.batch_uid AS "batchUid",
+        b.data_kind AS "dataKind",
+        b.status,
+        b.compression,
+        b.raw_event_count AS "rawEventCount",
+        b.accepted_event_count AS "acceptedEventCount",
+        b.rejected_event_count AS "rejectedEventCount",
+        b.error_message AS "errorMessage",
+        b.start_at AS "startAt",
+        b.end_at AS "endAt",
+        b.created_at AS "createdAt",
+        b.updated_at AS "updatedAt",
+        b.completed_at AS "completedAt",
+        b.device_id::text AS "deviceId",
+        d.device_name AS "deviceName",
+        d.platform
+      FROM tracking_ingest_batches b
+      LEFT JOIN devices d ON d.id = b.device_id
+      WHERE b.user_id = $1
+        AND ($2::text IS NULL OR b.status = $2)
+        AND (
+          $3::text IS NULL
+          OR b.batch_uid ILIKE $3
+          OR b.data_kind ILIKE $3
+          OR COALESCE(b.error_message, '') ILIKE $3
+          OR COALESCE(d.device_name, '') ILIKE $3
+        )
+        AND ($4::uuid IS NULL OR b.device_id = $4::uuid)
+      ORDER BY b.created_at DESC
+      LIMIT $5 OFFSET $6
+      `,
+      [userId, status, search, deviceId, limit, offset],
+    );
+    return { domain: 'tracking-ingest-batches', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async activitySegments(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        s.id::text AS id,
+        s.segment_uid AS "segmentUid",
+        s.label AS title,
+        s.status,
+        s.start_at AS "startAt",
+        s.end_at AS "endAt",
+        s.duration_seconds AS "durationSeconds",
+        s.primary_app AS "primaryApp",
+        s.primary_process_name AS "primaryProcessName",
+        s.primary_window_title AS "primaryWindowTitle",
+        s.primary_file_path AS "primaryFilePath",
+        s.category,
+        s.confidence,
+        s.matched_task_id AS "matchedTaskId",
+        s.evidence,
+        s.created_at AS "createdAt",
+        s.updated_at AS "updatedAt"
+      FROM activity_segments s
+      WHERE s.user_id = $1
+        AND ($2::text IS NULL OR s.status = $2)
+        AND (
+          $3::text IS NULL
+          OR s.label ILIKE $3
+          OR COALESCE(s.primary_app, '') ILIKE $3
+          OR COALESCE(s.primary_window_title, '') ILIKE $3
+          OR COALESCE(s.category, '') ILIKE $3
+        )
+      ORDER BY s.start_at DESC
+      LIMIT $4 OFFSET $5
+      `,
+      [userId, status, search, limit, offset],
+    );
+    return { domain: 'activity-segments', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async taskWorkLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        w.id::text AS id,
+        w.work_uid AS "workUid",
+        w.task_id AS "taskId",
+        COALESCE(t.payload->>'title', t.payload->>'summary', t.payload->>'name') AS "taskTitle",
+        w.segment_id::text AS "segmentId",
+        w.actual_id::text AS "actualId",
+        w.start_at AS "startAt",
+        w.end_at AS "endAt",
+        w.duration_minutes AS "durationMinutes",
+        w.confidence,
+        w.source_type AS "sourceType",
+        w.status,
+        w.evidence,
+        w.created_at AS "createdAt",
+        w.updated_at AS "updatedAt"
+      FROM task_work_logs w
+      LEFT JOIN sync_objects t
+        ON t.user_id = w.user_id
+       AND t.deleted_at IS NULL
+       AND t.uid = w.task_id
+       AND t.object_type = ANY($6::text[])
+      WHERE w.user_id = $1
+        AND ($2::text IS NULL OR w.status = $2)
+        AND (
+          $3::text IS NULL
+          OR w.task_id ILIKE $3
+          OR w.work_uid ILIKE $3
+          OR COALESCE(t.payload->>'title', t.payload->>'summary', t.payload->>'name', '') ILIKE $3
+        )
+      ORDER BY w.start_at DESC
+      LIMIT $4 OFFSET $5
+      `,
+      [userId, status, search, limit, offset, ['task', 'tasks', 'task_item', 'task_items']],
+    );
+    return { domain: 'task-work-logs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async scheduleRuns(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        id::text AS id,
+        range_start AS "rangeStart",
+        range_end AS "rangeEnd",
+        mode,
+        strategy,
+        status,
+        COALESCE(risk_summary_json->>'modelUsed', risk_summary_json->>'generatedBy', 'rule') AS "modelUsed",
+        risk_summary_json->>'modelVersion' AS "modelVersion",
+        (output_summary_json->>'plannedCount')::int AS "plannedCount",
+        output_summary_json->'unplanned' AS unplanned,
+        input_snapshot_json AS "inputSnapshot",
+        output_summary_json AS "outputSummary",
+        risk_summary_json AS "riskSummary",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt",
+        confirmed_at AS "confirmedAt",
+        rejected_at AS "rejectedAt"
+      FROM schedule_runs
+      WHERE user_id = $1 AND ($2::text IS NULL OR status = $2)
+      ORDER BY created_at DESC
+      LIMIT $3 OFFSET $4
+      `,
+      [userId, status, limit, offset],
+    );
+    return { domain: 'schedule-runs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async scheduleDraftItems(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        i.id::text AS id,
+        i.schedule_run_id::text AS "scheduleRunId",
+        i.task_id AS "taskId",
+        i.task_title AS "taskTitle",
+        i.proposed_start AS "proposedStart",
+        i.proposed_end AS "proposedEnd",
+        i.action,
+        i.confidence,
+        i.reason_json AS reason,
+        i.risk_json AS risk,
+        i.status,
+        i.user_modified_start AS "userModifiedStart",
+        i.user_modified_end AS "userModifiedEnd",
+        i.user_reject_reason AS "rejectReason",
+        i.created_at AS "createdAt",
+        i.updated_at AS "updatedAt"
+      FROM schedule_draft_items i
+      WHERE i.user_id = $1
+        AND ($2::text IS NULL OR i.status = $2)
+        AND ($3::text IS NULL OR COALESCE(i.task_title, '') ILIKE $3 OR COALESCE(i.task_id, '') ILIKE $3)
+      ORDER BY i.created_at DESC
+      LIMIT $4 OFFSET $5
+      `,
+      [userId, status, search, limit, offset],
+    );
+    return { domain: 'schedule-draft-items', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async planDeviations(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        id::text AS id,
+        schedule_segment_id AS "scheduleSegmentId",
+        planned_task_id AS "plannedTaskId",
+        planned_start AS "plannedStart",
+        planned_end AS "plannedEnd",
+        actual_log_id::text AS "actualLogId",
+        actual_segment_id::text AS "actualSegmentId",
+        actual_title AS "actualTitle",
+        actual_start AS "actualStart",
+        actual_end AS "actualEnd",
+        deviation_type AS "deviationType",
+        severity,
+        confidence,
+        status,
+        evidence,
+        created_at AS "createdAt",
+        handled_at AS "handledAt"
+      FROM plan_deviations
       WHERE user_id = $1
-        AND ($2::text IS NULL OR result = $2)
-        AND ($3::text IS NULL OR mutation_uid ILIKE $3 OR object_type ILIKE $3 OR local_id ILIKE $3 OR error_message ILIKE $3)
+        AND ($2::text IS NULL OR status = $2)
+        AND (
+          $3::text IS NULL
+          OR COALESCE(deviation_type, '') ILIKE $3
+          OR COALESCE(actual_title, '') ILIKE $3
+          OR COALESCE(planned_task_id, '') ILIKE $3
+        )
       ORDER BY created_at DESC
       LIMIT $4 OFFSET $5
       `,
       [userId, status, search, limit, offset],
     );
-    return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+    return { domain: 'plan-deviations', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async reportEntries(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        e.id::text AS id,
+        e.report_id::text AS "reportId",
+        e.entry_type AS "entryType",
+        e.title,
+        e.body,
+        e.order_index AS "orderIndex",
+        e.payload_json AS payload,
+        e.created_at AS "createdAt"
+      FROM report_entries e
+      WHERE e.user_id = $1
+        AND ($2::text IS NULL OR e.entry_type ILIKE $2 OR e.title ILIKE $2 OR COALESCE(e.body, '') ILIKE $2)
+      ORDER BY e.created_at DESC
+      LIMIT $3 OFFSET $4
+      `,
+      [userId, search, limit, offset],
+    );
+    return { domain: 'report-entries', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async reportEvidence(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const search = this.search(query.q);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        id::text AS id,
+        report_id::text AS "reportId",
+        entry_id::text AS "entryId",
+        source_type AS "sourceType",
+        source_id AS "sourceId",
+        evidence_type AS "evidenceType",
+        summary,
+        payload_json AS payload,
+        created_at AS "createdAt"
+      FROM report_evidence_links
+      WHERE user_id = $1
+        AND (
+          $2::text IS NULL
+          OR source_type ILIKE $2
+          OR evidence_type ILIKE $2
+          OR COALESCE(summary, '') ILIKE $2
+        )
+      ORDER BY created_at DESC
+      LIMIT $3 OFFSET $4
+      `,
+      [userId, search, limit, offset],
+    );
+    return { domain: 'report-evidence', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
+  }
+
+  private async fileOperationLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const limit = this.readLimit(query.limit, 100);
+    const offset = this.readOffset(query.offset);
+    const status = this.clean(query.status);
+    const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
+    const result = await this.database.query<QueryResultRow>(
+      `
+      SELECT
+        l.id::text AS id,
+        l.operation AS action,
+        l.node_id::text AS "nodeId",
+        l.source_path AS "sourcePath",
+        l.target_path AS "targetPath",
+        l.status,
+        l.error_message AS "lastError",
+        l.metadata AS details,
+        l.device_id::text AS "deviceId",
+        d.device_name AS "deviceName",
+        l.created_at AS "createdAt"
+      FROM file_operation_logs l
+      LEFT JOIN devices d ON d.id = l.device_id
+      WHERE l.user_id = $1
+        AND ($2::text IS NULL OR l.status = $2)
+        AND (
+          $3::text IS NULL
+          OR l.operation ILIKE $3
+          OR COALESCE(l.source_path, '') ILIKE $3
+          OR COALESCE(l.target_path, '') ILIKE $3
+          OR COALESCE(l.error_message, '') ILIKE $3
+          OR COALESCE(d.device_name, '') ILIKE $3
+        )
+        AND ($4::uuid IS NULL OR l.device_id = $4::uuid)
+      ORDER BY l.created_at DESC
+      LIMIT $5 OFFSET $6
+      `,
+      [userId, status, search, deviceId, limit, offset],
+    );
+    return { domain: 'file-operation-logs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
   private async genericAdminTable(
@@ -1258,6 +1683,7 @@ export class AdminService {
     const offset = this.readOffset(query.offset);
     const status = this.clean(query.status);
     const search = this.search(query.q);
+    const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1289,14 +1715,15 @@ export class AdminService {
             to_jsonb(t)->>'permission_level'
           ) = $3
         )
+        AND ($4::text IS NULL OR to_jsonb(t)->>'device_id' = $4)
       ORDER BY COALESCE(
         (to_jsonb(t)->>'updated_at')::timestamptz,
         (to_jsonb(t)->>'created_at')::timestamptz,
         now()
       ) DESC
-      LIMIT $4 OFFSET $5
+      LIMIT $5 OFFSET $6
       `,
-      [userId, search, status, limit, offset],
+      [userId, search, status, deviceId, limit, offset],
     );
     return { domain, table, limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
@@ -1321,6 +1748,7 @@ export class AdminService {
       devices: 'devices',
       'sync-changes': 'sync_changes',
       'sync-mutations': 'sync_mutations',
+      conflicts: 'sync_conflicts',
       settings: 'admin_remote_configs',
       configs: 'admin_remote_configs',
       'activity-segments': 'activity_segments',
@@ -1548,6 +1976,11 @@ export class AdminService {
     }
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private readDeviceId(value: unknown) {
+    const cleaned = this.clean(value);
+    return cleaned && cleaned !== 'all' ? cleaned : null;
   }
 
   private search(value: string | undefined) {

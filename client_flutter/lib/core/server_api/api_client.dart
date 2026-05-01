@@ -75,6 +75,18 @@ class ApiClient {
     return _decodeObject(response);
   }
 
+  Future<Map<String, dynamic>> deleteJson(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final response = await _send(
+      'DELETE',
+      path,
+      query: query,
+    );
+    return _decodeObject(response);
+  }
+
   Future<http.Response> _send(
     String method,
     String path, {
@@ -117,6 +129,9 @@ class ApiClient {
           headers: headers,
           body: requestBody,
         );
+        break;
+      case 'DELETE':
+        response = await _httpClient.delete(uri, headers: headers);
         break;
       default:
         throw ApiError(message: 'Unsupported HTTP method: $method');

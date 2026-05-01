@@ -14,7 +14,7 @@ class ActivityUnderstandingApi {
     return _apiClient.postJson(
       '/activity-understanding/build-segments',
       body: <String, Object?>{
-        'date': date.toIso8601String(),
+        'date': _dateOnly(date),
         'includeTrackedInputEvents': includeTrackedInputEvents,
         'includeRawActivityLogs': includeRawActivityLogs,
         'includeActivityRecords': includeActivityRecords,
@@ -32,8 +32,8 @@ class ActivityUnderstandingApi {
     return _apiClient.getJson(
       '/activity-understanding/segments',
       query: <String, String>{
-        if (startAt != null) 'startAt': startAt.toIso8601String(),
-        if (endAt != null) 'endAt': endAt.toIso8601String(),
+        if (startAt != null) 'start': startAt.toIso8601String(),
+        if (endAt != null) 'end': endAt.toIso8601String(),
         if (status != null) 'status': status,
         'limit': limit.toString(),
         'offset': offset.toString(),
@@ -53,6 +53,7 @@ class ActivityUnderstandingApi {
         'title': title,
         'taskId': taskId,
         'note': note,
+        'notes': note,
       },
     );
   }
@@ -67,5 +68,29 @@ class ActivityUnderstandingApi {
         'reason': reason,
       },
     );
+  }
+
+  Future<Map<String, dynamic>> sendFeedback({
+    required String segmentId,
+    String feedbackType = 'modified',
+    String? outcome,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    return _apiClient.postJson(
+      '/activity-understanding/segments/$segmentId/feedback',
+      body: <String, Object?>{
+        'feedbackType': feedbackType,
+        if (outcome != null) 'outcome': outcome,
+        'feedbackPayload': payload,
+      },
+    );
+  }
+
+  String _dateOnly(DateTime value) {
+    final local = value.toLocal();
+    final year = local.year.toString().padLeft(4, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }

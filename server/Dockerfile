@@ -5,25 +5,31 @@ WORKDIR /app
 
 RUN corepack enable pnpm
 
-# 🌟 终极破局：坚决不用国内源！强制使用国外官方源 + 代理，绕过路由黑洞！
-RUN pnpm config set registry https://registry.npmjs.org/ && \
-    pnpm config set http-proxy http://172.17.0.1:7890 && \
+# 1. 切回淘宝源，国内下载肯定更快
+RUN pnpm config set registry https://registry.npmmirror.com/
+
+# 2. 配置代理
+RUN pnpm config set http-proxy http://172.17.0.1:7890 && \
     pnpm config set https-proxy http://172.17.0.1:7890
 
-# 保证其他底层依赖也走代理
+# 3. 🌟 终极防爆墙：限制并发数为 2，关闭严格 SSL！
+# 宁可安装慢一点，也绝不能让几百个请求把 Windows 代理瞬间冲垮！
+RUN pnpm config set network-concurrency 2 && \
+    pnpm config set strict-ssl false
+
 ENV HTTP_PROXY=http://172.17.0.1:7890
 ENV HTTPS_PROXY=http://172.17.0.1:7890
 
 COPY package.json pnpm-lock.yaml* ./
 
-# 继续保持啰嗦模式，看它起飞
+# 继续保持啰嗦模式，看它慢条斯理但稳如泰山地安装
 RUN pnpm install --reporter=ndjson --loglevel debug
 
 COPY . .
 RUN pnpm run build
 RUN pnpm prune --prod
 
-# 拔掉网线，清理环境变量
+# 拔掉网线，清理战场
 RUN pnpm config delete http-proxy && pnpm config delete https-proxy
 ENV HTTP_PROXY=""
 ENV HTTPS_PROXY=""

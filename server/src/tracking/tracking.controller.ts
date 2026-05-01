@@ -55,4 +55,12 @@ export class TrackingController {
   ) {
     return this.trackingService.summary(query, readRequestContext(headers));
   }
+
+  @Get('spool-status')
+  spoolStatus(
+    @Query() query: TrackingIngestQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.trackingService.summary(query, readRequestContext(headers));
+  }
 }

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.flowplan.flowplan"
+    namespace = "com.flowplan.flawplanv2"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.flowplan.flowplan"
+        applicationId = "com.flowplan.flawplanv2"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26

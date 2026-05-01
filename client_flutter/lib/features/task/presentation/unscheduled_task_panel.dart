@@ -21,7 +21,12 @@ class UnscheduledTaskPanel extends ConsumerWidget {
     return DragTarget<TaskItem>(
       onWillAcceptWithDetails: (details) => details.data.dtstart != null,
       onAcceptWithDetails: (details) async {
-        await ref.read(taskRepositoryProvider).clearDtstart(details.data.id);
+        final store = await ref.read(taskEventServerFirstStoreProvider.future);
+        await store.updateLocalTask(
+          localId: details.data.id,
+          patch: const <String, Object?>{'dtstart': null},
+          changedFields: const <String>['dtstart'],
+        );
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

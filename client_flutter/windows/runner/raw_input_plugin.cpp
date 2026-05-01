@@ -231,6 +231,7 @@ void RawInputPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name() == "start") {
+    SetLastErrorMessage(std::string());
     StartBackgroundThread();
     result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "stop") {
@@ -259,6 +260,11 @@ void RawInputPlugin::HandleMethodCall(
         flutter::EncodableValue(ConsumeSequenceBuffer());
     stats[flutter::EncodableValue("inputEvents")] =
         flutter::EncodableValue(ConsumeInputEvents());
+    const std::string last_error = GetLastErrorMessage();
+    if (!last_error.empty()) {
+      stats[flutter::EncodableValue("lastError")] =
+          flutter::EncodableValue(last_error);
+    }
     result->Success(flutter::EncodableValue(stats));
   } else if (method_call.method_name() == "setSequenceRecording") {
     bool enabled = false;
@@ -333,6 +339,8 @@ void RawInputPlugin::StartBackgroundThread() {
                               GetModuleHandle(nullptr), nullptr);
 
     if (!bg_hwnd_) {
+      SetLastErrorMessage("CreateWindowEx failed for RawInput sink: " +
+                          std::to_string(GetLastError()));
       running_ = false;
       return;
     }
@@ -353,7 +361,12 @@ void RawInputPlugin::StartBackgroundThread() {
     rid[1].dwFlags = RIDEV_INPUTSINK;
     rid[1].hwndTarget = bg_hwnd_;
 
-    RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE));
+    if (!RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE))) {
+      SetLastErrorMessage("RegisterRawInputDevices failed: " +
+                          std::to_string(GetLastError()));
+    } else {
+      SetLastErrorMessage(std::string());
+    }
 
     MSG msg;
     while (running_ && GetMessage(&msg, nullptr, 0, 0)) {
@@ -377,7 +390,7 @@ void RawInputPlugin::StopBackgroundThread() {
   running_ = false;
 
   if (bg_hwnd_) {
-    PostMessage(bg_hwnd_, WM_QUIT, 0, 0);
+    PostMessage(bg_hwnd_, WM_CLOSE, 0, 0);
   }
   if (bg_thread_.joinable()) {
     bg_thread_.join();
@@ -485,6 +498,16 @@ InputWindowContext RawInputPlugin::CaptureForegroundWindowContext() const {
 
   CloseHandle(process);
   return context;
+}
+
+void RawInputPlugin::SetLastErrorMessage(const std::string& message) {
+  std::lock_guard<std::mutex> lock(last_error_mutex_);
+  last_error_ = message;
+}
+
+std::string RawInputPlugin::GetLastErrorMessage() const {
+  std::lock_guard<std::mutex> lock(last_error_mutex_);
+  return last_error_;
 }
 
 std::string RawInputPlugin::WideToUtf8(const std::wstring& value) {

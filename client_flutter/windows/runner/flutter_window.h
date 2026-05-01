@@ -50,6 +50,7 @@ class FlutterWindow : public Win32Window {
   bool start_hidden_to_tray_ = false;
   bool exit_requested_ = false;
   bool tray_icon_added_ = false;
+  HWND tray_icon_hwnd_ = nullptr;
   bool tray_retry_scheduled_ = false;
   bool startup_tray_sync_scheduled_ = false;
   int startup_tray_sync_remaining_ = 0;

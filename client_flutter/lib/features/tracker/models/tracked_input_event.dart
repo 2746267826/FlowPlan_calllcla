@@ -239,6 +239,10 @@ String inputMouseButtonLabel(String button) {
       return '\u6a2a\u6eda\u5de6';
     case 'wheel_right':
       return '\u6a2a\u6eda\u53f3';
+    case 'move':
+      return '\u79fb\u52a8';
+    case 'button':
+      return '\u6309\u94ae';
     default:
       return button;
   }

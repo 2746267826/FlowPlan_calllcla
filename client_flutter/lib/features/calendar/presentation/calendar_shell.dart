@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -828,38 +827,34 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
           taskListId,
           fallbackReminderMinutes: ref.read(reminderMinutesProvider),
         );
-        await ref.read(taskRepositoryProvider).create(
-              TaskItemsCompanion.insert(
-                uid: const Uuid().v4(),
-                dtstamp: DateTime.now(),
-                summary: title,
-                durationMinutes: Value(_taskDuration),
-                priorityLocal: Value(_taskPriority),
-                isAutoScheduled:
-                    Value(taskListDefaults.defaultIsAutoScheduled),
-                taskListId: Value(taskListId),
-                reminderMinutesBefore: Value(
-                  taskListDefaults.defaultReminderMinutesBefore,
-                ),
-              ),
-            );
+        final store = await ref.read(taskEventServerFirstStoreProvider.future);
+        await store.createTask(<String, Object?>{
+          'uid': const Uuid().v4(),
+          'summary': title,
+          'title': title,
+          'durationMinutes': _taskDuration,
+          'priorityLocal': _taskPriority,
+          'isAutoScheduled': taskListDefaults.defaultIsAutoScheduled,
+          'taskListId': taskListId,
+          'reminderMinutesBefore':
+              taskListDefaults.defaultReminderMinutesBefore,
+        });
       } else {
         final booksRepo = ref.read(calendarBooksRepositoryProvider);
         final eventCalendarId =
             await booksRepo.getOrCreateWritableEventCalendarId();
         final eventCalendarDefaults =
             await booksRepo.getEventCalendarDefaults(eventCalendarId);
-        await ref.read(eventRepositoryProvider).create(
-              CalendarEventsCompanion.insert(
-                uid: const Uuid().v4(),
-                dtstamp: DateTime.now(),
-                summary: title,
-                dtstart: _eventStart,
-                dtend: Value(_eventEnd),
-                isBlock: Value(eventCalendarDefaults.defaultIsBlock),
-                eventCalendarId: Value(eventCalendarId),
-              ),
-            );
+        final store = await ref.read(taskEventServerFirstStoreProvider.future);
+        await store.createEvent(<String, Object?>{
+          'uid': const Uuid().v4(),
+          'summary': title,
+          'title': title,
+          'startAt': _eventStart.toIso8601String(),
+          'endAt': _eventEnd.toIso8601String(),
+          'isBlock': eventCalendarDefaults.defaultIsBlock,
+          'eventCalendarId': eventCalendarId,
+        });
         ref.read(selectedDateProvider.notifier).setDate(_eventStart);
       }
       if (!mounted) return;

@@ -389,23 +389,16 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
 
     setState(() => _working = true);
     try {
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
       for (final key in selected) {
         final parsed = _parseKey(key);
         if (parsed == null) {
           continue;
         }
         if (parsed.type == 'event') {
-          await ref.read(eventRepositoryProvider).delete(
-                parsed.id,
-                action: 'management_delete',
-                summary: '在全部数据管理中删除日程 #${parsed.id}',
-              );
+          await store.deleteLocalEvent(localId: parsed.id);
         } else {
-          await ref.read(taskRepositoryProvider).delete(
-                parsed.id,
-                action: 'management_delete',
-                summary: '在全部数据管理中删除任务 #${parsed.id}',
-              );
+          await store.deleteLocalTask(localId: parsed.id);
         }
       }
       if (!mounted) {
@@ -442,12 +435,9 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
 
     setState(() => _working = true);
     try {
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
       for (final id in taskIds) {
-        await ref.read(taskRepositoryProvider).markCompleted(
-              id,
-              action: 'management_mark_completed',
-              summary: '在全部数据管理中完成任务 #$id',
-            );
+        await store.completeLocalTask(localId: id);
       }
       if (!mounted) {
         return;

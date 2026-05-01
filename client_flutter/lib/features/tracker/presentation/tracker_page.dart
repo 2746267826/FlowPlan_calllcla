@@ -44,6 +44,53 @@ class TrackerPage extends ConsumerStatefulWidget {
     ref.read(trackerHistorySelectedHeatmapBucketProvider.notifier).state = null;
   }
 
+  void _clearHeatmapAnalysisBucket(WidgetRef ref) {
+    ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier).state = null;
+  }
+
+  void _clearHeatmapSelections(WidgetRef ref) {
+    _clearHeatmapBucketFilter(ref);
+    _clearHeatmapAnalysisBucket(ref);
+  }
+
+  void _toggleHeatmapAnalysisBucket(
+    WidgetRef ref,
+    ActivityHeatmapBucket bucket,
+  ) {
+    final notifier =
+        ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier);
+    final current = ref.read(trackerHistorySelectedAnalysisBucketProvider);
+    notifier.state = _isSameBucket(current, bucket) ? null : bucket;
+  }
+
+  void _handleHeatmapBucketDrillDown(
+    WidgetRef ref,
+    ActivityHeatmapScale scale,
+    ActivityHeatmapBucket bucket,
+  ) {
+    final dateNotifier = ref.read(selectedDateProvider.notifier);
+    final scaleNotifier =
+        ref.read(activityHeatmapScaleOverrideProvider.notifier);
+    _clearHeatmapSelections(ref);
+
+    switch (scale) {
+      case ActivityHeatmapScale.hour:
+        return;
+      case ActivityHeatmapScale.day:
+        dateNotifier.setDate(bucket.start);
+        scaleNotifier.state = ActivityHeatmapScale.hour;
+        return;
+      case ActivityHeatmapScale.month:
+        dateNotifier.setDate(bucket.start);
+        scaleNotifier.state = ActivityHeatmapScale.day;
+        return;
+      case ActivityHeatmapScale.year:
+        dateNotifier.setDate(bucket.start);
+        scaleNotifier.state = ActivityHeatmapScale.month;
+        return;
+    }
+  }
+
   void _toggleHistoryProcessFilter(WidgetRef ref, String processName) {
     final notifier = ref.read(trackerHistorySelectedProcessProvider.notifier);
     final current = ref.read(trackerHistorySelectedProcessProvider);
@@ -278,40 +325,15 @@ class TrackerPage extends ConsumerStatefulWidget {
       return;
     }
 
-    try {
-      await ref
-          .read(activityRecordRepositoryProvider)
-          .linkTasks(recordIds, nextTaskId);
-      ref.invalidate(activityRecordsForDateProvider);
-      ref.invalidate(trackerRangeAnalysisRecordsProvider);
-      ref.invalidate(trackerRangeAnalysisProvider);
-
-      if (!context.mounted) {
-        return;
-      }
-
-      final linkedTaskLabel = nextTaskId == null
-          ? null
-          : _taskLabel(taskById[nextTaskId], fallbackId: nextTaskId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            nextTaskId == null
-                ? '已取消 ${recordIds.length} 条活动记录的任务关联'
-                : '已将 ${recordIds.length} 条活动记录关联到任务「$linkedTaskLabel」',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('更新任务关联失败：$error'),
-        ),
-      );
+    if (!context.mounted) {
+      return;
     }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('任务关联已迁移到服务端活动理解，请在“活动理解与确认”页修正并确认片段。'),
+      ),
+    );
+    context.push(AppRoutes.activityReview);
   }
 
   Future<void> _exportDatabase(BuildContext context, WidgetRef ref) async {
@@ -448,17 +470,12 @@ class TrackerPage extends ConsumerStatefulWidget {
         return;
       }
 
-      final service = ref.read(inputActivityEventServiceProvider);
-      await service.exportEventsToJsonl(outputPath);
-
       if (!context.mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '\u952e\u9f20\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\uff1a$outputPath',
-          ),
+        const SnackBar(
+          content: Text('完整键鼠记录导出已迁移为服务端诊断包流程，本地导出不再作为追踪主路径。'),
         ),
       );
     } catch (error) {
@@ -613,13 +630,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         await ref.read(trackerServiceNotifierProvider.notifier).refreshNow();
       }
 
-      final activityRecordRepository =
-          ref.read(activityRecordRepositoryProvider);
       final supportsInputAnalytics =
           TrackerPlatformSource.current().supportsInputAnalytics;
-      final inputActivityEventService = supportsInputAnalytics
-          ? ref.read(inputActivityEventServiceProvider)
-          : null;
       final dayStart = DateTime(
         selectedDate.year,
         selectedDate.month,
@@ -637,16 +649,16 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         trackerState: trackerState,
       );
 
-      final dayRecordsFuture = AsyncValue.guard(
+      final daySummaryFuture = AsyncValue.guard(
         () => _withLoadTimeout(
-          activityRecordRepository.listInRange(dayStart, dayEnd),
-          '今日活动记录',
+          ref.read(activityDaySummaryProvider.future),
+          '今日服务端追踪摘要',
         ),
       );
       final inputBehaviorFuture = supportsInputAnalytics
-          ? AsyncValue.guard(
-              () => _withLoadTimeout(
-                inputActivityEventService!.buildHeatmapSummary(inputQuery),
+            ? AsyncValue.guard(
+                () => _withLoadTimeout(
+                ref.read(inputHeatmapSummaryProvider(inputQuery).future),
                 '输入行为分析',
               ),
             )
@@ -657,17 +669,21 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             );
       await Future.wait<void>([
         () async {
-          final dayRecordsAsync = await dayRecordsFuture;
-          final records = dayRecordsAsync.valueOrNull ?? const <ActivityRecord>[];
+          final daySummaryAsync = await daySummaryFuture;
+          final records = daySummaryAsync.hasValue
+              ? activityRecordsFromServerPreview(daySummaryAsync.value!)
+              : const <ActivityRecord>[];
           _updateSnapshotPart(
             requestId: requestId,
             key: key,
-            dayRecordsAsync: dayRecordsAsync,
-            insights: dayRecordsAsync.hasValue
-                ? ActivityInsights.fromRecords(records)
+            dayRecordsAsync: daySummaryAsync.whenData(
+              (_) => records,
+            ),
+            insights: daySummaryAsync.hasValue
+                ? activityInsightsFromServer(daySummaryAsync.value!)
                 : ActivityInsights.empty(),
-            workSessions: dayRecordsAsync.hasValue
-                ? WorkSessionGrouper.fromRecords(records)
+            workSessions: daySummaryAsync.hasValue
+                ? workSessionsFromServer(daySummaryAsync.value!)
                 : const <WorkSession>[],
           );
         }(),
@@ -704,6 +720,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         ref.watch(trackerHistorySelectedAnalysisBucketProvider);
     final heatmapScaleOverride = ref.watch(activityHeatmapScaleOverrideProvider);
     final heatmapSeriesAsync = ref.watch(activityHeatmapSeriesProvider);
+    final AsyncValue<TrackerRangeAnalysisSnapshot?>? rangeAnalysisAsync =
+        selectedAnalysisBucket == null
+            ? null
+            : ref.watch(trackerRangeAnalysisProvider);
     final isTrackingRunning = ref.watch(
       trackerServiceNotifierProvider.select((state) => state.isRunning),
     );
@@ -896,6 +916,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                   activeFilterBucket: selectedHeatmapBucket,
                   activeAnalysisBucket: selectedAnalysisBucket,
                   onScaleChanged: (scale) {
+                    widget._clearHeatmapSelections(ref);
                     ref
                         .read(activityHeatmapScaleOverrideProvider.notifier)
                         .state = scale;
@@ -906,27 +927,57 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                         .state = bucket;
                   },
                   onAnalyzeBucket: (bucket) {
-                    ref
-                        .read(trackerHistorySelectedAnalysisBucketProvider.notifier)
-                        .state = bucket;
+                    widget._toggleHeatmapAnalysisBucket(ref, bucket);
                   },
                   onDrillDownBucket: (bucket) {
-                    ref
-                        .read(trackerHistorySelectedAnalysisBucketProvider.notifier)
-                        .state = bucket;
-                    context.push(AppRoutes.trackerDayDetails);
+                    widget._handleHeatmapBucketDrillDown(
+                      ref,
+                      series.scale,
+                      bucket,
+                    );
                   },
                   onClearBucketFilter: () {
                     widget._clearHeatmapBucketFilter(ref);
                   },
                   onClearAnalysisBucket: () {
-                    ref
-                        .read(trackerHistorySelectedAnalysisBucketProvider.notifier)
-                        .state = null;
+                    widget._clearHeatmapAnalysisBucket(ref);
                   },
                 ),
               ),
             ),
+            if (selectedAnalysisBucket != null) ...[
+              const SizedBox(height: 16),
+              rangeAnalysisAsync!.when(
+                loading: () => _card(
+                  context,
+                  const SizedBox(
+                    height: 180,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+                error: (error, _) => _card(
+                  context,
+                  SizedBox(
+                    height: 160,
+                    child: Center(
+                      child: Text('加载服务端区间分析失败：$error'),
+                    ),
+                  ),
+                ),
+                data: (snapshot) {
+                  if (snapshot == null) {
+                    return const SizedBox.shrink();
+                  }
+                  return _card(
+                    context,
+                    _SelectedRangeAnalysisPanel(
+                      snapshot: snapshot,
+                      onClose: () => widget._clearHeatmapAnalysisBucket(ref),
+                    ),
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: 12),
             Container(
               width: double.infinity,

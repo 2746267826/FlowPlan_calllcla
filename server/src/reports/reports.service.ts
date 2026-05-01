@@ -19,6 +19,7 @@ type ReportSnapshot = Record<string, unknown> & {
   actuals?: unknown[];
   taskWork?: unknown[];
   activitySegments?: unknown[];
+  deviations?: unknown[];
   tasks?: unknown[];
   schedules?: unknown[];
   files?: unknown[];
@@ -968,7 +969,7 @@ export class ReportsService {
   }
 
   private async sourceSnapshot(userId: string, start: Date, end: Date): Promise<ReportSnapshot> {
-    const [actuals, workLogs, segments, tasks, schedules, files, weather] = await Promise.all([
+    const [actuals, workLogs, segments, deviations, tasks, schedules, files, weather] = await Promise.all([
       this.database.query<QueryResultRow>(
         'SELECT id::text AS id, title, start_at AS "startAt", end_at AS "endAt", status, source_type AS "sourceType" FROM actual_activity_logs WHERE user_id = $1 AND start_at >= $2 AND start_at < $3 ORDER BY start_at',
         [userId, start, end],
@@ -979,6 +980,35 @@ export class ReportsService {
       ),
       this.database.query<QueryResultRow>(
         'SELECT id::text AS id, label AS title, start_at AS "startAt", end_at AS "endAt", confidence, status FROM activity_segments WHERE user_id = $1 AND start_at >= $2 AND start_at < $3 ORDER BY start_at',
+        [userId, start, end],
+      ),
+      this.database.query<QueryResultRow>(
+        `
+        SELECT
+          id::text AS id,
+          deviation_type AS "deviationType",
+          severity,
+          confidence,
+          status,
+          planned_task_id AS "plannedTaskId",
+          planned_start AS "plannedStart",
+          planned_end AS "plannedEnd",
+          actual_title AS "actualTitle",
+          actual_start AS "actualStart",
+          actual_end AS "actualEnd",
+          evidence,
+          created_at AS "createdAt"
+        FROM plan_deviations
+        WHERE user_id = $1
+          AND status = 'detected'
+          AND (
+            (planned_start IS NOT NULL AND planned_start >= $2 AND planned_start < $3)
+            OR (actual_start IS NOT NULL AND actual_start >= $2 AND actual_start < $3)
+            OR (created_at >= $2 AND created_at < $3)
+          )
+        ORDER BY created_at DESC
+        LIMIT 50
+        `,
         [userId, start, end],
       ),
       this.database.query<QueryResultRow>(
@@ -1009,6 +1039,7 @@ export class ReportsService {
       actuals: actuals.rows,
       taskWork: workLogs.rows,
       activitySegments: segments.rows,
+      deviations: deviations.rows,
       tasks: tasks.rows.map((row) => ({ id: row.uid ?? row.id, payload: row.payload })),
       schedules: schedules.rows.map((row) => ({ id: row.uid ?? row.id, payload: row.payload })),
       files: files.rows,
@@ -1026,7 +1057,10 @@ export class ReportsService {
     const templateType = `${type}_report`;
     const template =
       (await this.defaultTemplate(userId, templateType)) ?? this.builtInTemplate(templateType);
-    return this.renderTemplate(template, variables);
+    const rendered = this.renderTemplate(template, variables);
+    return template.includes('{{plan_deviations}}') || rendered.includes('计划偏差')
+      ? rendered
+      : `${rendered}\n\n## 计划偏差\n${variables.plan_deviations}`;
   }
 
   private async renderDiary(userId: string, start: Date, snapshot: ReportSnapshot) {
@@ -1045,6 +1079,7 @@ export class ReportsService {
     const actuals = this.asArray(snapshot.actuals);
     const taskWork = this.asArray(snapshot.taskWork);
     const segments = this.asArray(snapshot.activitySegments);
+    const deviations = this.asArray(snapshot.deviations);
     const files = this.asArray(snapshot.files);
     const weather = this.asRecord(snapshot.weather);
 
@@ -1113,6 +1148,24 @@ export class ReportsService {
         sourceId: this.clean(record.id),
         evidenceType: 'inferred',
         summary: String(record.title ?? '活动片段候选'),
+        payload: record,
+      });
+    }
+
+    for (const item of deviations.slice(0, 8)) {
+      const record = this.asRecord(item);
+      const entryId = await this.insertReportEntry(client, userId, reportId, {
+        type: 'inferred',
+        title: `计划偏差 ${record.deviationType ?? 'detected'}`,
+        body: String(record.actualTitle ?? record.plannedTaskId ?? '检测到计划与实际不一致，需要人工复核。'),
+        orderIndex: index++,
+        payload: record,
+      });
+      await this.insertEvidence(client, userId, reportId, entryId, {
+        sourceType: 'plan_deviation',
+        sourceId: this.clean(record.id),
+        evidenceType: 'inferred',
+        summary: String(record.deviationType ?? 'plan deviation'),
         payload: record,
       });
     }
@@ -1251,6 +1304,7 @@ export class ReportsService {
     const actuals = this.asArray(snapshot.actuals);
     const taskWork = this.asArray(snapshot.taskWork);
     const segments = this.asArray(snapshot.activitySegments);
+    const deviations = this.asArray(snapshot.deviations);
     const schedules = this.asArray(snapshot.schedules);
     const tasks = this.asArray(snapshot.tasks);
     const files = this.asArray(snapshot.files);
@@ -1278,6 +1332,16 @@ export class ReportsService {
               .map((item) => {
                 const record = this.asRecord(item);
                 return `- ${record.title ?? '活动片段'}（状态：${record.status ?? 'candidate'}，置信度：${Math.round(Number(record.confidence ?? 0) * 100)}%）`;
+              })
+              .join('\n'),
+      plan_deviations:
+        deviations.length === 0
+          ? '- 暂无计划偏差。'
+          : deviations
+              .slice(0, 12)
+              .map((item) => {
+                const record = this.asRecord(item);
+                return `- ${record.deviationType ?? 'deviation'}：${record.actualTitle ?? record.plannedTaskId ?? '需要复核'}`;
               })
               .join('\n'),
       recent_files:
@@ -1323,6 +1387,9 @@ export class ReportsService {
         '',
         '## 待确认活动片段',
         '{{activity_segments}}',
+        '',
+        '## 计划偏差',
+        '{{plan_deviations}}',
         '',
         '## 文件上下文',
         '{{recent_files}}',
@@ -1537,6 +1604,7 @@ export class ReportsService {
       actualCount: this.asArray(snapshot.actuals).length,
       taskWorkCount: this.asArray(snapshot.taskWork).length,
       segmentCount: this.asArray(snapshot.activitySegments).length,
+      deviationCount: this.asArray(snapshot.deviations).length,
       fileContextCount: this.asArray(snapshot.files).length,
       hasWeather: Boolean(snapshot.weather),
     };

@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/storage/app_storage.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../models/input_event_query.dart';
 import '../models/input_heatmap_summary.dart';
@@ -450,44 +448,15 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     await _reloadSummary();
   }
 
-  Future<void> _exportCurrentFilter(InputEventQuery query) async {
-    try {
-      final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '\u5bfc\u51fa\u5f53\u524d\u7b5b\u9009\u952e\u9f20\u8bb0\u5f55',
-        fileName: _buildExportFileName(query),
-        type: FileType.custom,
-        allowedExtensions: const ['jsonl'],
-      );
-      if (!mounted || outputPath == null || outputPath.trim().isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('\u5df2\u53d6\u6d88\u5bfc\u51fa\u952e\u9f20\u8bb0\u5f55')),
-          );
-        }
-        return;
-      }
-      final service = ref.read(inputActivityEventServiceProvider);
-      await service.exportEventsToJsonl(
-        outputPath,
-        start: query.start,
-        end: query.end,
-        processName: query.processName,
-        includeIgnored: false,
-      );
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('\u952e\u9f20\u8bb0\u5f55\u5df2\u5bfc\u51fa\u5230\uff1a$outputPath')),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('\u5bfc\u51fa\u952e\u9f20\u8bb0\u5f55\u5931\u8d25\uff1a$error')),
-      );
+  Future<void> _exportCurrentFilter(InputEventQuery _) async {
+    if (!mounted) {
+      return;
     }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('当前筛选导出已迁移到服务端诊断包流程，本页只展示服务端汇总数据。'),
+      ),
+    );
   }
 
   InputEventQuery _buildQuery({required String? processName}) {
@@ -547,18 +516,6 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     final processLabel =
         query.processName == null ? '\u5168\u90e8\u5e94\u7528' : query.processName!;
     return '$timeLabel \u00b7 $processLabel';
-  }
-
-  String _buildExportFileName(InputEventQuery query) {
-    final dayLabel = query.start == null
-        ? 'all'
-        : _formatDate(query.start!).replaceAll('-', '');
-    final processLabel = query.processName == null
-        ? 'all-apps'
-        : query.processName!
-            .replaceAll(RegExp(r'[^a-zA-Z0-9\-_]+'), '_')
-            .toLowerCase();
-    return 'flowplan-$appStorageFlavorLabel-input-events-$dayLabel-$processLabel.jsonl';
   }
 
   static DateTime _startOfDay(DateTime date) =>

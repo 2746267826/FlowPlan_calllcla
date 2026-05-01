@@ -311,6 +311,24 @@ class _CurrentSessionPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
+        if (state.lastError != null && state.lastError!.trim().isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '追踪诊断：${state.lastError}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (snapshot == null)
           _emptyState(
             icon: Icons.radar_outlined,

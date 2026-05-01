@@ -17,6 +17,47 @@ export class AnalyticsController {
     );
   }
 
+  @Get('tracker-home')
+  trackerHome(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.trackerHome(query, readRequestContext(headers));
+  }
+
+  @Get('activity-day-summary')
+  activityDaySummary(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.activityDaySummary(
+      query,
+      readRequestContext(headers),
+    );
+  }
+
+  @Get('range-analysis')
+  rangeAnalysis(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.rangeAnalysis(
+      query,
+      readRequestContext(headers),
+    );
+  }
+
+  @Get('filter-options')
+  filterOptions(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.filterOptions(
+      query,
+      readRequestContext(headers),
+    );
+  }
+
   @Get('input-heatmap')
   inputHeatmap(
     @Query() query: AnalyticsQuery,

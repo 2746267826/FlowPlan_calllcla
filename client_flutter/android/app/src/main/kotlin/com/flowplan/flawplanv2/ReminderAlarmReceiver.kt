@@ -1,4 +1,4 @@
-package com.flowplan.flowplan
+package com.flowplan.flawplanv2
 
 import android.app.Notification
 import android.app.NotificationChannel

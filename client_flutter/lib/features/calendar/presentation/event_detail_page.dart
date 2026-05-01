@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -455,45 +454,34 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
     setState(() => _saving = true);
 
-    final repo = ref.read(eventRepositoryProvider);
-    final now = DateTime.now();
     final title = _titleController.text.trim();
     final description = _descController.text.trim();
     final location = _locationController.text.trim();
+    final payload = <String, Object?>{
+      'uid': widget.eventId == null ? const Uuid().v4() : null,
+      'summary': title,
+      'title': title,
+      'description': description.isEmpty ? null : description,
+      'location': location.isEmpty ? null : location,
+      'startAt': _dtstart.toIso8601String(),
+      'endAt': _dtend.toIso8601String(),
+      'rrule': _rrule,
+      'status': _status,
+      'colorHex': _colorHex,
+      'isBlock': _isBlock,
+      'eventCalendarId': _eventCalendarId,
+    };
 
     try {
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
+      late final result;
       if (widget.eventId == null) {
-        await repo.create(
-          CalendarEventsCompanion.insert(
-            uid: const Uuid().v4(),
-            dtstamp: now,
-            summary: title,
-            description: Value(description.isEmpty ? null : description),
-            location: Value(location.isEmpty ? null : location),
-            dtstart: _dtstart,
-            dtend: Value(_dtend),
-            rrule: Value(_rrule),
-            status: Value(_status),
-            colorHex: Value(_colorHex),
-            isBlock: Value(_isBlock),
-            eventCalendarId: Value(_eventCalendarId),
-          ),
-        );
+        result = await store.createEvent(payload);
       } else {
-        await repo.update(
-          CalendarEventsCompanion(
-            id: Value(widget.eventId!),
-            summary: Value(title),
-            description: Value(description.isEmpty ? null : description),
-            location: Value(location.isEmpty ? null : location),
-            dtstart: Value(_dtstart),
-            dtend: Value(_dtend),
-            rrule: Value(_rrule),
-            status: Value(_status),
-            colorHex: Value(_colorHex),
-            isBlock: Value(_isBlock),
-            eventCalendarId: Value(_eventCalendarId),
-          ),
+        result = await store.updateLocalEvent(
+          localId: widget.eventId!,
+          patch: payload,
+          changedFields: payload.keys.toList(growable: false),
         );
       }
 
@@ -503,7 +491,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       ref.read(selectedDateProvider.notifier).setDate(_dtstart);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('\u65e5\u7a0b\u300c$title\u300d\u5df2\u4fdd\u5b58'),
+          content: Text(
+            result.isPending
+                ? '\u65e5\u7a0b\u300c$title\u300d\u5df2\u4fdd\u5b58\u5230\u672c\u673a\uff0c\u7b49\u5f85\u540c\u6b65'
+                : '\u65e5\u7a0b\u300c$title\u300d\u5df2\u540c\u6b65\u4fdd\u5b58',
+          ),
         ),
       );
       _close(context);
@@ -565,13 +557,18 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     setState(() => _saving = true);
 
     try {
-      await ref.read(eventRepositoryProvider).delete(widget.eventId!);
+      final store = await ref.read(taskEventServerFirstStoreProvider.future);
+      final result = await store.deleteLocalEvent(localId: widget.eventId!);
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('\u65e5\u7a0b\u5df2\u5220\u9664'),
+        SnackBar(
+          content: Text(
+            result.isPending
+                ? '\u5220\u9664\u5df2\u8fdb\u5165\u5f85\u540c\u6b65'
+                : '\u65e5\u7a0b\u5df2\u540c\u6b65\u5220\u9664',
+          ),
         ),
       );
       _close(context);
