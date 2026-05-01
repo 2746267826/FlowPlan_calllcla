@@ -26,11 +26,11 @@ AppStorageFlavor get currentAppStorageFlavor {
 String get appStorageDirectoryName {
   switch (currentAppStorageFlavor) {
     case AppStorageFlavor.release:
-      return 'flowplan';
+      return 'flowplanV2';
     case AppStorageFlavor.profile:
-      return 'flowplan_profile';
+      return 'flowplanV2_profile';
     case AppStorageFlavor.debug:
-      return 'flowplan_debug';
+      return 'flowplanV2_debug';
   }
 }
 
