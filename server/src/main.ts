@@ -18,7 +18,7 @@ async function bootstrap() {
   });
   app.setGlobalPrefix('api');
   const port = Number(process.env.PORT ?? 3200);
-  const host = process.env.HOST ?? '127.0.0.1';
+  const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
   console.log(`FlowPlan server listening on http://${host}:${port}/api`);
 }
