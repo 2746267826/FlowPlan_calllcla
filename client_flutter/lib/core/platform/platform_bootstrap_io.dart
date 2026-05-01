@@ -44,8 +44,8 @@ Future<PlatformStartup> preparePlatformStartup() async {
   );
 }
 
-class FlowPlanPlatformBootstrapper extends ConsumerWidget {
-  const FlowPlanPlatformBootstrapper({super.key});
+class FlowPlanV2PlatformBootstrapper extends ConsumerWidget {
+  const FlowPlanV2PlatformBootstrapper({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -75,6 +75,6 @@ class FlowPlanPlatformBootstrapper extends ConsumerWidget {
       );
     });
 
-    return const FlowPlanApp();
+    return const FlowPlanV2App();
   }
 }

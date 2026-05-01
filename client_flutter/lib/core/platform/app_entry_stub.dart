@@ -1,3 +1,3 @@
-Future<void> runFlowPlanEntry() async {
-  throw UnsupportedError('FlowPlan does not support this platform yet.');
+Future<void> runFlowPlanV2Entry() async {
+  throw UnsupportedError('FlowPlanV2 does not support this platform yet.');
 }

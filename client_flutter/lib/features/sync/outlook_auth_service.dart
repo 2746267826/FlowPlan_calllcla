@@ -56,9 +56,9 @@ extension OutlookSyncModeX on OutlookSyncMode {
       case OutlookSyncMode.paused:
         return '\u4fdd\u7559 Outlook \u8d26\u53f7\u8fde\u63a5\u548c\u6620\u5c04\u5173\u7cfb\uff0c\u4f46\u6682\u65f6\u505c\u6b62\u62c9\u53d6\u548c\u63a8\u9001\u540c\u6b65\u3002';
       case OutlookSyncMode.readOnly:
-        return '\u53ea\u4ece Outlook \u8bfb\u53d6\u65e5\u5386\u6570\u636e\u5230 FlowPlan\uff0c\u4e0d\u4f1a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u53d8\u66f4\u3002';
+        return '\u53ea\u4ece Outlook \u8bfb\u53d6\u65e5\u5386\u6570\u636e\u5230 FlowPlanV2\uff0c\u4e0d\u4f1a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u53d8\u66f4\u3002';
       case OutlookSyncMode.bidirectional:
-        return '\u5141\u8bb8 FlowPlan \u4e0e Outlook \u53cc\u5411\u540c\u6b65\uff0c\u4f46\u5199\u5165\u4ecd\u53ea\u9650 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002';
+        return '\u5141\u8bb8 FlowPlanV2 \u4e0e Outlook \u53cc\u5411\u540c\u6b65\uff0c\u4f46\u5199\u5165\u4ecd\u53ea\u9650 FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002';
     }
   }
 
@@ -83,9 +83,9 @@ extension OutlookSyncModeX on OutlookSyncMode {
       case OutlookSyncMode.paused:
         return '\u5f53\u524d\u4fdd\u6301 Outlook \u8fde\u63a5\uff0c\u4f46\u4e0d\u4f1a\u81ea\u52a8\u8bfb\u5199\u4efb\u4f55 Outlook \u6570\u636e\u3002';
       case OutlookSyncMode.readOnly:
-        return '\u5f53\u524d\u53ea\u4f1a\u8bfb\u53d6 Outlook \u65e5\u5386\u5230 FlowPlan\uff0c\u4e0d\u4f1a\u5199\u56de Outlook\u3002';
+        return '\u5f53\u524d\u53ea\u4f1a\u8bfb\u53d6 Outlook \u65e5\u5386\u5230 FlowPlanV2\uff0c\u4e0d\u4f1a\u5199\u56de Outlook\u3002';
       case OutlookSyncMode.bidirectional:
-        return '\u5f53\u524d\u5141\u8bb8 FlowPlan \u5728\u4eba\u5de5\u786e\u8ba4\u548c\u53d7\u63a7\u5bb9\u5668\u8303\u56f4\u5185\u4e0e Outlook \u53cc\u5411\u540c\u6b65\u3002';
+        return '\u5f53\u524d\u5141\u8bb8 FlowPlanV2 \u5728\u4eba\u5de5\u786e\u8ba4\u548c\u53d7\u63a7\u5bb9\u5668\u8303\u56f4\u5185\u4e0e Outlook \u53cc\u5411\u540c\u6b65\u3002';
     }
   }
 }
@@ -773,7 +773,7 @@ class OutlookAuthService {
           code: errorCode,
           statusCode: response.statusCode,
           userMessage:
-              'Microsoft \u8fd4\u56de AADSTS50020\u3002\u5f53\u524d\u767b\u5f55\u4ecd\u50cf\u662f\u5728\u4f7f\u7528\u5b66\u6821\u6216\u7ec4\u7ec7\u79df\u6237\u3002\u8bf7\u786e\u8ba4 FlowPlan \u4f7f\u7528\u7684\u662f consumers \u6388\u6743\u5730\u5740\uff0c\u800c\u4e0d\u662f\u5b66\u6821\u79df\u6237\u3001organizations \u6216\u5177\u4f53 tenant ID\u3002',
+              'Microsoft \u8fd4\u56de AADSTS50020\u3002\u5f53\u524d\u767b\u5f55\u4ecd\u50cf\u662f\u5728\u4f7f\u7528\u5b66\u6821\u6216\u7ec4\u7ec7\u79df\u6237\u3002\u8bf7\u786e\u8ba4 FlowPlanV2 \u4f7f\u7528\u7684\u662f consumers \u6388\u6743\u5730\u5740\uff0c\u800c\u4e0d\u662f\u5b66\u6821\u79df\u6237\u3001organizations \u6216\u5177\u4f53 tenant ID\u3002',
           debugMessage: errorDescription,
         );
       }

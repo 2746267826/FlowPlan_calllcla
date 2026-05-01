@@ -6,12 +6,12 @@ enum AppStorageFlavor {
   release,
 }
 
-const appDatabaseFileName = 'flowplan.db';
-const appPendingDatabaseRestoreFileName = 'flowplan.restore.pending.db';
+const appDatabaseFileName = 'flowplanv2.db';
+const appPendingDatabaseRestoreFileName = 'flowplanv2.restore.pending.db';
 const appPendingDatabaseRestoreMetadataFileName =
-    'flowplan.restore.pending.json';
-const appDatabaseRestoreNoticeFileName = 'flowplan.restore.notice.json';
-const appDatabasePreRestoreBackupFileName = 'flowplan.before_restore.db';
+    'flowplanv2.restore.pending.json';
+const appDatabaseRestoreNoticeFileName = 'flowplanv2.restore.notice.json';
+const appDatabasePreRestoreBackupFileName = 'flowplanv2.before_restore.db';
 
 AppStorageFlavor get currentAppStorageFlavor {
   if (kReleaseMode) {
@@ -26,22 +26,22 @@ AppStorageFlavor get currentAppStorageFlavor {
 String get appStorageDirectoryName {
   switch (currentAppStorageFlavor) {
     case AppStorageFlavor.release:
-      return 'flowplanV2';
+      return 'FlowPlanV2';
     case AppStorageFlavor.profile:
-      return 'flowplanV2_profile';
+      return 'FlowPlanV2_profile';
     case AppStorageFlavor.debug:
-      return 'flowplanV2_debug';
+      return 'FlowPlanV2_debug';
   }
 }
 
 String? get appSharedPreferencesPrefix {
   switch (currentAppStorageFlavor) {
     case AppStorageFlavor.release:
-      return null;
+      return 'flowplanv2.';
     case AppStorageFlavor.profile:
-      return 'flowplan.profile.';
+      return 'flowplanv2.profile.';
     case AppStorageFlavor.debug:
-      return 'flowplan.debug.';
+      return 'flowplanv2.debug.';
   }
 }
 

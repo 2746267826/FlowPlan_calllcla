@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
@@ -156,7 +156,7 @@ class OutlookTaskMirrorSyncService {
             snapshot: snapshot,
           ),
           calendarId: taskListBinding.remoteCalendarId,
-          isFlowPlanManagedContainer: _isManagedContainer(
+          isFlowPlanV2ManagedContainer: _isManagedContainer(
             taskListBinding.remoteCalendarName,
           ),
         );
@@ -234,7 +234,7 @@ class OutlookTaskMirrorSyncService {
       if (localChanged && remoteChanged) {
         final conflictBinding = existingBinding.markConflict(
           state: OutlookTaskMirrorConflictState.divergent,
-          message: 'FlowPlan \u4e0e Outlook \u4e24\u4fa7\u90fd\u53d1\u751f\u4e86\u4fee\u6539\uff0c\u8bf7\u4eba\u5de5\u786e\u8ba4\u4ee5\u54ea\u4e00\u4fa7\u4e3a\u51c6\u3002',
+          message: 'FlowPlanV2 \u4e0e Outlook \u4e24\u4fa7\u90fd\u53d1\u751f\u4e86\u4fee\u6539\uff0c\u8bf7\u4eba\u5de5\u786e\u8ba4\u4ee5\u54ea\u4e00\u4fa7\u4e3a\u51c6\u3002',
           detectedAt: DateTime.now(),
           localSnapshotHash: snapshot.fingerprint,
           localSnapshotJson: snapshot.stableJson,
@@ -297,7 +297,7 @@ class OutlookTaskMirrorSyncService {
             taskListName: taskListName,
             snapshot: snapshot,
           ),
-          isFlowPlanManagedContainer: _isManagedContainer(
+          isFlowPlanV2ManagedContainer: _isManagedContainer(
             existingBinding.remoteCalendarName,
           ),
         );
@@ -485,7 +485,7 @@ class OutlookTaskMirrorSyncService {
             snapshot: snapshot,
           ),
           calendarId: context.taskListBinding.remoteCalendarId,
-          isFlowPlanManagedContainer: _isManagedContainer(
+          isFlowPlanV2ManagedContainer: _isManagedContainer(
             context.taskListBinding.remoteCalendarName,
           ),
         );
@@ -499,7 +499,7 @@ class OutlookTaskMirrorSyncService {
             taskListName: context.taskListName,
             snapshot: snapshot,
           ),
-          isFlowPlanManagedContainer: _isManagedContainer(
+          isFlowPlanV2ManagedContainer: _isManagedContainer(
             context.binding.remoteCalendarName,
           ),
         );
@@ -539,7 +539,7 @@ class OutlookTaskMirrorSyncService {
         action: 'force_push_local_to_remote',
         entityType: 'outlook_task_mirror_binding',
         entityId: taskId.toString(),
-        summary: '\u6309 FlowPlan \u672c\u5730\u5185\u5bb9\u8986\u76d6 Outlook \u4efb\u52a1\u955c\u50cf\u3002',
+        summary: '\u6309 FlowPlanV2 \u672c\u5730\u5185\u5bb9\u8986\u76d6 Outlook \u4efb\u52a1\u955c\u50cf\u3002',
         before: context.binding.toJson(),
         after: resolved.toJson(),
         metadata: <String, dynamic>{
@@ -550,7 +550,7 @@ class OutlookTaskMirrorSyncService {
       return OutlookTaskMirrorActionResult(
         success: true,
         taskId: taskId,
-        message: '\u5df2\u6309 FlowPlan \u672c\u5730\u5185\u5bb9\u66f4\u65b0 Outlook \u955c\u50cf\u3002',
+        message: '\u5df2\u6309 FlowPlanV2 \u672c\u5730\u5185\u5bb9\u66f4\u65b0 Outlook \u955c\u50cf\u3002',
       );
     } catch (error) {
       final failedBinding = context.binding.markConflict(
@@ -678,7 +678,7 @@ class OutlookTaskMirrorSyncService {
           snapshot: snapshot,
         ),
         calendarId: context.taskListBinding.remoteCalendarId,
-        isFlowPlanManagedContainer: _isManagedContainer(
+        isFlowPlanV2ManagedContainer: _isManagedContainer(
           context.taskListBinding.remoteCalendarName,
         ),
       );
@@ -1028,9 +1028,9 @@ class OutlookTaskMirrorSyncService {
         'location': {'displayName': task.location!.trim()},
       'showAs': _showAsValue(task.status),
       'categories': <String>[
-        'FlowPlan',
-        'FlowPlan:\u4efb\u52a1\u955c\u50cf',
-        'FlowPlan\u4efb\u52a1\u672c:$taskListName',
+        'FlowPlanV2',
+        'FlowPlanV2:\u4efb\u52a1\u955c\u50cf',
+        'FlowPlanV2\u4efb\u52a1\u672c:$taskListName',
       ],
     };
   }
@@ -1049,11 +1049,11 @@ class OutlookTaskMirrorSyncService {
     });
 
     final lines = <String>[
-      '\u3010FlowPlan \u4efb\u52a1\u955c\u50cf\u3011',
+      '\u3010FlowPlanV2 \u4efb\u52a1\u955c\u50cf\u3011',
       '',
-      '\u8fd9\u662f FlowPlan \u4e3a\u8de8\u8bbe\u5907\u67e5\u770b\u4efb\u52a1\u751f\u6210\u7684 Outlook \u955c\u50cf\u4e8b\u4ef6\u3002',
-      '\u666e\u901a Outlook \u65e5\u5386\u59cb\u7ec8\u4e0d\u4f1a\u88ab FlowPlan \u5199\u56de\uff1b\u53ea\u6709 FlowPlan \u6258\u7ba1\u7684\u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u4f1a\u53c2\u4e0e\u53cc\u5411\u540c\u6b65\u3002',
-      '\u5982\u679c\u4f60\u5728 Outlook \u4e2d\u4fee\u6539\u6216\u5220\u9664\u8fd9\u4e2a\u955c\u50cf\uff0cFlowPlan \u4f1a\u5c06\u5176\u6807\u8bb0\u4e3a\u5f85\u786e\u8ba4\u51b2\u7a81\uff0c\u800c\u4e0d\u4f1a\u9759\u9ed8\u8986\u76d6\u672c\u5730\u4efb\u52a1\u3002',
+      '\u8fd9\u662f FlowPlanV2 \u4e3a\u8de8\u8bbe\u5907\u67e5\u770b\u4efb\u52a1\u751f\u6210\u7684 Outlook \u955c\u50cf\u4e8b\u4ef6\u3002',
+      '\u666e\u901a Outlook \u65e5\u5386\u59cb\u7ec8\u4e0d\u4f1a\u88ab FlowPlanV2 \u5199\u56de\uff1b\u53ea\u6709 FlowPlanV2 \u6258\u7ba1\u7684\u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u4f1a\u53c2\u4e0e\u53cc\u5411\u540c\u6b65\u3002',
+      '\u5982\u679c\u4f60\u5728 Outlook \u4e2d\u4fee\u6539\u6216\u5220\u9664\u8fd9\u4e2a\u955c\u50cf\uff0cFlowPlanV2 \u4f1a\u5c06\u5176\u6807\u8bb0\u4e3a\u5f85\u786e\u8ba4\u51b2\u7a81\uff0c\u800c\u4e0d\u4f1a\u9759\u9ed8\u8986\u76d6\u672c\u5730\u4efb\u52a1\u3002',
       '',
       '\u4e00\u3001\u4efb\u52a1\u6982\u89c8',
       '\u4efb\u52a1\u6807\u9898\uff1a${task.summary}',
@@ -1075,8 +1075,8 @@ class OutlookTaskMirrorSyncService {
       '',
       '---',
       '\u4e09\u3001\u540c\u6b65\u8bf4\u660e',
-      '\u5efa\u8bae\u4f18\u5148\u5728 FlowPlan \u5185\u7f16\u8f91\u4efb\u52a1\uff0c\u518d\u901a\u8fc7\u540c\u6b65\u628a\u53d8\u66f4\u5199\u56de\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u3002',
-      '\u5982\u679c FlowPlan \u4e0e Outlook \u4e24\u4fa7\u90fd\u53d1\u751f\u4e86\u4fee\u6539\uff0c\u8bf7\u56de\u5230\u8bbe\u7f6e\u9875\u624b\u52a8\u786e\u8ba4\u4ee5\u54ea\u4e00\u4fa7\u4e3a\u51c6\u3002',
+      '\u5efa\u8bae\u4f18\u5148\u5728 FlowPlanV2 \u5185\u7f16\u8f91\u4efb\u52a1\uff0c\u518d\u901a\u8fc7\u540c\u6b65\u628a\u53d8\u66f4\u5199\u56de\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u3002',
+      '\u5982\u679c FlowPlanV2 \u4e0e Outlook \u4e24\u4fa7\u90fd\u53d1\u751f\u4e86\u4fee\u6539\uff0c\u8bf7\u56de\u5230\u8bbe\u7f6e\u9875\u624b\u52a8\u786e\u8ba4\u4ee5\u54ea\u4e00\u4fa7\u4e3a\u51c6\u3002',
       '',
       '---',
       '\u56db\u3001\u673a\u5668\u5143\u6570\u636e\uff08\u8bf7\u52ff\u624b\u52a8\u7f16\u8f91\uff09',
@@ -1130,7 +1130,7 @@ class OutlookTaskMirrorSyncService {
 
   bool _isManagedContainer(String calendarName) {
     return OutlookSyncPolicy.isTaskMirrorCalendarName(calendarName) ||
-        OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendarName);
+        OutlookSyncPolicy.isFlowPlanV2ManagedCalendarName(calendarName);
   }
 
   DateTime? _parseGraphDateTime(Object? raw) {

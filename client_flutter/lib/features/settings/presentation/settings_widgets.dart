@@ -1,4 +1,4 @@
-﻿part of 'settings_page.dart';
+part of 'settings_page.dart';
 
 class _SettingsHeader extends StatelessWidget {
   const _SettingsHeader({
@@ -150,7 +150,7 @@ class _AndroidTrackerAccessTile extends ConsumerWidget {
         title: const Text('使用情况访问权限'),
         subtitle: Text(
           granted
-              ? '已开启。FlowPlan 会在打开应用或手动刷新时导入安卓应用前台使用记录。'
+              ? '已开启。FlowPlanV2 会在打开应用或手动刷新时导入安卓应用前台使用记录。'
               : '未开启。开启后才能在追踪页显示安卓应用使用记录，并且会优先展示应用名。',
         ),
         trailing: TextButton(

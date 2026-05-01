@@ -21,7 +21,7 @@ class WebApiClient {
 
   final WebLocalStore store;
 
-  String get baseUrl => store.baseUrl ?? 'http://localhost:3200/api';
+  String get baseUrl => store.baseUrl ?? 'http://localhost:3202/api';
 
   Future<Map<String, dynamic>> getJson(
     String path, {
@@ -86,10 +86,10 @@ class WebApiClient {
     final token = store.accessToken;
     return {
       'content-type': 'application/json',
-      'x-flowplan-platform': 'web',
-      'x-flowplan-user-id':
+      'x-flowplanv2-platform': 'web',
+      'x-flowplanv2-user-id':
           store.userId ?? '00000000-0000-4000-8000-000000000001',
-      'x-flowplan-device-id':
+      'x-flowplanv2-device-id':
           store.deviceId ?? '00000000-0000-4000-8000-000000000101',
       if (token != null && token.isNotEmpty) 'authorization': 'Bearer $token',
     };

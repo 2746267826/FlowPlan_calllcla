@@ -62,7 +62,7 @@ interface OperationState {
   error?: string;
 }
 
-const defaultApiBase = 'http://localhost:3200';
+const defaultApiBase = 'http://localhost:3202';
 const defaultUserId = '00000000-0000-4000-8000-000000000001';
 const deviceFilterDatasets = new Set([
   'devices',
@@ -520,12 +520,12 @@ const monitoringDatasets: DatasetDefinition[] = [
 ];
 
 function App() {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem('flowplan.admin.apiBase') ?? defaultApiBase);
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem('flowplanv2.admin.apiBase') ?? defaultApiBase);
   const [deviceId] = useState(() => {
-    const cached = localStorage.getItem('flowplan.admin.deviceId');
+    const cached = localStorage.getItem('flowplanv2.admin.deviceId');
     if (cached) return cached;
     const next = safeRandomId();
-    localStorage.setItem('flowplan.admin.deviceId', next);
+    localStorage.setItem('flowplanv2.admin.deviceId', next);
     return next;
   });
   const [activeModule, setActiveModule] = useState<ModuleKey>('dashboard');
@@ -553,9 +553,9 @@ function App() {
     async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
       const headers = new Headers(options.headers);
       if (!headers.has('content-type') && options.body) headers.set('content-type', 'application/json');
-      headers.set('x-flowplan-user-id', context.userId);
-      headers.set('x-flowplan-device-id', context.deviceId);
-      headers.set('x-flowplan-platform', 'web-admin');
+      headers.set('x-flowplanv2-user-id', context.userId);
+      headers.set('x-flowplanv2-device-id', context.deviceId);
+      headers.set('x-flowplanv2-platform', 'web-admin');
       const url = buildApiUrl(context.apiBase, path);
       const response = await fetch(url, { ...options, headers });
       const text = await response.text();
@@ -631,7 +631,7 @@ function App() {
   const saveConnectionSettings = () => {
     const normalized = normalizeApiBase(apiBase);
     setApiBase(normalized);
-    localStorage.setItem('flowplan.admin.apiBase', normalized);
+    localStorage.setItem('flowplanv2.admin.apiBase', normalized);
     setToast('连接设置已保存');
     void checkHealth();
     void loadDevices();
@@ -658,7 +658,7 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <div>
-            <strong>FlowPlan</strong>
+            <strong>FlowPlanV2</strong>
             <span>全局管理控制台</span>
           </div>
         </div>

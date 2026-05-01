@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
@@ -48,7 +48,7 @@ export class SchedulerService {
     private readonly modelsService: ModelsService,
   ) {}
 
-  async createRun(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async createRun(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const { start, end } = this.readRange(
@@ -243,7 +243,7 @@ export class SchedulerService {
     return this.run(run, context);
   }
 
-  async run(runId: string, context: FlowPlanRequestContext) {
+  async run(runId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const run = await this.database.query<QueryResultRow>(
       `
@@ -303,7 +303,7 @@ export class SchedulerService {
   async acceptRun(
     runId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -449,7 +449,7 @@ export class SchedulerService {
   async rejectRun(
     runId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -490,7 +490,7 @@ export class SchedulerService {
 
   async detectDeviations(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);

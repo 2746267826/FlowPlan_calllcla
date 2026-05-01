@@ -7,9 +7,9 @@ const { Pool } = pg;
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
-  console.error('DATABASE_URL is required to apply the FlowPlan schema.');
+  console.error('DATABASE_URL is required to apply the FlowPlanV2 schema.');
   console.error('Expected format: postgres://USER:PASSWORD@HOST:5432/DATABASE');
-  console.error('Set it in flowplan.local.env or in the current shell, then run: npm run db:schema');
+  console.error('Set it in flowplanv2.local.env or in the current shell, then run: npm run db:schema');
   process.exit(1);
 }
 
@@ -21,10 +21,10 @@ try {
   pool = new Pool({ connectionString: databaseUrl });
   const schema = await readFile(schemaPath, 'utf8');
   await pool.query(schema);
-  console.log('FlowPlan P1 schema applied.');
+  console.log('FlowPlanV2 P1 schema applied.');
   console.log(`Schema file: ${schemaPath}`);
 } catch (error) {
-  console.error('FlowPlan schema apply failed.');
+  console.error('FlowPlanV2 schema apply failed.');
   console.error(`Schema file: ${schemaPath}`);
   console.error(error instanceof Error ? error.message : String(error));
   console.error('Check DATABASE_URL, PostgreSQL permissions, and the SQL statement reported by PostgreSQL above.');

@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import '../../core/database/app_database.dart';
 import '../calendar/data/calendar_books_repository.dart';
@@ -49,7 +49,7 @@ class OutlookDiagnosticsService {
     final managedCalendars = outlookCalendars
         .where(
           (calendar) =>
-              OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name),
+              OutlookSyncPolicy.isFlowPlanV2ManagedCalendarName(calendar.name),
         )
         .toList(growable: false);
     final mirrorDiagnostics = _buildMirrorDiagnostics(
@@ -60,22 +60,22 @@ class OutlookDiagnosticsService {
     );
 
     final buffer = StringBuffer()
-      ..writeln('# FlowPlan Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a')
+      ..writeln('# FlowPlanV2 Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a')
       ..writeln()
       ..writeln('- \u751f\u6210\u65f6\u95f4\uff1a${_formatDateTime(generatedAt)}')
       ..writeln('- \u540c\u6b65\u6a21\u5f0f\uff1a${syncMode.label}')
       ..writeln('- OAuth \u914d\u7f6e\uff1a${config == null ? '\u672a\u914d\u7f6e' : '\u5df2\u914d\u7f6e'}')
       ..writeln('- \u5f53\u524d\u6388\u6743\uff1a${_authorizationLabel(token)}')
-      ..writeln('- \u5199\u56de\u8fb9\u754c\uff1a\u53ea\u5141\u8bb8\u5199\u5165 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668')
+      ..writeln('- \u5199\u56de\u8fb9\u754c\uff1a\u53ea\u5141\u8bb8\u5199\u5165 FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668')
       ..writeln()
       ..writeln('## 1. \u5b89\u5168\u8fb9\u754c')
       ..writeln()
-      ..writeln('- \u666e\u901a Outlook \u65e5\u5386\uff1a\u59cb\u7ec8\u53ea\u8bfb\uff0c\u53ea\u4f1a\u5bfc\u5165\u5230 FlowPlan \u672c\u5730\u3002')
+      ..writeln('- \u666e\u901a Outlook \u65e5\u5386\uff1a\u59cb\u7ec8\u53ea\u8bfb\uff0c\u53ea\u4f1a\u5bfc\u5165\u5230 FlowPlanV2 \u672c\u5730\u3002')
       ..writeln(
-        '- FlowPlan \u6258\u7ba1\u65e5\u5386\uff1a\u4ec5\u5728\u201c\u53cc\u5411\u540c\u6b65 + \u8bfb\u5199\u6388\u6743\u201d\u540c\u65f6\u6ee1\u8db3\u65f6\u5141\u8bb8\u5199\u56de\u3002',
+        '- FlowPlanV2 \u6258\u7ba1\u65e5\u5386\uff1a\u4ec5\u5728\u201c\u53cc\u5411\u540c\u6b65 + \u8bfb\u5199\u6388\u6743\u201d\u540c\u65f6\u6ee1\u8db3\u65f6\u5141\u8bb8\u5199\u56de\u3002',
       )
       ..writeln(
-        '- \u4efb\u52a1\u955c\u50cf\uff1a\u53ea\u5199\u5165\u660e\u786e\u7ed1\u5b9a\u7684 FlowPlan \u4efb\u52a1\u672c - ... \u4e13\u5c5e\u5bb9\u5668\u3002',
+        '- \u4efb\u52a1\u955c\u50cf\uff1a\u53ea\u5199\u5165\u660e\u786e\u7ed1\u5b9a\u7684 FlowPlanV2 \u4efb\u52a1\u672c - ... \u4e13\u5c5e\u5bb9\u5668\u3002',
       )
       ..writeln(
         '- \u51b2\u7a81\u7b56\u7565\uff1a\u8fdc\u7aef\u66f4\u65b0\u5931\u8d25\u3001\u8fdc\u7aef\u5df2\u6539\u52a8\u6216\u8fdc\u7aef\u5df2\u5220\u9664\u65f6\uff0c\u4e0d\u4f1a\u9759\u9ed8\u8986\u76d6\u6570\u636e\uff0c\u800c\u662f\u8bb0\u5f55\u4e3a\u5f85\u4eba\u5de5\u786e\u8ba4\u7684\u51b2\u7a81\u3002',
@@ -108,15 +108,15 @@ class OutlookDiagnosticsService {
       ..writeln('## 3. Outlook \u65e5\u5386\u672c')
       ..writeln()
       ..writeln('- \u5df2\u63a5\u5165 Outlook \u65e5\u5386\u672c\uff1a${outlookCalendars.length}')
-      ..writeln('- FlowPlan \u6258\u7ba1\u5bb9\u5668\uff1a${managedCalendars.length}')
+      ..writeln('- FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff1a${managedCalendars.length}')
       ..writeln();
     for (final calendar in outlookCalendars) {
       final managed =
-          OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name);
+          OutlookSyncPolicy.isFlowPlanV2ManagedCalendarName(calendar.name);
       buffer
         ..writeln('### ${calendar.name}')
         ..writeln('- \u672c\u5730 ID\uff1a${calendar.id}')
-        ..writeln('- \u7c7b\u578b\uff1a${managed ? 'FlowPlan \u6258\u7ba1\u5bb9\u5668' : '\u5916\u90e8 Outlook \u65e5\u5386\uff08\u53ea\u8bfb\uff09'}')
+        ..writeln('- \u7c7b\u578b\uff1a${managed ? 'FlowPlanV2 \u6258\u7ba1\u5bb9\u5668' : '\u5916\u90e8 Outlook \u65e5\u5386\uff08\u53ea\u8bfb\uff09'}')
         ..writeln('- \u53ef\u89c1\u72b6\u6001\uff1a${calendar.isVisible ? '\u663e\u793a' : '\u9690\u85cf'}')
         ..writeln('- \u8fdc\u7aef ID\uff1a${calendar.syncUrl ?? '\u65e0'}')
         ..writeln();

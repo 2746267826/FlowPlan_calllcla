@@ -1,6 +1,6 @@
-# FlowPlan Web Admin
+# FlowPlanV2 Web Admin
 
-Independent Vite React management panel for FlowPlan P9.
+Independent Vite React management panel for FlowPlanV2 P9.
 
 Current P9 scope:
 

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -41,7 +41,7 @@ export class AiService {
     private readonly devicesService: DevicesService,
   ) {}
 
-  async settings(context: FlowPlanRequestContext) {
+  async settings(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -76,7 +76,7 @@ export class AiService {
   async upsertProvider(
     providerKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -164,7 +164,7 @@ export class AiService {
     return { ok: true, provider };
   }
 
-  async testProvider(providerKey: string, context: FlowPlanRequestContext) {
+  async testProvider(providerKey: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const provider = await this.loadProvider(userId, providerKey);
@@ -177,7 +177,7 @@ export class AiService {
     }
     try {
       const content = await this.callModel(provider, apiKey, [
-        { role: 'system', content: '只回复一句中文：FlowPlan AI API 连接正常。' },
+        { role: 'system', content: '只回复一句中文：FlowPlanV2 AI API 连接正常。' },
         { role: 'user', content: '测试连接' },
       ]);
       await this.database.query(
@@ -206,7 +206,7 @@ export class AiService {
     }
   }
 
-  async context(context: FlowPlanRequestContext) {
+  async context(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     return {
       generatedAt: new Date().toISOString(),
@@ -217,7 +217,7 @@ export class AiService {
 
   async createContextSnapshot(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -251,7 +251,7 @@ export class AiService {
     return { ok: true, snapshot: result };
   }
 
-  async toolPolicies(context: FlowPlanRequestContext) {
+  async toolPolicies(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultPolicies(userId);
     const result = await this.database.query<QueryResultRow>(
@@ -278,7 +278,7 @@ export class AiService {
   async upsertToolPolicy(
     toolName: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -325,7 +325,7 @@ export class AiService {
     return { ok: true, policy: result };
   }
 
-  async conversations(query: AiQuery, context: FlowPlanRequestContext) {
+  async conversations(query: AiQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 50);
     const offset = this.readOffset(query.offset);
@@ -354,7 +354,7 @@ export class AiService {
 
   async createConversation(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -373,7 +373,7 @@ export class AiService {
         `,
         [
           userId,
-          this.clean(body.source) ?? 'flowplan',
+          this.clean(body.source) ?? 'flowplanv2',
           this.clean(body.title) ?? 'AI 对话',
           this.clean(body.providerKey),
           this.clean(body.model),
@@ -388,7 +388,7 @@ export class AiService {
     return { ok: true, conversation: result };
   }
 
-  async messages(conversationId: string, context: FlowPlanRequestContext) {
+  async messages(conversationId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -411,7 +411,7 @@ export class AiService {
     return { messages: result.rows };
   }
 
-  async sendMessage(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async sendMessage(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const content = this.clean(body.content);
@@ -554,7 +554,7 @@ export class AiService {
               userMessage: content,
               providerKey,
               schema: 'OperationDraft.create_task.v1',
-              note: 'LLM response did not include a valid create_task draft; FlowPlan created a conservative draft from the user request after the model call.',
+              note: 'LLM response did not include a valid create_task draft; FlowPlanV2 created a conservative draft from the user request after the model call.',
             }),
             JSON.stringify(prepared.payload),
           ],
@@ -639,7 +639,7 @@ export class AiService {
   async explainActivitySegment(
     segmentId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -695,7 +695,7 @@ export class AiService {
       {
         role: 'system',
         content:
-          'You are FlowPlan activity interpretation assistant. Read only the provided segment summary and task candidates. Return strict JSON only. Do not confirm actual records, do not write facts, do not request tools. Schema: {"suggestedTitle":"","suggestedSummary":"","likelyTaskUid":"","confidence":0.0,"reasons":[""]}.',
+          'You are FlowPlanV2 activity interpretation assistant. Read only the provided segment summary and task candidates. Return strict JSON only. Do not confirm actual records, do not write facts, do not request tools. Schema: {"suggestedTitle":"","suggestedSummary":"","likelyTaskUid":"","confidence":0.0,"reasons":[""]}.',
       },
       {
         role: 'user',
@@ -763,7 +763,7 @@ export class AiService {
     return { ok: true, suggestion: safeSuggestion, draft };
   }
 
-  async toolDrafts(query: AiQuery, context: FlowPlanRequestContext) {
+  async toolDrafts(query: AiQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const offset = this.readOffset(query.offset);
@@ -803,7 +803,7 @@ export class AiService {
   async reviewDraft(
     draftId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -834,7 +834,7 @@ export class AiService {
   async confirmDraft(
     draftId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1054,7 +1054,7 @@ export class AiService {
       `,
       [
         userId,
-        this.clean(body.source) ?? 'flowplan',
+        this.clean(body.source) ?? 'flowplanv2',
         this.clean(body.title) ?? this.summarize(firstMessage),
         this.clean(body.providerKey),
         this.clean(body.model),
@@ -1304,7 +1304,7 @@ export class AiService {
       {
         role: 'system',
         content:
-          '你是 FlowPlan 的 AI 助手。你只能读取给定的服务端摘要上下文；不要声称已经直接写入数据库。当前 MVP 聊天流里，唯一允许生成的写操作草案是 create_task，其他操作必须 answer_only。请输出严格 JSON，不要 Markdown。JSON 结构为 {"assistant_message":"中文回复","operation_drafts":[{"title":"","summary":"","proposed_action":"create_task|answer_only","target_type":"task","target_id":"","risk_level":"low","proposed_payload":{"title":"","dueAt":"ISO-8601 或 YYYY-MM-DD 23:59","estimatedMinutes":60,"taskBookName":"默认任务本","priority":"normal","notes":""}}]}。当用户说“帮我创建一个明天截止的数据库作业任务”时，只生成一个 create_task 草案，不要写库。',
+          '你是 FlowPlanV2 的 AI 助手。你只能读取给定的服务端摘要上下文；不要声称已经直接写入数据库。当前 MVP 聊天流里，唯一允许生成的写操作草案是 create_task，其他操作必须 answer_only。请输出严格 JSON，不要 Markdown。JSON 结构为 {"assistant_message":"中文回复","operation_drafts":[{"title":"","summary":"","proposed_action":"create_task|answer_only","target_type":"task","target_id":"","risk_level":"low","proposed_payload":{"title":"","dueAt":"ISO-8601 或 YYYY-MM-DD 23:59","estimatedMinutes":60,"taskBookName":"默认任务本","priority":"normal","notes":""}}]}。当用户说“帮我创建一个明天截止的数据库作业任务”时，只生成一个 create_task 草案，不要写库。',
       },
       {
         role: 'system',
@@ -1611,8 +1611,9 @@ export class AiService {
   private secretKey() {
     const secret =
       process.env.AI_CONFIG_SECRET ??
+      process.env.FLOWPLANV2_DATABASE_URL ??
       process.env.DATABASE_URL ??
-      'flowplan-local-development-secret';
+      'flowplanv2-local-development-secret';
     return createHash('sha256').update(secret).digest();
   }
 

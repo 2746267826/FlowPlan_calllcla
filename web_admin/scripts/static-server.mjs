@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const host = process.env.HOST ?? '127.0.0.1';
-const port = Number(process.env.PORT ?? 5173);
+const port = Number(process.env.PORT ?? 5174);
 
 if (!existsSync(join(root, 'index.html'))) {
   throw new Error('web_admin/dist is missing. Run npm run build first.');
@@ -46,5 +46,5 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`FlowPlan Admin static server: http://${host}:${port}`);
+  console.log(`FlowPlanV2 Admin static server: http://${host}:${port}`);
 });

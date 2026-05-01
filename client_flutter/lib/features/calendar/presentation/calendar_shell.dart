@@ -560,7 +560,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
                       children: [
                         Expanded(
                           child: Text(
-                            'FlowPlan',
+                            'FlowPlanV2',
                             style: Theme.of(context)
                                 .textTheme
                                 .titleLarge
@@ -683,7 +683,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
               child: Row(
                 children: [
                   Text(
-                    'FlowPlan',
+                    'FlowPlanV2',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,

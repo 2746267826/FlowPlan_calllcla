@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -87,7 +87,7 @@ export class AnalyticsService {
     private readonly devicesService: DevicesService,
   ) {}
 
-  async trackerHome(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async trackerHome(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const now = new Date();
     const dayRange = this.readDayRange(query.date ?? query.start);
     const monthStart = new Date(dayRange.start);
@@ -123,14 +123,14 @@ export class AnalyticsService {
 
   async activityDaySummary(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readDayRange(query.date ?? query.start);
     return this.composedSummary(userId, range, 20);
   }
 
-  async rangeAnalysis(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async rangeAnalysis(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const bucket = this.readBucket(query.bucket);
@@ -142,7 +142,7 @@ export class AnalyticsService {
     };
   }
 
-  async filterOptions(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async filterOptions(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const result = await this.database.query<QueryResultRow>(
@@ -185,7 +185,7 @@ export class AnalyticsService {
 
   async activityHeatmap(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
@@ -226,7 +226,7 @@ export class AnalyticsService {
 
   async inputHeatmap(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
@@ -395,7 +395,7 @@ export class AnalyticsService {
 
   async activityRangeSummary(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
@@ -428,7 +428,7 @@ export class AnalyticsService {
     };
   }
 
-  async topApps(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async topApps(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const limit = this.readLimit(query.limit, 20);
@@ -450,7 +450,7 @@ export class AnalyticsService {
     return this.namedMetricResponse(range, result.rows);
   }
 
-  async topCategories(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async topCategories(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const limit = this.readLimit(query.limit, 20);
@@ -474,7 +474,7 @@ export class AnalyticsService {
 
   async taskWorkSummary(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
@@ -500,7 +500,7 @@ export class AnalyticsService {
     return this.namedMetricResponse(range, result.rows);
   }
 
-  async focusTrends(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async focusTrends(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const result = await this.database.query<BucketRow>(
@@ -543,7 +543,7 @@ export class AnalyticsService {
 
   async activityRecords(
     query: AnalyticsQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
@@ -578,7 +578,7 @@ export class AnalyticsService {
     return this.detailResponse(range, limit, offset, result.rows);
   }
 
-  async inputEvents(query: AnalyticsQuery, context: FlowPlanRequestContext) {
+  async inputEvents(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
     const limit = this.readLimit(query.limit, 100);

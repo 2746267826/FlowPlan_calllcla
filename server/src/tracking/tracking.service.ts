@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -42,7 +42,7 @@ export class TrackingService {
 
   async createBatch(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -133,7 +133,7 @@ export class TrackingService {
   async appendChunk(
     batchId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -209,7 +209,7 @@ export class TrackingService {
   async completeBatch(
     batchId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -344,7 +344,7 @@ export class TrackingService {
     };
   }
 
-  async batches(query: TrackingIngestQuery, context: FlowPlanRequestContext) {
+  async batches(query: TrackingIngestQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -382,7 +382,7 @@ export class TrackingService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  async summary(query: TrackingIngestQuery, context: FlowPlanRequestContext) {
+  async summary(query: TrackingIngestQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const start = this.readDate(query.start);
     const end = this.readDate(query.end);

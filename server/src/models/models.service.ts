@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -136,7 +136,7 @@ export class ModelsService {
     private readonly devicesService: DevicesService,
   ) {}
 
-  async list(context: FlowPlanRequestContext) {
+  async list(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultModels(userId);
     const result = await this.database.query<QueryResultRow>(
@@ -173,7 +173,7 @@ export class ModelsService {
     return { items: result.rows };
   }
 
-  async versions(modelKey: string, context: FlowPlanRequestContext) {
+  async versions(modelKey: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultModels(userId);
     const result = await this.database.query<QueryResultRow>(
@@ -201,7 +201,7 @@ export class ModelsService {
   async runs(
     modelKey: string,
     query: Record<string, string | undefined>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
@@ -240,7 +240,7 @@ export class ModelsService {
   async feedback(
     modelKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -297,7 +297,7 @@ export class ModelsService {
   async evaluate(
     modelKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultModels(userId);
@@ -332,7 +332,7 @@ export class ModelsService {
   async learn(
     modelKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -440,7 +440,7 @@ export class ModelsService {
     modelKey: string,
     versionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -480,7 +480,7 @@ export class ModelsService {
     return { ok: true, modelKey, version: result };
   }
 
-  async llmHealth(context: FlowPlanRequestContext) {
+  async llmHealth(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const provider = await this.defaultProvider(userId);
     if (!provider) {
@@ -631,7 +631,7 @@ export class ModelsService {
       {
         role: 'system',
         content:
-          'You are FlowPlan scheduler fallback. Return strict JSON only. You may only produce schedule draft items, never claim to write database. Respect busy blocks, range, locked tasks and task ids. Schema: {"draftItems":[{"taskId":"","taskTitle":"","proposedStart":"","proposedEnd":"","reason":"","risk":"low|medium|high","confidence":0.0}],"unplanned":[{"taskId":"","reason":""}],"explanation":""}.',
+          'You are FlowPlanV2 scheduler fallback. Return strict JSON only. You may only produce schedule draft items, never claim to write database. Respect busy blocks, range, locked tasks and task ids. Schema: {"draftItems":[{"taskId":"","taskTitle":"","proposedStart":"","proposedEnd":"","reason":"","risk":"low|medium|high","confidence":0.0}],"unplanned":[{"taskId":"","reason":""}],"explanation":""}.',
       },
       {
         role: 'user',
@@ -918,7 +918,12 @@ export class ModelsService {
 
   private secretKey() {
     return createHash('sha256')
-      .update(process.env.AI_CONFIG_SECRET ?? process.env.DATABASE_URL ?? 'flowplan-local-development-secret')
+      .update(
+        process.env.AI_CONFIG_SECRET ??
+          process.env.FLOWPLANV2_DATABASE_URL ??
+          process.env.DATABASE_URL ??
+          'flowplanv2-local-development-secret',
+      )
       .digest();
   }
 

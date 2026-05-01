@@ -1,10 +1,10 @@
 const Set<String> kDefaultTrackerIgnoredProcesses = <String>{
-  'flowplan.exe',
+  'flowplanv2.exe',
   'calllclaude.exe',
 };
 
 const Set<String> kDefaultTrackerIgnoredAndroidPackages = <String>{
-  'com.flowplan.flawplanv2',
+  'com.flowplanv2.app',
   'com.android.systemui',
   'com.android.launcher3',
   'com.google.android.apps.nexuslauncher',
@@ -16,7 +16,7 @@ const Set<String> kDefaultTrackerIgnoredAndroidPackages = <String>{
 };
 
 const List<String> kDefaultTrackerIgnoredTitleKeywords = <String>[
-  'flowplan',
+  'flowplanv2',
 ];
 
 bool isTrackerSelfExcludedWindow({

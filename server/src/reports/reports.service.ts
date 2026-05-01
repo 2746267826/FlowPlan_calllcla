@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { createDecipheriv, createHash } from 'node:crypto';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
@@ -46,7 +46,7 @@ export class ReportsService {
     private readonly modelsService: ModelsService,
   ) {}
 
-  async reports(query: ReportsQuery, context: FlowPlanRequestContext) {
+  async reports(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const result = await this.database.query<QueryResultRow>(
@@ -76,7 +76,7 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  async report(reportId: string, context: FlowPlanRequestContext) {
+  async report(reportId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const report = await this.database.query<QueryResultRow>(
       `
@@ -137,7 +137,7 @@ export class ReportsService {
     return { report: row, entries: entries.rows, evidence: evidence.rows };
   }
 
-  async generateReport(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async generateReport(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const type = this.clean(body.reportType) ?? 'daily';
@@ -228,7 +228,7 @@ export class ReportsService {
   async updateReport(
     reportId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -282,7 +282,7 @@ export class ReportsService {
     return { ok: true };
   }
 
-  async confirmReport(reportId: string, context: FlowPlanRequestContext) {
+  async confirmReport(reportId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     await this.database.transaction(async (client) => {
@@ -309,7 +309,7 @@ export class ReportsService {
 
   async polishReport(
     reportId: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     options: { silentFallback?: boolean } = {},
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
@@ -377,7 +377,7 @@ export class ReportsService {
     }
   }
 
-  async diary(query: ReportsQuery, context: FlowPlanRequestContext) {
+  async diary(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const result = await this.database.query<QueryResultRow>(
@@ -402,7 +402,7 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  async generateDiary(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async generateDiary(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const { start, end } = this.period('daily', body.date, body.periodStart, body.periodEnd);
@@ -476,7 +476,7 @@ export class ReportsService {
   async updateDiary(
     diaryId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -508,7 +508,7 @@ export class ReportsService {
     return { ok: true };
   }
 
-  async confirmDiary(diaryId: string, context: FlowPlanRequestContext) {
+  async confirmDiary(diaryId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     await this.database.transaction(async (client) => {
@@ -535,7 +535,7 @@ export class ReportsService {
 
   async polishDiary(
     diaryId: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     options: { silentFallback?: boolean } = {},
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
@@ -593,7 +593,7 @@ export class ReportsService {
     }
   }
 
-  async templates(context: FlowPlanRequestContext) {
+  async templates(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultTemplates(userId);
     const result = await this.database.query<QueryResultRow>(
@@ -615,7 +615,7 @@ export class ReportsService {
     return { items: result.rows, defaults: this.defaultTemplateNames() };
   }
 
-  async upsertTemplate(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async upsertTemplate(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const name = this.clean(body.name) ?? '默认模板';
@@ -651,7 +651,7 @@ export class ReportsService {
     return { ok: true, template: result };
   }
 
-  async pushChannels(context: FlowPlanRequestContext) {
+  async pushChannels(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -673,7 +673,7 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  async upsertPushChannel(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async upsertPushChannel(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const channelType = this.clean(body.channelType) ?? 'webhook';
@@ -699,7 +699,7 @@ export class ReportsService {
   async pushReport(
     reportId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -753,7 +753,7 @@ export class ReportsService {
     return { ok: true, deliveries, results };
   }
 
-  async pushDeliveries(query: ReportsQuery, context: FlowPlanRequestContext) {
+  async pushDeliveries(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -780,11 +780,11 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  async retryDelivery(deliveryId: string, context: FlowPlanRequestContext) {
+  async retryDelivery(deliveryId: string, context: FlowPlanV2RequestContext) {
     return this.trySendDelivery(deliveryId, context);
   }
 
-  async weatherLocations(context: FlowPlanRequestContext) {
+  async weatherLocations(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -798,7 +798,7 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  async upsertWeatherLocation(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async upsertWeatherLocation(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const latitude = Number(body.latitude);
@@ -836,7 +836,7 @@ export class ReportsService {
     return { ok: true, location: result };
   }
 
-  async refreshWeather(locationId: string, context: FlowPlanRequestContext) {
+  async refreshWeather(locationId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const location = await this.database.query<QueryResultRow>(
@@ -881,7 +881,7 @@ export class ReportsService {
     return { ok: true, summary, payload };
   }
 
-  async weatherSummary(query: ReportsQuery, context: FlowPlanRequestContext) {
+  async weatherSummary(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -904,7 +904,7 @@ export class ReportsService {
     return { items: result.rows };
   }
 
-  private async trySendDelivery(deliveryId: string, context: FlowPlanRequestContext) {
+  private async trySendDelivery(deliveryId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const delivery = await this.database.query<QueryResultRow>(
       `
@@ -934,7 +934,7 @@ export class ReportsService {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             chat_id: config.chatId,
-            text: `${payload.title ?? 'FlowPlan 报告'}\n\n${payload.summary ?? ''}`,
+            text: `${payload.title ?? 'FlowPlanV2 报告'}\n\n${payload.summary ?? ''}`,
             disable_web_page_preview: true,
           }),
         });
@@ -1291,7 +1291,7 @@ export class ReportsService {
         `,
         [
           userId,
-          'FlowPlan 默认模板',
+          'FlowPlanV2 默认模板',
           templateType,
           content,
           JSON.stringify(Object.keys(this.templateVariableDescriptions())),
@@ -1507,7 +1507,7 @@ export class ReportsService {
           {
             role: 'system',
             content:
-              '你是 FlowPlan 的报告润色助手。只能基于给定模板报告和条目摘要润色中文表达，不能添加新事实，不能把 inferred 写成 fact，不能删除证据边界。输出纯 Markdown 段落。',
+              '你是 FlowPlanV2 的报告润色助手。只能基于给定模板报告和条目摘要润色中文表达，不能添加新事实，不能把 inferred 写成 fact，不能删除证据边界。输出纯 Markdown 段落。',
           },
           {
             role: 'user',
@@ -1569,8 +1569,9 @@ export class ReportsService {
   private secretKey() {
     const secret =
       process.env.AI_CONFIG_SECRET ??
+      process.env.FLOWPLANV2_DATABASE_URL ??
       process.env.DATABASE_URL ??
-      'flowplan-local-development-secret';
+      'flowplanv2-local-development-secret';
     return createHash('sha256').update(secret).digest();
   }
 

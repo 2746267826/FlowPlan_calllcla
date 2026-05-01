@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readdir, stat } from 'node:fs/promises';
 import { extname, join, relative } from 'node:path';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { KopiaService } from './kopia.service';
@@ -54,7 +54,7 @@ export class FilesService {
     private readonly kopiaService: KopiaService,
   ) {}
 
-  async providers(context: FlowPlanRequestContext) {
+  async providers(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultProviders(userId);
     const result = await this.database.query(
@@ -84,7 +84,7 @@ export class FilesService {
     return { providers: result.rows };
   }
 
-  async dashboard(context: FlowPlanRequestContext) {
+  async dashboard(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureDefaultProviders(userId);
     const [
@@ -226,7 +226,7 @@ export class FilesService {
   async upsertProvider(
     providerKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -289,7 +289,7 @@ export class FilesService {
 
   async applyTreeSnapshot(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -402,7 +402,7 @@ export class FilesService {
     return { ok: true, providerKey, treeRevision, accepted };
   }
 
-  async tree(query: FilesQuery, context: FlowPlanRequestContext) {
+  async tree(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 300);
     const offset = this.readOffset(query.offset);
@@ -444,7 +444,7 @@ export class FilesService {
 
   async createUploadSession(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -515,7 +515,7 @@ export class FilesService {
     sessionId: string,
     chunkIndex: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const index = this.readNumber(chunkIndex, -1);
@@ -566,7 +566,7 @@ export class FilesService {
 
   async missingUploadChunks(
     sessionId: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const session = await this.findSession(this.database, userId, sessionId, 'upload');
@@ -604,7 +604,7 @@ export class FilesService {
 
   async completeUploadSession(
     sessionId: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -843,7 +843,7 @@ export class FilesService {
 
   async createDownloadSession(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -927,7 +927,7 @@ export class FilesService {
   async downloadRange(
     sessionId: string,
     query: FilesQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const session = await this.findSession(this.database, userId, sessionId, 'download');
@@ -997,7 +997,7 @@ export class FilesService {
   async downloadStorageObject(
     objectId: string,
     query: FilesQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1046,7 +1046,7 @@ export class FilesService {
     };
   }
 
-  async transfers(query: FilesQuery, context: FlowPlanRequestContext) {
+  async transfers(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1081,7 +1081,7 @@ export class FilesService {
     return { limit, offset, hasMore: result.rows.length >= limit, transfers: result.rows };
   }
 
-  async transferProgress(sessionId: string, context: FlowPlanRequestContext) {
+  async transferProgress(sessionId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<
       QueryResultRow & {
@@ -1178,7 +1178,7 @@ export class FilesService {
     };
   }
 
-  async versions(fileId: string, context: FlowPlanRequestContext) {
+  async versions(fileId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -1209,7 +1209,7 @@ export class FilesService {
   async createVersionDownloadRequest(
     versionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1265,7 +1265,7 @@ export class FilesService {
     return this.objectStorage.status();
   }
 
-  async storageObjects(query: FilesQuery, context: FlowPlanRequestContext) {
+  async storageObjects(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1310,7 +1310,7 @@ export class FilesService {
 
   async registerStorageObject(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1455,7 +1455,7 @@ export class FilesService {
 
   async createKopiaSnapshot(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1486,7 +1486,7 @@ export class FilesService {
 
   async refreshKopiaVersions(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1590,7 +1590,7 @@ export class FilesService {
   async downloadVersionCopy(
     versionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1685,7 +1685,7 @@ export class FilesService {
   async prepareVersionRestore(
     versionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1717,7 +1717,7 @@ export class FilesService {
     return { ok: true, prepare };
   }
 
-  async conflicts(context: FlowPlanRequestContext) {
+  async conflicts(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -1747,7 +1747,7 @@ export class FilesService {
 
   async createConflict(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
@@ -1781,7 +1781,7 @@ export class FilesService {
   async resolveConflict(
     conflictId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -1807,7 +1807,7 @@ export class FilesService {
     return { ok: !!result, conflict: result };
   }
 
-  async roots(query: FilesQuery, context: FlowPlanRequestContext) {
+  async roots(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const search = this.search(query.q);
     const result = await this.database.query<QueryResultRow>(
@@ -1840,7 +1840,7 @@ export class FilesService {
     return { roots: result.rows };
   }
 
-  async upsertRoot(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async upsertRoot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const rootUid = this.clean(body.rootUid) ?? `root:${randomUUID()}`;
@@ -1903,7 +1903,7 @@ export class FilesService {
     return { ok: true, root: result };
   }
 
-  async fileNodes(query: FilesQuery, context: FlowPlanRequestContext) {
+  async fileNodes(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 300);
     const offset = this.readOffset(query.offset);
@@ -1953,7 +1953,7 @@ export class FilesService {
     return { limit, offset, hasMore: result.rows.length >= limit, nodes: result.rows };
   }
 
-  async driveRoots(query: FilesQuery, context: FlowPlanRequestContext) {
+  async driveRoots(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const roots = await this.roots(query, context);
     return {
       ...roots,
@@ -1962,7 +1962,7 @@ export class FilesService {
     };
   }
 
-  async driveNodes(query: FilesQuery, context: FlowPlanRequestContext) {
+  async driveNodes(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const limit = this.readLimit(query.limit, 300);
@@ -2048,7 +2048,7 @@ export class FilesService {
     };
   }
 
-  async driveNode(nodeId: string, context: FlowPlanRequestContext) {
+  async driveNode(nodeId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const result = await this.database.query<QueryResultRow>(
@@ -2118,7 +2118,7 @@ export class FilesService {
   async driveOpenPlan(
     nodeId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2165,7 +2165,7 @@ export class FilesService {
   async upsertDriveDeviceLocation(
     nodeId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2211,7 +2211,7 @@ export class FilesService {
   async createDriveDownloadRequest(
     nodeId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.devicesService.ensureDevice(context);
@@ -2242,7 +2242,7 @@ export class FilesService {
   async scanDriveRoot(
     rootId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2298,7 +2298,7 @@ export class FilesService {
   async relinkDriveNode(
     nodeId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2356,7 +2356,7 @@ export class FilesService {
     return { ok: Boolean(result), node: result };
   }
 
-  async applyNodeSnapshot(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async applyNodeSnapshot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const rootId = this.clean(body.rootId);
@@ -2552,7 +2552,7 @@ export class FilesService {
   async logNodeOperation(
     nodeId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2566,7 +2566,7 @@ export class FilesService {
     return { ok: true };
   }
 
-  async linkNodeToEntity(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async linkNodeToEntity(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const nodeId = this.clean(body.nodeId);
@@ -2622,7 +2622,7 @@ export class FilesService {
     return { ok: true, link: result };
   }
 
-  async contextLinks(query: FilesQuery, context: FlowPlanRequestContext) {
+  async contextLinks(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -2654,7 +2654,7 @@ export class FilesService {
     return { links: result.rows };
   }
 
-  async recommendations(query: FilesQuery, context: FlowPlanRequestContext) {
+  async recommendations(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -2686,7 +2686,7 @@ export class FilesService {
   async reviewRecommendation(
     recommendationId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2728,7 +2728,7 @@ export class FilesService {
     return { ok: Boolean(result), recommendation: result };
   }
 
-  async upsertNetworkPresence(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async upsertNetworkPresence(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const result = await this.database.query<QueryResultRow>(
@@ -2774,7 +2774,7 @@ export class FilesService {
     return { ok: true, presence: result.rows[0] };
   }
 
-  async networkPresence(context: FlowPlanRequestContext) {
+  async networkPresence(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -2800,7 +2800,7 @@ export class FilesService {
     return { devices: result.rows };
   }
 
-  async transferCandidates(sessionId: string, context: FlowPlanRequestContext) {
+  async transferCandidates(sessionId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.ensureServerRelayCandidate(userId, sessionId);
     const result = await this.database.query<QueryResultRow>(
@@ -2832,7 +2832,7 @@ export class FilesService {
   async upsertTransferCandidate(
     sessionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -2884,7 +2884,7 @@ export class FilesService {
   async appendTransferEvent(
     sessionId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     await this.devicesService.ensureDevice(context);

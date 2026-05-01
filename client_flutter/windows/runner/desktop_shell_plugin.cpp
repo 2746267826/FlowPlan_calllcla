@@ -15,11 +15,11 @@ namespace {
 constexpr wchar_t kStartupRegistryPath[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 #if defined(NDEBUG)
-constexpr wchar_t kStartupValueName[] = L"FlowPlan";
-constexpr wchar_t kStartupTaskName[] = L"FlowPlan Startup";
+constexpr wchar_t kStartupValueName[] = L"FlowPlanV2";
+constexpr wchar_t kStartupTaskName[] = L"FlowPlanV2 Startup";
 #else
-constexpr wchar_t kStartupValueName[] = L"FlowPlan Debug";
-constexpr wchar_t kStartupTaskName[] = L"FlowPlan Debug Startup";
+constexpr wchar_t kStartupValueName[] = L"FlowPlanV2 Debug";
+constexpr wchar_t kStartupTaskName[] = L"FlowPlanV2 Debug Startup";
 #endif
 constexpr wchar_t kStartupToTrayArgument[] = L" --startup-to-tray";
 
@@ -93,7 +93,7 @@ void DesktopShellPlugin::RegisterWithRegistrar(
     FlutterWindow* window) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "com.flowplan/desktop_shell",
+          registrar->messenger(), "com.flowplanv2/desktop_shell",
           &flutter::StandardMethodCodec::GetInstance());
 
   auto plugin = std::make_unique<DesktopShellPlugin>(registrar, window);
@@ -139,7 +139,7 @@ void DesktopShellPlugin::HandleMethodCall(
 
   if (method_call.method_name() == "showReminder") {
     const std::wstring title = Utf8ToWide(
-        ReadStringArgument(method_call, "title", "FlowPlan"));
+        ReadStringArgument(method_call, "title", "FlowPlanV2"));
     const std::wstring body =
         Utf8ToWide(ReadStringArgument(method_call, "body", ""));
     ShowReminder(title, body);

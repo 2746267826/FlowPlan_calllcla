@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import {
@@ -31,7 +31,7 @@ export class SyncService {
 
   async push(
     dto: SyncPushDto,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ): Promise<SyncPushResponseDto> {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -113,7 +113,7 @@ export class SyncService {
 
   async pull(
     cursor: string | undefined,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     options: { objectType?: string; limit?: string } = {},
   ): Promise<SyncPullResponseDto> {
     const userId = await this.devicesService.ensureUser(context.userId);
@@ -175,7 +175,7 @@ export class SyncService {
     };
   }
 
-  async ack(dto: SyncAckDto, context: FlowPlanRequestContext) {
+  async ack(dto: SyncAckDto, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const cursor = this.parseCursor(dto.cursor);
@@ -198,7 +198,7 @@ export class SyncService {
     };
   }
 
-  async conflicts(context: FlowPlanRequestContext) {
+  async conflicts(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<{
       conflict_id: string;
@@ -234,7 +234,7 @@ export class SyncService {
     };
   }
 
-  async status(context: FlowPlanRequestContext) {
+  async status(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -262,7 +262,7 @@ export class SyncService {
   async resolveConflict(
     conflictId: string,
     dto: ResolveConflictDto,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);

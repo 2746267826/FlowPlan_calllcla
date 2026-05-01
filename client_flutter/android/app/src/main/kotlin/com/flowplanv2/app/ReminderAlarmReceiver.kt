@@ -1,4 +1,4 @@
-package com.flowplan.flawplanv2
+package com.flowplanv2.app
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -15,13 +15,13 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_TRIGGER_AT_MILLIS = "triggerAtMillis"
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
-        private const val CHANNEL_ID = "flowplan_reminders"
-        private const val CHANNEL_NAME = "FlowPlan 提醒"
+        private const val CHANNEL_ID = "flowplanv2_reminders"
+        private const val CHANNEL_NAME = "FlowPlanV2 提醒"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getIntExtra(EXTRA_ID, 0)
-        val title = intent.getStringExtra(EXTRA_TITLE) ?: "FlowPlan 提醒"
+        val title = intent.getStringExtra(EXTRA_TITLE) ?: "FlowPlanV2 提醒"
         val body = intent.getStringExtra(EXTRA_BODY) ?: ""
         if (id == 0) {
             return
@@ -48,7 +48,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 Notification.Builder(context)
             }
         val notification = builder
-            .setSmallIcon(R.drawable.ic_stat_flowplan)
+            .setSmallIcon(R.drawable.ic_stat_flowplanv2)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))

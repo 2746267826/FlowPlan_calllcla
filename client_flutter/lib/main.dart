@@ -15,5 +15,5 @@ void main() async {
 
   await initializeDateFormatting('zh_CN', null);
 
-  await runFlowPlanEntry();
+  await runFlowPlanV2Entry();
 }

@@ -213,7 +213,7 @@ class _TransferPolicyNote extends StatelessWidget {
       ),
       child: const Text(
         '当前 MVP 仅使用服务端中转：小文件不超过 8MB 时按单个 chunk 上传，大文件按 4MB chunk 上传。'
-        '失败后可通过缺失 chunk 查询继续上传；下载会写入 .flowplan.part 临时文件并支持继续下载。',
+        '失败后可通过缺失 chunk 查询继续上传；下载会写入 .flowplanv2.part 临时文件并支持继续下载。',
       ),
     );
   }

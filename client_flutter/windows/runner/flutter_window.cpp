@@ -11,6 +11,13 @@
 
 namespace {
 
+#ifndef FLOWPLANV2_BUILD_FLAVOR
+#define FLOWPLANV2_BUILD_FLAVOR "debug"
+#endif
+
+#define FLOWPLANV2_WIDEN_INNER(value) L##value
+#define FLOWPLANV2_WIDEN(value) FLOWPLANV2_WIDEN_INNER(value)
+
 constexpr UINT kTrayCallbackMessage = WM_APP + 101;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayCommandShow = 41001;
@@ -20,6 +27,8 @@ constexpr UINT_PTR kStartupTraySyncTimerId = 41004;
 constexpr UINT kTrayRetryIntervalMs = 2000;
 constexpr UINT kStartupTraySyncIntervalMs = 5000;
 constexpr int kStartupTraySyncMaxAttempts = 12;
+constexpr wchar_t kTrayTooltip[] =
+    L"FlowPlanV2-" FLOWPLANV2_WIDEN(FLOWPLANV2_BUILD_FLAVOR);
 
 UINT GetTaskbarCreatedMessage() {
   static const UINT kTaskbarCreatedMessage =
@@ -193,7 +202,7 @@ void FlutterWindow::EnsureTrayIcon() {
   icon_data.uCallbackMessage = kTrayCallbackMessage;
   icon_data.hIcon =
       LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
-  wcscpy_s(icon_data.szTip, L"FlowPlan");
+  wcscpy_s(icon_data.szTip, kTrayTooltip);
 
   if (Shell_NotifyIconW(NIM_ADD, &icon_data)) {
     tray_icon_added_ = true;

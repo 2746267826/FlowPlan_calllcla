@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -65,7 +65,7 @@ export class ClientService {
     private readonly devicesService: DevicesService,
   ) {}
 
-  async bootstrap(context: FlowPlanRequestContext) {
+  async bootstrap(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     await this.touchDevice(userId, deviceId);
@@ -87,7 +87,7 @@ export class ClientService {
       ]);
 
     return {
-      user: user.rows[0] ?? { id: userId, displayName: 'FlowPlan User' },
+      user: user.rows[0] ?? { id: userId, displayName: 'FlowPlanV2 User' },
       device: device.rows[0] ?? { id: deviceId },
       serverTime: new Date().toISOString(),
       settingsVersion: settingsSummary.version,
@@ -110,7 +110,7 @@ export class ClientService {
     };
   }
 
-  async settings(context: FlowPlanRequestContext) {
+  async settings(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -137,7 +137,7 @@ export class ClientService {
     };
   }
 
-  async effectiveSettings(context: FlowPlanRequestContext) {
+  async effectiveSettings(context: FlowPlanV2RequestContext) {
     const settings = await this.settings(context);
     const effective = Object.fromEntries(
       settings.settings.map((setting) => [setting.key, setting.value]),
@@ -166,7 +166,7 @@ export class ClientService {
   async updateSetting(
     key: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -229,7 +229,7 @@ export class ClientService {
 
   async createLocalSnapshotImport(
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -282,7 +282,7 @@ export class ClientService {
     };
   }
 
-  async importStatus(importId: string, context: FlowPlanRequestContext) {
+  async importStatus(importId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -305,7 +305,7 @@ export class ClientService {
     return result.rows[0] ?? { id: importId, status: 'not_found' };
   }
 
-  async confirmImport(importId: string, context: FlowPlanRequestContext) {
+  async confirmImport(importId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
 
@@ -390,7 +390,7 @@ export class ClientService {
   async cancelImport(
     importId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);

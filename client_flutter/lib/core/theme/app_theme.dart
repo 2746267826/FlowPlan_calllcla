@@ -1,7 +1,7 @@
 // 应用主题：双主题（亮色/暗色），紫罗兰主色调
 import 'package:flutter/material.dart';
 
-/// FlowPlan 设计令牌
+/// FlowPlanV2 设计令牌
 class AppColors {
   // === 主色调（紫罗兰）===
   static const Color primary = Color(0xFF6B5EE4);

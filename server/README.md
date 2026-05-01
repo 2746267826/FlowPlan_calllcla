@@ -1,6 +1,6 @@
-# FlowPlan Server
+# FlowPlanV2 Server
 
-P1 server foundation for the FlowPlan client/server split.
+P1 server foundation for the FlowPlanV2 client/server split.
 
 This server is responsible for the complete server-side fact store, device scoped synchronization, conflict candidates, cursors, and audit-ready external mappings.
 
@@ -33,7 +33,7 @@ Install dependencies and apply the schema:
 
 ```text
 npm install
-$env:DATABASE_URL="postgres://user:password@localhost:5432/flowplan"
+$env:DATABASE_URL="postgres://user:password@localhost:5432/flowplanv2"
 npm run db:schema
 npm run dev
 ```

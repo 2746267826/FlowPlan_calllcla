@@ -185,7 +185,7 @@ class FileTransferService extends ChangeNotifier {
   })  : _apiLoader = apiLoader,
         _operationLogs = operationLogs;
 
-  static const _storageKey = 'flowplan.file_transfer.jobs.v1';
+  static const _storageKey = 'flowplanv2.file_transfer.jobs.v1';
 
   final Future<FileCloudApi> Function() _apiLoader;
   final DataOperationLogRepository _operationLogs;
@@ -283,7 +283,7 @@ class FileTransferService extends ChangeNotifier {
         checksum: checksum,
         localPath: job.localPath,
         metadata: <String, Object?>{
-          'flowplan_transfer_job_id': job.id,
+          'flowplanv2_transfer_job_id': job.id,
           'small_file_threshold_bytes':
               FileTransferConstants.smallFileThresholdBytes,
         },
@@ -397,7 +397,7 @@ class FileTransferService extends ChangeNotifier {
         totalBytes: job.totalBytes,
         chunkSize: job.chunkSize,
         checksum: job.serverChecksum,
-        metadata: <String, Object?>{'flowplan_transfer_job_id': job.id},
+        metadata: <String, Object?>{'flowplanv2_transfer_job_id': job.id},
       );
       final session = _asMap(sessionResult['downloadSession']);
       job = _replace(
@@ -747,7 +747,7 @@ class FileTransferService extends ChangeNotifier {
     return file.existsSync() ? file.lengthSync() : 0;
   }
 
-  String _partPath(String finalPath) => '$finalPath.flowplan.part';
+  String _partPath(String finalPath) => '$finalPath.flowplanv2.part';
 
   Future<String> _sha256File(String path) async {
     final digest = await sha256.bind(File(path).openRead()).first;

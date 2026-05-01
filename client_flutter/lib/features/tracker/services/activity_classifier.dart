@@ -249,14 +249,14 @@ class ActivityClassifier {
       label: '\u6587\u4ef6\u8d44\u6e90\u7ba1\u7406\u5668',
     ),
     const ClassificationRule(
-      processPattern: 'flowplan.exe',
+      processPattern: 'flowplanv2.exe',
       category: '\u7cfb\u7edf\u5de5\u5177',
-      label: 'FlowPlan',
+      label: 'FlowPlanV2',
     ),
     const ClassificationRule(
       processPattern: 'calllclaude.exe',
       category: '\u7cfb\u7edf\u5de5\u5177',
-      label: 'FlowPlan',
+      label: 'FlowPlanV2',
     ),
   ];
 

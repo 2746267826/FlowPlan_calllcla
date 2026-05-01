@@ -14,7 +14,8 @@ export interface StoredObjectResult {
 @Injectable()
 export class LocalObjectStorageService {
   private readonly rootPath = path.resolve(
-    process.env.FLOWPLAN_SERVER_STORAGE_DIR ?? path.join(process.cwd(), 'server_storage'),
+    process.env.FLOWPLANV2_SERVER_STORAGE_DIR ??
+      path.join(process.cwd(), 'server_storage_flowplanv2'),
   );
 
   root() {
@@ -24,7 +25,7 @@ export class LocalObjectStorageService {
   async status() {
     await this.ensureRoot();
     return {
-      providerKey: 'server_storage',
+      providerKey: 'server_storage_flowplanv2',
       storageType: 'local_filesystem',
       rootPath: this.rootPath,
       writable: true,

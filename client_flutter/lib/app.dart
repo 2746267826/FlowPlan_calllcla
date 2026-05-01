@@ -5,15 +5,15 @@ import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'shared/providers/settings_provider.dart';
 
-class FlowPlanApp extends ConsumerWidget {
-  const FlowPlanApp({super.key});
+class FlowPlanV2App extends ConsumerWidget {
+  const FlowPlanV2App({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
-      title: 'FlowPlan',
+      title: 'FlowPlanV2',
       debugShowCheckedModeBanner: false,
 
       // 双主题

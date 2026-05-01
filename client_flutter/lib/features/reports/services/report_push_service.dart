@@ -201,7 +201,7 @@ class ReportPushService {
         await _reports.markDeliverySending(delivery.id);
         final payload = _decodePayload(delivery.payloadJson);
         await _shellService.showReminder(
-          title: payload['title']?.toString() ?? 'FlowPlan 报告',
+          title: payload['title']?.toString() ?? 'FlowPlanV2 报告',
           body: payload['body']?.toString() ?? '',
         );
         await _reports.markDeliverySent(delivery.id);
@@ -233,7 +233,7 @@ class ReportPushService {
           scheme: 'mailto',
           path: target.trim(),
           queryParameters: <String, String>{
-            'subject': payload['subject']?.toString() ?? 'FlowPlan 报告',
+            'subject': payload['subject']?.toString() ?? 'FlowPlanV2 报告',
             'body': payload['body_markdown']?.toString() ?? '',
           },
         );

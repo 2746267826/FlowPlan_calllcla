@@ -35,7 +35,7 @@ RawInputPlugin* RawInputPlugin::instance_ = nullptr;
 void RawInputPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
   auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-      registrar->messenger(), "com.flowplan/raw_input",
+      registrar->messenger(), "com.flowplanv2/raw_input",
       &flutter::StandardMethodCodec::GetInstance());
 
   auto plugin = std::make_unique<RawInputPlugin>(registrar);
@@ -331,10 +331,10 @@ void RawInputPlugin::StartBackgroundThread() {
     wc.cbSize = sizeof(WNDCLASSEX);
     wc.lpfnWndProc = RawInputWndProc;
     wc.hInstance = GetModuleHandle(nullptr);
-    wc.lpszClassName = L"FlowPlanRawInputSink";
+    wc.lpszClassName = L"FlowPlanV2RawInputSink";
     RegisterClassEx(&wc);
 
-    bg_hwnd_ = CreateWindowEx(0, L"FlowPlanRawInputSink", L"RawInput Sink", 0,
+    bg_hwnd_ = CreateWindowEx(0, L"FlowPlanV2RawInputSink", L"RawInput Sink", 0,
                               0, 0, 0, 0, HWND_MESSAGE, nullptr,
                               GetModuleHandle(nullptr), nullptr);
 
@@ -378,7 +378,7 @@ void RawInputPlugin::StartBackgroundThread() {
     KillTimer(bg_hwnd_, kMouseMoveFlushTimerId);
     DestroyWindow(bg_hwnd_);
     bg_hwnd_ = nullptr;
-    UnregisterClass(L"FlowPlanRawInputSink", GetModuleHandle(nullptr));
+    UnregisterClass(L"FlowPlanV2RawInputSink", GetModuleHandle(nullptr));
   });
 }
 

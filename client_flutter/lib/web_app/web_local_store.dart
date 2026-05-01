@@ -8,7 +8,7 @@ class WebLocalStore {
 
   static const _defaultUserId = '00000000-0000-4000-8000-000000000001';
   static const _oldReservedBaseUrl = 'http://localhost:3000/api';
-  static const _defaultBaseUrl = 'http://localhost:3200/api';
+  static const _defaultBaseUrl = 'http://localhost:3202/api';
 
   final SharedPreferences _preferences;
 

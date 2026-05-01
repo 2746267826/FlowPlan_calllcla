@@ -188,7 +188,7 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
     final raw = _serverUrlController.text.trim();
     final uri = Uri.tryParse(raw);
     if (raw.isEmpty || uri == null || !uri.hasScheme || !uri.hasAuthority) {
-      _show('请输入完整的服务端 API 地址，例如 http://localhost:3200/api');
+      _show('请输入完整的服务端 API 地址，例如 http://localhost:3202/api');
       return;
     }
     setState(() => _savingUrl = true);
@@ -514,7 +514,7 @@ class _ServerUrlCard extends StatelessWidget {
               controller: controller,
               enabled: !loading && !saving,
               decoration: const InputDecoration(
-                hintText: 'http://localhost:3200/api',
+                hintText: 'http://localhost:3202/api',
                 prefixIcon: Icon(Icons.link_outlined),
               ),
             ),

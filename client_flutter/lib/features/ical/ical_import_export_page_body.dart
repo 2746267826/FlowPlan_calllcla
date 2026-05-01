@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide Column;
@@ -12,7 +12,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../../../shared/providers/database_provider.dart';
-import 'flowplan_archive_service.dart';
+import 'flowplanv2_archive_service.dart';
 import 'ical_exporter.dart';
 import 'ical_parser.dart';
 
@@ -346,7 +346,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 const SizedBox(height: 16),
                 const _ImportExportSectionHeader(
                   icon: Icons.account_tree_outlined,
-                  title: 'FlowPlan 结构化归档',
+                  title: 'FlowPlanV2 结构化归档',
                   subtitle: '保留日历本、任务本、默认规则和条目归属关系，适合跨设备迁移或选择性备份。',
                   color: Color(0xFF00897B),
                 ),
@@ -378,7 +378,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 const _ImportExportSectionHeader(
                   icon: Icons.restore_outlined,
                   title: '恢复管理',
-                  subtitle: '恢复完整数据库需要完整重启 FlowPlan；本区只处理本地副本，不会触碰 Outlook 服务器数据。',
+                  subtitle: '恢复完整数据库需要完整重启 FlowPlanV2；本区只处理本地副本，不会触碰 Outlook 服务器数据。',
                   color: Color(0xFFD81B60),
                 ),
                 const SizedBox(height: 12),
@@ -386,7 +386,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   icon: Icons.restore_page_outlined,
                   title: '\u6062\u590d\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
                   subtitle:
-                      '\u5148\u9009\u62e9\u5df2\u5bfc\u51fa\u7684 FlowPlan \u6570\u636e\u5e93\u526f\u672c\uff0c\u7cfb\u7edf\u4f1a\u5148\u6682\u5b58\u5e76\u5728\u4f60\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlan \u65f6\u81ea\u52a8\u5e94\u7528\u3002',
+                      '\u5148\u9009\u62e9\u5df2\u5bfc\u51fa\u7684 FlowPlanV2 \u6570\u636e\u5e93\u526f\u672c\uff0c\u7cfb\u7edf\u4f1a\u5148\u6682\u5b58\u5e76\u5728\u4f60\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u3002',
                   actionLabel: _restoringDatabase
                       ? '\u51c6\u5907\u4e2d...'
                       : '\u9009\u62e9\u526f\u672c',
@@ -444,7 +444,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '\u4e0b\u6b21\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlan \u65f6\uff0c\u7cfb\u7edf\u4f1a\u5148\u5e94\u7528\u8fd9\u4e2a\u526f\u672c\uff0c\u540c\u65f6\u4fdd\u7559\u4e00\u4efd\u6062\u590d\u524d\u7684\u6570\u636e\u5e93\u5907\u4efd\u3002',
+                          '\u4e0b\u6b21\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlanV2 \u65f6\uff0c\u7cfb\u7edf\u4f1a\u5148\u5e94\u7528\u8fd9\u4e2a\u526f\u672c\uff0c\u540c\u65f6\u4fdd\u7559\u4e00\u4efd\u6062\u590d\u524d\u7684\u6570\u636e\u5e93\u5907\u4efd\u3002',
                           style: TextStyle(fontSize: 12),
                         ),
                       ],
@@ -465,8 +465,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                       ? '\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55'
                       : '\u67e5\u770b\u6570\u636e\u5e93\u4f4d\u7f6e',
                   subtitle: Platform.isWindows
-                      ? '\u6253\u5f00 FlowPlan \u5f53\u524d\u8fd0\u884c\u73af\u5883\u7684\u6570\u636e\u5e93\u6587\u4ef6\u5939\uff0c\u53ef\u7528\u7b2c\u4e09\u65b9 SQLite \u5de5\u5177\u76f4\u63a5\u67e5\u770b\u6216\u7ef4\u62a4\u3002'
-                      : '\u67e5\u770b FlowPlan \u5f53\u524d\u6570\u636e\u5e93\u7684\u5b58\u50a8\u4f4d\u7f6e\uff0c\u4fbf\u4e8e\u540e\u7eed\u624b\u52a8\u5907\u4efd\u6216\u66ff\u6362\u3002',
+                      ? '\u6253\u5f00 FlowPlanV2 \u5f53\u524d\u8fd0\u884c\u73af\u5883\u7684\u6570\u636e\u5e93\u6587\u4ef6\u5939\uff0c\u53ef\u7528\u7b2c\u4e09\u65b9 SQLite \u5de5\u5177\u76f4\u63a5\u67e5\u770b\u6216\u7ef4\u62a4\u3002'
+                      : '\u67e5\u770b FlowPlanV2 \u5f53\u524d\u6570\u636e\u5e93\u7684\u5b58\u50a8\u4f4d\u7f6e\uff0c\u4fbf\u4e8e\u540e\u7eed\u624b\u52a8\u5907\u4efd\u6216\u66ff\u6362\u3002',
                   actionLabel: _openingDatabaseFolder
                       ? (Platform.isWindows
                           ? '\u6253\u5f00\u4e2d...'
@@ -554,7 +554,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                       ),
                       _InfoRow(
                         icon: Icons.storage_outlined,
-                        text: '\u5982\u9700\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u548c\u9879\u76ee\u5f52\u5c5e\u5173\u7cfb\uff0c\u8bf7\u4f18\u5148\u4f7f\u7528\u201cFlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u201d\u3002',
+                        text: '\u5982\u9700\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u548c\u9879\u76ee\u5f52\u5c5e\u5173\u7cfb\uff0c\u8bf7\u4f18\u5148\u4f7f\u7528\u201cFlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u201d\u3002',
                       ),
                       _InfoRow(
                         icon: Icons.fact_check_outlined,
@@ -562,11 +562,11 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                       ),
                       _InfoRow(
                         icon: Icons.restore_outlined,
-                        text: '\u5982\u9700\u8981\u6062\u590d\u5b8c\u6574\u6570\u636e\uff0c\u53ef\u4ee5\u5728\u5173\u95ed FlowPlan \u540e\u624b\u52a8\u66ff\u6362\u6570\u636e\u5e93\u6587\u4ef6\uff0c\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u5148\u6682\u5b58\u6062\u590d\u526f\u672c\u3002',
+                        text: '\u5982\u9700\u8981\u6062\u590d\u5b8c\u6574\u6570\u636e\uff0c\u53ef\u4ee5\u5728\u5173\u95ed FlowPlanV2 \u540e\u624b\u52a8\u66ff\u6362\u6570\u636e\u5e93\u6587\u4ef6\uff0c\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u5148\u6682\u5b58\u6062\u590d\u526f\u672c\u3002',
                       ),
                       _InfoRow(
                         icon: Icons.restart_alt_outlined,
-                        text: '\u73b0\u5728\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u76f4\u63a5\u9009\u62e9\u6570\u636e\u5e93\u526f\u672c\uff0c\u5e76\u5728\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlan \u65f6\u81ea\u52a8\u5e94\u7528\u6062\u590d',
+                        text: '\u73b0\u5728\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u76f4\u63a5\u9009\u62e9\u6570\u636e\u5e93\u526f\u672c\uff0c\u5e76\u5728\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u6062\u590d',
                       ),
                     ],
                   ),
@@ -696,7 +696,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'FlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
+                      'FlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
@@ -914,7 +914,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
 
   String _safeFileNameSegment(String value) {
     final sanitized = value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
-    return sanitized.isEmpty ? 'flowplan_export' : sanitized;
+    return sanitized.isEmpty ? 'flowplanv2_export' : sanitized;
   }
 
   String _formatDate(DateTime value) {
@@ -961,8 +961,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         .toList(growable: false);
   }
 
-  FlowPlanArchiveService _archiveService() {
-    return FlowPlanArchiveService(
+  FlowPlanV2ArchiveService _archiveService() {
+    return FlowPlanV2ArchiveService(
       database: ref.read(databaseProvider),
       calendarBooksRepository: ref.read(calendarBooksRepositoryProvider),
       eventRepository: ref.read(eventRepositoryProvider),
@@ -1010,8 +1010,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
 
       final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '\u5bfc\u51fa FlowPlan \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
-        fileName: 'flowplan-containers-${_formatDate(DateTime.now())}.flowplan.json',
+        dialogTitle: '\u5bfc\u51fa FlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
+        fileName: 'flowplanv2-containers-${_formatDate(DateTime.now())}.flowplanv2.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
       );
@@ -1027,8 +1027,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       await File(outputPath).writeAsString(archive.toPrettyJson());
       await _recordAudit(
         action: 'export_structured_archive',
-        entityType: 'flowplan_archive',
-        summary: '\u5df2\u5bfc\u51fa FlowPlan \u7ed3\u6784\u5316\u5f52\u6863',
+        entityType: 'flowplanv2_archive',
+        summary: '\u5df2\u5bfc\u51fa FlowPlanV2 \u7ed3\u6784\u5316\u5f52\u6863',
         metadata: <String, Object?>{
           'output_path': outputPath,
           'calendar_ids': _selectedStructuredCalendarIds.toList(growable: false),
@@ -1085,7 +1085,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         return;
       }
 
-      final archive = FlowPlanArchiveData.fromJsonString(content);
+      final archive = FlowPlanV2ArchiveData.fromJsonString(content);
       if (!mounted) {
         return;
       }
@@ -1142,14 +1142,14 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
     }
   }
 
-  Future<FlowPlanArchiveImportMode?> _chooseStructuredImportMode() {
-    var selectedMode = FlowPlanArchiveImportMode.smartMerge;
-    return showDialog<FlowPlanArchiveImportMode>(
+  Future<FlowPlanV2ArchiveImportMode?> _chooseStructuredImportMode() {
+    var selectedMode = FlowPlanV2ArchiveImportMode.smartMerge;
+    return showDialog<FlowPlanV2ArchiveImportMode>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return RadioGroup<FlowPlanArchiveImportMode>(
+            return RadioGroup<FlowPlanV2ArchiveImportMode>(
               groupValue: selectedMode,
               onChanged: (value) {
                 if (value == null) {
@@ -1161,8 +1161,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 title: const Text('\u9009\u62e9\u7ed3\u6784\u5316\u5bfc\u5165\u7b56\u7565'),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: FlowPlanArchiveImportMode.values.map((mode) {
-                    return RadioListTile<FlowPlanArchiveImportMode>(
+                  children: FlowPlanV2ArchiveImportMode.values.map((mode) {
+                    return RadioListTile<FlowPlanV2ArchiveImportMode>(
                       value: mode,
                       title: Text(mode.label),
                       subtitle: Text(mode.description),
@@ -1188,7 +1188,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }
 
   Future<bool?> _confirmStructuredImportPreview(
-    FlowPlanArchivePreview preview,
+    FlowPlanV2ArchivePreview preview,
   ) {
     return showDialog<bool>(
       context: context,
@@ -1264,7 +1264,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }
 
   String _buildStructuredImportResultMessage(
-    FlowPlanArchiveImportResult result,
+    FlowPlanV2ArchiveImportResult result,
   ) {
     return '\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u5b8c\u6210\uff1a\u65b0\u5efa\u65e5\u5386\u672c ${result.createdCalendars} \u4e2a\uff0c\u5408\u5e76\u65e5\u5386\u672c ${result.mergedCalendars} \u4e2a\uff0c\u65b0\u5efa\u4efb\u52a1\u672c ${result.createdTaskLists} \u4e2a\uff0c\u5408\u5e76\u4efb\u52a1\u672c ${result.mergedTaskLists} \u4e2a\uff1b'
         '\u65e5\u7a0b\u65b0\u589e ${result.createdEvents} \u6761\u3001\u66f4\u65b0 ${result.updatedEvents} \u6761\u3001\u8df3\u8fc7 ${result.skippedEvents} \u6761\u3001\u79fb\u9664 ${result.removedEvents} \u6761\uff1b'
@@ -1499,11 +1499,11 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
 
       final fileName = exportScope == _IcsExportScope.selectedCalendar
-          ? '${_safeFileNameSegment(selectedCalendar.name)}_flowplan_export.ics'
-          : 'flowplan_all_local_calendars_${_formatDate(DateTime.now())}.ics';
+          ? '${_safeFileNameSegment(selectedCalendar.name)}_flowplanv2_export.ics'
+          : 'flowplanv2_all_local_calendars_${_formatDate(DateTime.now())}.ics';
       final calendarName = exportScope == _IcsExportScope.selectedCalendar
-          ? 'FlowPlan - ${selectedCalendar.name}'
-          : 'FlowPlan - \u5168\u90e8\u672c\u5730\u65e5\u5386\u672c';
+          ? 'FlowPlanV2 - ${selectedCalendar.name}'
+          : 'FlowPlanV2 - \u5168\u90e8\u672c\u5730\u65e5\u5386\u672c';
 
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u4fdd\u5b58 .ics \u6587\u4ef6',
@@ -1565,7 +1565,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
         fileName:
-            'flowplan-$appStorageFlavorLabel-backup-${_formatDate(DateTime.now())}.db',
+            'flowplanv2-$appStorageFlavorLabel-backup-${_formatDate(DateTime.now())}.db',
         type: FileType.custom,
         allowedExtensions: const ['db', 'sqlite', 'sqlite3'],
       );
@@ -1646,7 +1646,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         _restoringDatabase = false;
         _pendingRestore = pendingRestore;
         _lastMessage =
-            '\u5df2\u51c6\u5907\u597d\u6062\u590d\u526f\u672c\uff1a${preparation.sourcePath}\n\n\u8bf7\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlan\uff0c\u4e0b\u6b21\u542f\u52a8\u65f6\u4f1a\u81ea\u52a8\u5e94\u7528\u6062\u590d\u3002';
+            '\u5df2\u51c6\u5907\u597d\u6062\u590d\u526f\u672c\uff1a${preparation.sourcePath}\n\n\u8bf7\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlanV2\uff0c\u4e0b\u6b21\u542f\u52a8\u65f6\u4f1a\u81ea\u52a8\u5e94\u7528\u6062\u590d\u3002';
       });
     } catch (error) {
       if (!mounted) {

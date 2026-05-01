@@ -644,7 +644,7 @@ class _ReminderNotificationGateway {
   final _desktopShell = const DesktopShellService();
 
   static const _androidReminderChannel =
-      MethodChannel('com.flowplan.flawplanv2/android_reminders');
+      MethodChannel('com.flowplanv2.app/android_reminders');
 
   bool _initialized = false;
 
@@ -658,7 +658,7 @@ class _ReminderNotificationGateway {
       return;
     }
 
-    const androidSettings = AndroidInitializationSettings('ic_stat_flowplan');
+    const androidSettings = AndroidInitializationSettings('ic_stat_flowplanv2');
     await _notifications.initialize(
       const InitializationSettings(android: androidSettings),
     );
@@ -757,13 +757,13 @@ class _ReminderNotificationGateway {
     }
 
     const androidDetails = AndroidNotificationDetails(
-      'flowplan_reminders',
-      'FlowPlan 提醒',
+      'flowplanv2_reminders',
+      'FlowPlanV2 提醒',
       channelDescription: '日程和任务提醒',
       importance: Importance.max,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
-      ticker: 'FlowPlan 提醒',
+      ticker: 'FlowPlanV2 提醒',
     );
     await _notifications.show(
       id,

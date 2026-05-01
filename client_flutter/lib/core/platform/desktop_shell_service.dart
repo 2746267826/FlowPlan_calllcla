@@ -6,7 +6,7 @@ class DesktopShellService {
   const DesktopShellService();
 
   static const MethodChannel _channel =
-      MethodChannel('com.flowplan/desktop_shell');
+      MethodChannel('com.flowplanv2/desktop_shell');
 
   Future<void> setCloseToTrayEnabled(bool enabled) async {
     if (!Platform.isWindows) {

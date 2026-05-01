@@ -1,4 +1,4 @@
-﻿// 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
+// 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -850,7 +850,7 @@ final outlookFieldConflictSummariesProvider =
           previousSnapshotJson: binding.localSnapshotJson,
           current: snapshot,
         );
-        detail = '本地任务字段已经变化，等待用户确认是否按 FlowPlan 当前内容写回 Outlook 镜像。';
+        detail = '本地任务字段已经变化，等待用户确认是否按 FlowPlanV2 当前内容写回 Outlook 镜像。';
         canPushLocal = true;
         break;
       case OutlookTaskMirrorConflictState.remoteDeleted:
@@ -869,7 +869,7 @@ final outlookFieldConflictSummariesProvider =
         );
         detail = binding.conflictMessage?.trim().isNotEmpty == true
             ? binding.conflictMessage!.trim()
-            : 'Outlook 镜像已被修改，请确认是用本地内容覆盖远端，还是把远端内容回填到 FlowPlan。';
+            : 'Outlook 镜像已被修改，请确认是用本地内容覆盖远端，还是把远端内容回填到 FlowPlanV2。';
         canPushLocal = true;
         canPullRemote = true;
         canDetachMirror = true;
@@ -881,7 +881,7 @@ final outlookFieldConflictSummariesProvider =
         );
         detail = binding.conflictMessage?.trim().isNotEmpty == true
             ? binding.conflictMessage!.trim()
-            : 'FlowPlan 与 Outlook 两侧都已经修改，请人工选择以哪一侧为准。';
+            : 'FlowPlanV2 与 Outlook 两侧都已经修改，请人工选择以哪一侧为准。';
         canPushLocal = true;
         canPullRemote = true;
         canDetachMirror = true;

@@ -8,30 +8,30 @@ Future<PlatformStartup> preparePlatformStartup() async {
   return PlatformStartup(database: database);
 }
 
-class FlowPlanPlatformBootstrapper extends StatelessWidget {
-  const FlowPlanPlatformBootstrapper({super.key});
+class FlowPlanV2PlatformBootstrapper extends StatelessWidget {
+  const FlowPlanV2PlatformBootstrapper({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'FlowPlan Web',
+      title: 'FlowPlanV2 Web',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
       ),
-      home: const _FlowPlanWebHome(),
+      home: const _FlowPlanV2WebHome(),
     );
   }
 }
 
-class _FlowPlanWebHome extends StatelessWidget {
-  const _FlowPlanWebHome();
+class _FlowPlanV2WebHome extends StatelessWidget {
+  const _FlowPlanV2WebHome();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('FlowPlan Web')),
+      appBar: AppBar(title: const Text('FlowPlanV2 Web')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),

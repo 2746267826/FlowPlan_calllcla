@@ -11,8 +11,8 @@ import 'package:flutter/material.dart';
 import 'web_api_client.dart';
 import 'web_local_store.dart';
 
-class FlowPlanWebApp extends StatelessWidget {
-  const FlowPlanWebApp({super.key, required this.store});
+class FlowPlanV2WebApp extends StatelessWidget {
+  const FlowPlanV2WebApp({super.key, required this.store});
 
   final WebLocalStore store;
 
@@ -20,7 +20,7 @@ class FlowPlanWebApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'FlowPlan',
+      title: 'FlowPlanV2',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -1118,9 +1118,9 @@ class _DrivePageState extends State<_DrivePage> {
   Future<void> _createRoot() async {
     await widget.api.postJson('/files/roots', body: {
       'rootUid': 'web-root',
-      'name': 'FlowPlan 云盘',
+      'name': 'FlowPlanV2 云盘',
       'providerType': 'server_storage',
-      'rootUri': 'flowplan://server-storage/web-root',
+      'rootUri': 'flowplanv2://server-storage/web-root',
       'rootDisplayPath': '服务端云盘',
       'isManaged': true,
       'syncPolicy': 'server_primary',
@@ -2932,7 +2932,7 @@ class _SettingsPageState extends State<_SettingsPage> {
   Future<void> _login() async {
     final result = await widget.api.postJson('/auth/login', body: {
       'userId': userId.text.trim(),
-      'displayName': 'FlowPlan Web',
+      'displayName': 'FlowPlanV2 Web',
     });
     await widget.store.setTokens(
       accessToken: '${result['accessToken'] ?? ''}',
@@ -3228,7 +3228,7 @@ class _AppHeader extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            'FlowPlan',
+            'FlowPlanV2',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(width: 16),

@@ -176,7 +176,7 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '\u70ed\u529b\u56fe\u9ed8\u8ba4\u6392\u9664 FlowPlan '
+                    '\u70ed\u529b\u56fe\u9ed8\u8ba4\u6392\u9664 FlowPlanV2 '
                     '\u672c\u4f53\u7b49\u5df2\u5ffd\u7565\u7a97\u53e3\uff0c'
                     '\u4ec5\u5c55\u793a\u53ef\u5206\u6790\u7684\u5916\u90e8\u8f93\u5165\u8bb0\u5f55\u3002',
                     style: TextStyle(fontSize: 12, color: Colors.grey),

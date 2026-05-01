@@ -58,7 +58,7 @@ class OutlookManagedContainerService {
 
     managedCalendar ??= await graphService.createCalendar(
       name: remoteCalendarName,
-      isFlowPlanManagedContainer: true,
+      isFlowPlanV2ManagedContainer: true,
     );
 
     final remoteCalendarId = MsGraphService.calendarIdOf(managedCalendar);

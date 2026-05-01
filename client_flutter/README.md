@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/icons/app_icon.png" alt="FlowPlan Logo" width="96" />
+  <img src="assets/icons/app_icon.png" alt="FlowPlanV2 Logo" width="96" />
 </p>
 
-<h1 align="center">FlowPlan — AI 智能排程日历</h1>
+<h1 align="center">FlowPlanV2 — AI 智能排程日历</h1>
 
 <p align="center">
   <strong>跨平台本地优先任务管理 · 活动追踪 · 智能调度</strong>
@@ -39,7 +39,7 @@
 
 ## 🎯 项目概述
 
-**FlowPlan** 是一款面向中文母语者的跨平台智能排程日历与活动追踪应用，基于 Flutter 构建，采用本地优先（Local-first）的数据策略。它将日历管理、任务排程、活动追踪与输入行为分析融合为一体，致力于帮助用户理解"时间都去哪了"，并通过 AI 贪心算法实现一键智能排程。
+**FlowPlanV2** 是一款面向中文母语者的跨平台智能排程日历与活动追踪应用，基于 Flutter 构建，采用本地优先（Local-first）的数据策略。它将日历管理、任务排程、活动追踪与输入行为分析融合为一体，致力于帮助用户理解"时间都去哪了"，并通过 AI 贪心算法实现一键智能排程。
 
 ### 设计理念
 
@@ -81,13 +81,13 @@
 
 ### 4. 🔍 活动追踪（核心亮点）
 
-这是 FlowPlan 最大的差异化模块，占项目总代码量的 ~60%。
+这是 FlowPlanV2 最大的差异化模块，占项目总代码量的 ~60%。
 
 #### 4.1 前台窗口采集
 
 - **Windows**：通过 Win32 FFI（`GetForegroundWindow` / `QueryFullProcessImageName`）实时感知当前前台应用的进程名、窗口类名、窗口标题、全屏状态
 - **Android**：通过 `PACKAGE_USAGE_STATS` 系统权限，启动时增量读取应用使用记录
-- **FlowPlan 自排除**：应用自身窗口默认排除在追踪结果之外，避免污染数据
+- **FlowPlanV2 自排除**：应用自身窗口默认排除在追踪结果之外，避免污染数据
 
 #### 4.2 活动分类引擎
 
@@ -112,7 +112,7 @@
 - **去抖策略**：短时间内的窗口切换不立即切断会话
 - **桥接合并**：跨应用但同一工作上下文的短切换可合并
 - **连续短打断吸收**：一串连续的短暂打断后回到同一上下文的活动可桥接
-- **FlowPlan 打断无感**：切到 FlowPlan 自身查看数据后再切回，不打断原工作会话
+- **FlowPlanV2 打断无感**：切到 FlowPlanV2 自身查看数据后再切回，不打断原工作会话
 - **双层展示**：先看合并后的工作段摘要，再展开查看原始切换明细
 
 #### 4.4 键鼠输入追踪
@@ -178,7 +178,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        FlowPlan App                             │
+│                        FlowPlanV2 App                             │
 │                    MaterialApp.router                           │
 │                  (go_router + 双主题)                            │
 ├──────────────────────────────────────────────────────────────────┤
@@ -510,9 +510,9 @@ client_flutter/
 
 | 构建模式 | 存储目录名 | SharedPreferences 前缀 | 自启动任务名 |
 |----------|-----------|----------------------|------------|
-| Release | `flowplan` | (无前缀) | `FlowPlanStartup` |
-| Profile | `flowplan_profile` | `flowplan.profile.` | 独立 |
-| Debug | `flowplan_debug` | `flowplan.debug.` | 独立 |
+| Release | `flowplanv2` | (无前缀) | `FlowPlanV2Startup` |
+| Profile | `flowplanv2_profile` | `flowplanv2.profile.` | 独立 |
+| Debug | `flowplanv2_debug` | `flowplanv2.debug.` | 独立 |
 
 ---
 
@@ -576,7 +576,7 @@ client_flutter/
 ```bash
 # 1. 克隆仓库
 git clone <repo-url>
-cd flowplan
+cd flowplanv2
 
 # 2. 获取依赖
 flutter pub get
@@ -663,7 +663,7 @@ flutter build windows --release
 ```
 
 **关键设计**：
-- `currentSnapshot` vs `displaySnapshot`：当切换到 FlowPlan 自身时，冻结展示状态为最近的外部工作会话，不刷新为自身
+- `currentSnapshot` vs `displaySnapshot`：当切换到 FlowPlanV2 自身时，冻结展示状态为最近的外部工作会话，不刷新为自身
 - 输入事件的窗口上下文绑定在原生后台线程中定时缓存刷新，避免每个事件重复查询进程信息
 - Android 端通过 `_importAndroidUsage()` 在启动时一次性增量导入
 
@@ -674,7 +674,7 @@ flutter build windows --release
 1. **直接合并**：同一上下文（相同 processName + className）内短间隔记录直接合并
 2. **桥接合并**：中间夹着短暂（< 阈值）、低输入的打断片段时，可桥接回前后同一上下文
 3. **连续打断吸收**：一串连续短打断后回到同一上下文，整体吸收
-4. **FlowPlan 打断无感**：自排除应用的打断不视为上下文切换
+4. **FlowPlanV2 打断无感**：自排除应用的打断不视为上下文切换
 
 ### ActivityClassifier — 活动分类引擎
 
@@ -733,7 +733,7 @@ graph TD
 
 ## 🗓️ 开发路线图
 
-基于当前 `../docs/FlowPlan_用户版完整开发计划_260426.md` 和历史归档资料，当前版本处于 **Phase 2C — 追踪系统可用化** 阶段。
+基于当前 `../docs/FlowPlanV2_用户版完整开发计划_260426.md` 和历史归档资料，当前版本处于 **Phase 2C — 追踪系统可用化** 阶段。
 
 ### ✅ 已完成
 
@@ -756,7 +756,7 @@ graph TD
 
 ### 🔜 规划中
 
-- [ ] 追踪语义修正（FlowPlan 默认自排除策略完善）
+- [ ] 追踪语义修正（FlowPlanV2 默认自排除策略完善）
 - [ ] 日志与数据库索引/恢复策略
 - [ ] 工作会话更智能的跨应用合并规则
 - [ ] 热力图与历史日志/工作会话的深度联动筛选
@@ -771,7 +771,7 @@ graph TD
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 用户版总计划 | `../docs/FlowPlan_用户版完整开发计划_260426.md` | 当前唯一建议日常阅读的完整计划 |
+| 用户版总计划 | `../docs/FlowPlanV2_用户版完整开发计划_260426.md` | 当前唯一建议日常阅读的完整计划 |
 | 产品任务总表归档 | `../docs/archive/legacy-root-plans/CODEX.md` | 历史产品共识、优先级排序、开发进展记录 |
 | 阶段规划归档 | `../docs/archive/legacy-root-plans/implementation_plan.md` | 历史阶段规划与架构设计 |
 | 任务清单归档 | `../docs/archive/legacy-root-plans/task.md` | 历史阶段任务与进度跟踪 |
@@ -779,5 +779,5 @@ graph TD
 ---
 
 <p align="center">
-  <sub>FlowPlan v1.4.4 · 基于 Flutter & Dart 构建 · 中文优先 · 本地优先</sub>
+  <sub>FlowPlanV2 v1.4.4 · 基于 Flutter & Dart 构建 · 中文优先 · 本地优先</sub>
 </p>

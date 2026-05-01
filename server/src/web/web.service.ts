@@ -1,7 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 
@@ -15,7 +15,7 @@ export class WebService {
     private readonly devicesService: DevicesService,
   ) {}
 
-  async dashboard(context: FlowPlanRequestContext) {
+  async dashboard(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const [
@@ -63,7 +63,7 @@ export class WebService {
       profile: {
         userId,
         deviceId,
-        note: 'Flutter Web 是 FlowPlan 日常使用端；全局数据、审计和运维操作请使用 web_admin。',
+        note: 'Flutter Web 是 FlowPlanV2 日常使用端；全局数据、审计和运维操作请使用 web_admin。',
       },
       today: {
         date: this.localDateKey(),
@@ -85,23 +85,23 @@ export class WebService {
     };
   }
 
-  async tasks(query: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async tasks(query: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.listObjects(query, context, TASK_TYPES, (row) => this.taskVm(row));
   }
 
-  async events(query: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async events(query: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.listObjects(query, context, EVENT_TYPES, (row) => this.eventVm(row));
   }
 
-  async createTask(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async createTask(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.createObject('task_item', this.normalizeTaskPayload(body), context);
   }
 
-  async updateTask(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async updateTask(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.updateObject(id, this.normalizeTaskPayload(body), context, this.taskVm, this.numberValue(body.baseServerVersion));
   }
 
-  async completeTask(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async completeTask(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.updateObject(
       id,
       this.cleanRecord({
@@ -116,15 +116,15 @@ export class WebService {
     );
   }
 
-  async deleteTask(id: string, context: FlowPlanRequestContext) {
+  async deleteTask(id: string, context: FlowPlanV2RequestContext) {
     return this.deleteObject(id, 'task_item', context);
   }
 
-  async createEvent(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async createEvent(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.createObject('calendar_event', this.normalizeEventPayload(body), context);
   }
 
-  async updateEvent(id: string, body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async updateEvent(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.updateObject(
       id,
       this.normalizeEventPayload(body),
@@ -134,11 +134,11 @@ export class WebService {
     );
   }
 
-  async deleteEvent(id: string, context: FlowPlanRequestContext) {
+  async deleteEvent(id: string, context: FlowPlanV2RequestContext) {
     return this.deleteObject(id, 'calendar_event', context);
   }
 
-  async actualRecords(query: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async actualRecords(query: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit);
     const from = this.readDate(query.from);
@@ -168,7 +168,7 @@ export class WebService {
     return { items: result.rows };
   }
 
-  async reminders(context: FlowPlanRequestContext) {
+  async reminders(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -193,7 +193,7 @@ export class WebService {
   async prepareOperation(
     operationKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -215,7 +215,7 @@ export class WebService {
   async confirmOperation(
     operationKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -234,7 +234,7 @@ export class WebService {
 
   private async listObjects(
     query: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     objectTypes: string[],
     mapper: (row: QueryResultRow) => Record<string, unknown>,
   ) {
@@ -307,7 +307,7 @@ export class WebService {
   private async createObject(
     objectType: string,
     payload: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -362,7 +362,7 @@ export class WebService {
   private async updateObject(
     id: string,
     payloadPatch: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     mapper: (row: QueryResultRow) => Record<string, unknown>,
     baseServerVersion?: number,
   ) {
@@ -429,7 +429,7 @@ export class WebService {
   private async deleteObject(
     id: string,
     expectedObjectType: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);

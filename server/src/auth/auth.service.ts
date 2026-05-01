@@ -12,7 +12,7 @@ export class AuthService {
       requestedUserId && this.isUuid(requestedUserId)
         ? requestedUserId
         : randomUUID();
-    const displayName = this.asString(body.displayName) ?? 'FlowPlan User';
+    const displayName = this.asString(body.displayName) ?? 'FlowPlanV2 User';
 
     await this.database.query(
       `

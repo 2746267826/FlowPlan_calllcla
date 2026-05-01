@@ -317,7 +317,7 @@ class InputTelemetry {
 }
 
 class RawInputService {
-  static const _channel = MethodChannel('com.flowplan/raw_input');
+  static const _channel = MethodChannel('com.flowplanv2/raw_input');
 
   bool _started = false;
   String? _lastError;

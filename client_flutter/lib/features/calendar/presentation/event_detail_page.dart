@@ -200,7 +200,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             if (isReadOnly) ...[
               const _WarningNotice(
                 message:
-                    '\u8fd9\u662f\u4ece Outlook \u540c\u6b65\u8fc7\u6765\u7684\u53ea\u8bfb\u65e5\u7a0b\u3002\u8bf7\u5728 Outlook \u5b98\u65b9\u5ba2\u6237\u7aef\u4e2d\u4fee\u6539\u540e\uff0c\u518d\u56de\u5230 FlowPlan \u6267\u884c\u540c\u6b65\u3002',
+                    '\u8fd9\u662f\u4ece Outlook \u540c\u6b65\u8fc7\u6765\u7684\u53ea\u8bfb\u65e5\u7a0b\u3002\u8bf7\u5728 Outlook \u5b98\u65b9\u5ba2\u6237\u7aef\u4e2d\u4fee\u6539\u540e\uff0c\u518d\u56de\u5230 FlowPlanV2 \u6267\u884c\u540c\u6b65\u3002',
               ),
               const SizedBox(height: 16),
             ],
@@ -520,7 +520,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Outlook \u540c\u6b65\u65e5\u7a0b\u4e3a\u53ea\u8bfb\uff0c\u4e0d\u80fd\u5728 FlowPlan \u4e2d\u5220\u9664\u3002',
+            'Outlook \u540c\u6b65\u65e5\u7a0b\u4e3a\u53ea\u8bfb\uff0c\u4e0d\u80fd\u5728 FlowPlanV2 \u4e2d\u5220\u9664\u3002',
           ),
         ),
       );

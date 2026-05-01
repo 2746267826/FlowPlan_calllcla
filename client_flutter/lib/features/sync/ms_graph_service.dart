@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -128,25 +128,25 @@ class MsGraphService {
   }
 
   void _assertWriteAllowed({
-    required bool isFlowPlanManagedContainer,
+    required bool isFlowPlanV2ManagedContainer,
   }) {
     if (!syncMode.allowsPush) {
       throw StateError(
         '\u5f53\u524d Outlook \u540c\u6b65\u6a21\u5f0f\u4e0d\u5141\u8bb8\u5199\u56de\u8fdc\u7aef\uff0c\u8bf7\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u3002',
       );
     }
-    if (!isFlowPlanManagedContainer) {
+    if (!isFlowPlanV2ManagedContainer) {
       throw StateError(
-        'FlowPlan \u51fa\u4e8e\u6570\u636e\u5b89\u5168\u8003\u8651\uff0c\u76ee\u524d\u53ea\u5141\u8bb8\u5199\u5165 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u666e\u901a Outlook \u65e5\u5386\u3002',
+        'FlowPlanV2 \u51fa\u4e8e\u6570\u636e\u5b89\u5168\u8003\u8651\uff0c\u76ee\u524d\u53ea\u5141\u8bb8\u5199\u5165 FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u666e\u901a Outlook \u65e5\u5386\u3002',
       );
     }
   }
 
   Future<Map<String, dynamic>> createCalendar({
     required String name,
-    required bool isFlowPlanManagedContainer,
+    required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     final headers = await _writeHeaders();
     final uri = Uri.parse('$_baseUrl/me/calendars');
     final response = await http.post(
@@ -167,9 +167,9 @@ class MsGraphService {
   Future<Map<String, dynamic>?> createEvent(
     Map<String, dynamic> event, {
     required String calendarId,
-    required bool isFlowPlanManagedContainer,
+    required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     final headers = await _writeHeaders();
     final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events');
     final response = await http.post(
@@ -189,9 +189,9 @@ class MsGraphService {
     required String calendarId,
     required String eventId,
     required Map<String, dynamic> event,
-    required bool isFlowPlanManagedContainer,
+    required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     final headers = await _writeHeaders();
     final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events/$eventId');
     final response = await http.patch(
@@ -237,9 +237,9 @@ class MsGraphService {
   Future<bool> deleteEvent({
     required String calendarId,
     required String eventId,
-    required bool isFlowPlanManagedContainer,
+    required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanManagedContainer: isFlowPlanManagedContainer);
+    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     final headers = await _writeHeaders();
     final uri = Uri.parse('$_baseUrl/me/calendars/$calendarId/events/$eventId');
     final response = await http.delete(uri, headers: headers);

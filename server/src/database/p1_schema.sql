@@ -736,8 +736,8 @@ CREATE INDEX IF NOT EXISTS sync_objects_input_payload_time_idx
 CREATE TABLE IF NOT EXISTS outlook_object_mappings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  flowplan_object_type text NOT NULL,
-  flowplan_object_id uuid NOT NULL,
+  flowplanv2_object_type text NOT NULL,
+  flowplanv2_object_id uuid NOT NULL,
   outlook_object_type text NOT NULL,
   outlook_object_id text NOT NULL,
   outlook_calendar_id text,
@@ -746,7 +746,7 @@ CREATE TABLE IF NOT EXISTS outlook_object_mappings (
   last_remote_etag text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(user_id, flowplan_object_type, flowplan_object_id, outlook_object_type),
+  UNIQUE(user_id, flowplanv2_object_type, flowplanv2_object_id, outlook_object_type),
   UNIQUE(user_id, outlook_object_type, outlook_object_id)
 );
 
@@ -876,7 +876,7 @@ CREATE INDEX IF NOT EXISTS ai_provider_configs_user_status_idx
 CREATE TABLE IF NOT EXISTS ai_conversations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  source text NOT NULL DEFAULT 'flowplan',
+  source text NOT NULL DEFAULT 'flowplanv2',
   title text NOT NULL DEFAULT 'AI 对话',
   provider_key text,
   model text,

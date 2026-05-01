@@ -5,7 +5,7 @@ class ServerConfigStore {
 
   static const _baseUrlKey = 'server.api.base_url';
   static const _oldReservedBaseUrl = 'http://localhost:3000/api';
-  static const _defaultBaseUrl = 'http://localhost:3200/api';
+  static const _defaultBaseUrl = 'http://localhost:3202/api';
 
   final AppDatabase _database;
 

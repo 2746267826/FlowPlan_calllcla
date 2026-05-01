@@ -62,7 +62,7 @@ export class HealthController {
         connected: false,
         error: this.errorMessage(error),
         message:
-          'Check DATABASE_URL, PostgreSQL availability, and run: cd server; npm run db:schema',
+          'Check FLOWPLANV2_DATABASE_URL/DATABASE_URL, PostgreSQL availability, and run: cd server; npm run db:schema',
       };
       checks.devices = {
         ok: false,
@@ -87,7 +87,7 @@ export class HealthController {
 
     return {
       ok,
-      service: 'flowplan-server',
+      service: 'flowplanv2-server',
       phase: 'A-startup-connection',
       generatedAt: startedAt.toISOString(),
       checks,
@@ -133,11 +133,14 @@ export class HealthController {
 
   private configCheck() {
     return {
-      ok: Boolean(process.env.DATABASE_URL),
-      databaseUrlPresent: Boolean(process.env.DATABASE_URL),
-      port: Number(process.env.PORT ?? 3200),
+      ok: Boolean(process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL),
+      databaseUrlPresent: Boolean(
+        process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL,
+      ),
+      port: Number(process.env.PORT ?? 3202),
       host: process.env.HOST ?? '127.0.0.1',
-      bodyLimit: process.env.FLOWPLAN_BODY_LIMIT ?? '50mb',
+      bodyLimit:
+        process.env.FLOWPLANV2_BODY_LIMIT ?? '50mb',
       corsOrigin: process.env.ADMIN_CORS_ORIGIN ?? 'any',
     };
   }

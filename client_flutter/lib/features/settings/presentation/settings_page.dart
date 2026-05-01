@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -252,7 +252,7 @@ class SettingsPage extends ConsumerWidget {
               secondary: const Icon(Icons.rocket_launch_outlined),
               title: const Text('\u5f00\u673a\u81ea\u542f\u52a8'),
               subtitle: const Text(
-                '\u767b\u5f55 Windows \u540e\u901a\u8fc7\u8ba1\u5212\u4efb\u52a1\u4ee5\u6700\u9ad8\u6743\u9650\u542f\u52a8 FlowPlan\uff0c\u5e76\u9ed8\u8ba4\u9759\u9ed8\u7f29\u5230\u6258\u76d8\u3002',
+                '\u767b\u5f55 Windows \u540e\u901a\u8fc7\u8ba1\u5212\u4efb\u52a1\u4ee5\u6700\u9ad8\u6743\u9650\u542f\u52a8 FlowPlanV2\uff0c\u5e76\u9ed8\u8ba4\u9759\u9ed8\u7f29\u5230\u6258\u76d8\u3002',
               ),
               value: launchAtStartup,
               activeThumbColor: AppColors.primary,
@@ -306,14 +306,14 @@ class SettingsPage extends ConsumerWidget {
             leading: const Icon(Icons.cloud_sync_outlined),
             title: const Text('Outlook \u65e5\u5386\u540c\u6b65'),
             subtitle: const Text(
-              '\u652f\u6301\u53ea\u8bfb\u3001\u53cc\u5411\u540c\u6b65\u4e0e\u6682\u505c\u540c\u6b65\uff0c\u53cc\u5411\u6a21\u5f0f\u4ec5\u5199\u5165 FlowPlan \u6258\u7ba1\u5bb9\u5668',
+              '\u652f\u6301\u53ea\u8bfb\u3001\u53cc\u5411\u540c\u6b65\u4e0e\u6682\u505c\u540c\u6b65\uff0c\u53cc\u5411\u6a21\u5f0f\u4ec5\u5199\u5165 FlowPlanV2 \u6258\u7ba1\u5bb9\u5668',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.outlookSync),
           ),
           ListTile(
             leading: const Icon(Icons.cloud_upload_outlined),
-            title: const Text('FlowPlan 服务端同步'),
+            title: const Text('FlowPlanV2 服务端同步'),
             subtitle: const Text(
               '查看任务和日程的等待同步、同步失败、已同步状态，并在网络恢复后手动推送离线队列。',
             ),

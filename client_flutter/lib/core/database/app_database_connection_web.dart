@@ -4,11 +4,11 @@ import 'package:drift/drift.dart';
 import 'package:drift/web.dart';
 
 QueryExecutor openAppDatabaseConnection() {
-  return WebDatabase('flowplan_web');
+  return WebDatabase('flowplanv2_web');
 }
 
 Future<String> resolveAppDatabasePathForDisplay() async {
-  return '浏览器 IndexedDB：flowplan_web';
+  return '浏览器 IndexedDB：flowplanv2_web';
 }
 
 Future<void> exportAppDatabase(GeneratedDatabase database, String targetPath) async {

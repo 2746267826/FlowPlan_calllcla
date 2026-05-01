@@ -1,4 +1,4 @@
-package com.flowplan.flawplanv2
+package com.flowplanv2.app
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ReminderScheduler {
-    private const val PREFS_NAME = "flowplan_reminders"
+    private const val PREFS_NAME = "flowplanv2_reminders"
     private const val REMINDERS_KEY = "scheduled_reminders"
 
     fun schedule(
@@ -146,7 +146,7 @@ object ReminderScheduler {
         body: String,
     ): Intent {
         return Intent(context, ReminderAlarmReceiver::class.java).apply {
-            action = "com.flowplan.flawplanv2.REMINDER_ALARM"
+            action = "com.flowplanv2.app.REMINDER_ALARM"
             putExtra(ReminderAlarmReceiver.EXTRA_ID, id)
             putExtra(ReminderAlarmReceiver.EXTRA_TRIGGER_AT_MILLIS, triggerAtMillis)
             putExtra(ReminderAlarmReceiver.EXTRA_TITLE, title)

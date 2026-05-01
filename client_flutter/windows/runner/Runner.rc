@@ -90,13 +90,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.flowplan" "\0"
-            VALUE "FileDescription", "flowplan" "\0"
+            VALUE "CompanyName", "com.flowplanv2" "\0"
+            VALUE "FileDescription", "flowplanv2" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "flowplan" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.flowplan. All rights reserved." "\0"
-            VALUE "OriginalFilename", "flowplan.exe" "\0"
-            VALUE "ProductName", "flowplan" "\0"
+            VALUE "InternalName", "flowplanv2" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.flowplanv2. All rights reserved." "\0"
+            VALUE "OriginalFilename", "flowplanv2.exe" "\0"
+            VALUE "ProductName", "flowplanv2" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

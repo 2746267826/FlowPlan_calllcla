@@ -1,4 +1,4 @@
-name: flowplan
+name: flowplanv2
 description: AI 智能排程日历 — 跨平台本地优先任务管理
 
 publish_to: 'none'
@@ -80,9 +80,9 @@ flutter:
     - assets/icons/
 
 msix_config:
-  display_name: FlowPlan
-  publisher_display_name: FlowPlan
-  identity_name: com.flowplan
+  display_name: FlowPlanV2
+  publisher_display_name: FlowPlanV2
+  identity_name: com.flowplanv2
   msix_version: 1.4.4.144
   logo_path: windows/runner/resources/app_icon_512.png
   trim_logo: false

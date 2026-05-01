@@ -6,12 +6,13 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
   private readonly pool: Pool;
 
   constructor() {
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString =
+      process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error(
         [
-          'DATABASE_URL is required for FlowPlan Server startup.',
-          'Create flowplan.local.env in the workspace root or set $env:DATABASE_URL before starting the server.',
+          'FLOWPLANV2_DATABASE_URL or DATABASE_URL is required for FlowPlanV2 Server startup.',
+          'Create flowplanv2.local.env in the workspace root or set $env:FLOWPLANV2_DATABASE_URL before starting the server.',
           'Expected format: postgres://USER:PASSWORD@HOST:5432/DATABASE',
           'Then run: cd server; npm run db:schema; npm run dev',
         ].join(' '),
@@ -30,7 +31,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
     } catch (error) {
       throw new Error(
         [
-          'FlowPlan could not connect to PostgreSQL with DATABASE_URL.',
+          'FlowPlanV2 could not connect to PostgreSQL with FLOWPLANV2_DATABASE_URL/DATABASE_URL.',
           this.errorMessage(error),
           'Check that PostgreSQL is running, the database exists, credentials are correct, and the schema has been applied with: cd server; npm run db:schema',
         ].join(' '),

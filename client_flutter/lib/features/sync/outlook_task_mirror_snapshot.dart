@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import '../../core/database/app_database.dart';
 
@@ -24,8 +24,8 @@ class OutlookTaskMirrorSnapshot {
     required this.reminderMinutesBefore,
   });
 
-  static const metadataStartMarker = 'FLOWPLAN_TASK_META_START';
-  static const metadataEndMarker = 'FLOWPLAN_TASK_META_END';
+  static const metadataStartMarker = 'FLOWPLANV2_TASK_META_START';
+  static const metadataEndMarker = 'FLOWPLANV2_TASK_META_END';
 
   final int taskId;
   final String taskUid;

@@ -1,13 +1,13 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 
 @Injectable()
 export class DevicesService {
   constructor(private readonly database: DatabaseService) {}
 
-  async register(body: Record<string, unknown>, context: FlowPlanRequestContext) {
+  async register(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
     const clientDeviceId = this.asString(body.deviceId) ?? context.deviceId;
     const deviceName = this.asString(body.deviceName) ?? 'Unknown device';
@@ -94,7 +94,7 @@ export class DevicesService {
     };
   }
 
-  async list(context: FlowPlanRequestContext) {
+  async list(context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
     const result = await this.database.query(
       `
@@ -140,7 +140,7 @@ export class DevicesService {
   async update(
     deviceId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.ensureUser(context.userId);
     await this.database.query(
@@ -165,7 +165,7 @@ export class DevicesService {
   async revoke(
     deviceId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.ensureUser(context.userId);
     const actorDeviceId = await this.ensureDevice(context);
@@ -212,7 +212,7 @@ export class DevicesService {
   async heartbeat(
     deviceId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.ensureUser(context.userId);
     const revoked = await this.database.query<{ revoked_at: Date | null; revoked_reason: string | null }>(
@@ -325,7 +325,7 @@ export class DevicesService {
     };
   }
 
-  async connectionHistory(deviceId: string, context: FlowPlanRequestContext) {
+  async connectionHistory(deviceId: string, context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
     const device = await this.database.query(
       `
@@ -390,7 +390,7 @@ export class DevicesService {
     };
   }
 
-  async onlineSummary(context: FlowPlanRequestContext) {
+  async onlineSummary(context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
     const counts = await this.database.query(
       `
@@ -445,7 +445,7 @@ export class DevicesService {
     await this.database.query(
       `
       INSERT INTO users (id, display_name)
-      VALUES ($1, 'FlowPlan User')
+      VALUES ($1, 'FlowPlanV2 User')
       ON CONFLICT (id) DO NOTHING
       `,
       [userId],
@@ -453,7 +453,7 @@ export class DevicesService {
     return userId;
   }
 
-  async ensureDevice(context: FlowPlanRequestContext) {
+  async ensureDevice(context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
     const existing = await this.database.query<{ id: string; revoked_at: Date | null }>(
       `

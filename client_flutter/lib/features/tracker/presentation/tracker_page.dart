@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'dart:math' as math;
 
@@ -342,7 +342,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u5bfc\u51fa\u6570\u636e\u5e93\u526f\u672c',
         fileName:
-            'flowplan-$appStorageFlavorLabel-backup-${_formatDate(DateTime.now())}.db',
+            'flowplanv2-$appStorageFlavorLabel-backup-${_formatDate(DateTime.now())}.db',
         type: FileType.custom,
         allowedExtensions: const ['db', 'sqlite', 'sqlite3'],
       );
@@ -453,7 +453,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u5bfc\u51fa\u5b8c\u6574\u952e\u9f20\u8bb0\u5f55',
         fileName:
-            'flowplan-$appStorageFlavorLabel-input-events-${_formatDate(DateTime.now())}.jsonl',
+            'flowplanv2-$appStorageFlavorLabel-input-events-${_formatDate(DateTime.now())}.jsonl',
         type: FileType.custom,
         allowedExtensions: const ['jsonl'],
       );

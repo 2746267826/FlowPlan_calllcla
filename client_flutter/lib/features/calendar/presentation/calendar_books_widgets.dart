@@ -1,4 +1,4 @@
-﻿part of 'calendar_books_page.dart';
+part of 'calendar_books_page.dart';
 
 class _EventCalendarTile extends StatelessWidget {
   final EventCalendar calendar;
@@ -133,7 +133,7 @@ class _ReadOnlyEventCalendarTile extends StatelessWidget {
             padding: EdgeInsets.only(left: 4),
             child: Tooltip(
               message:
-                  'Outlook \u65e5\u5386\u672c\u7531\u540c\u6b65\u81ea\u52a8\u7ef4\u62a4\uff0c\u53ea\u80fd\u5728 FlowPlan \u4e2d\u63a7\u5236\u663e\u793a\u6216\u9690\u85cf\u3002',
+                  'Outlook \u65e5\u5386\u672c\u7531\u540c\u6b65\u81ea\u52a8\u7ef4\u62a4\uff0c\u53ea\u80fd\u5728 FlowPlanV2 \u4e2d\u63a7\u5236\u663e\u793a\u6216\u9690\u85cf\u3002',
               child: Icon(
                 Icons.lock_outline,
                 size: 20,
@@ -455,7 +455,7 @@ class _CalendarBooksBoundaryCard extends StatelessWidget {
               _BoundaryChip(
                 icon: Icons.event_busy_outlined,
                 label: '本地排程策略',
-                description: '默认阻挡、默认提醒等只影响 FlowPlan',
+                description: '默认阻挡、默认提醒等只影响 FlowPlanV2',
               ),
             ],
           ),

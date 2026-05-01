@@ -1,6 +1,6 @@
-# FlowPlan Workspace
+# FlowPlanV2 Workspace
 
-FlowPlan is now organized as a multi-module workspace. Each runtime module owns its own files and commands.
+FlowPlanV2 is now organized as a multi-module workspace. Each runtime module owns its own files and commands.
 
 ## Modules
 
@@ -34,7 +34,7 @@ Flutter client commands should be run inside `client_flutter/` when needed. Code
 
 Read the user-facing plan here:
 
-- `docs/FlowPlan_用户版完整开发计划_260426.md`
+- `docs/FlowPlanV2_用户版完整开发计划_260426.md`
 
 Daily update log:
 

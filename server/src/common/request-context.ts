@@ -1,11 +1,11 @@
-export interface FlowPlanRequestContext {
+export interface FlowPlanV2RequestContext {
   userId: string;
   deviceId: string;
 }
 
 export function readRequestContext(headers: Record<string, unknown>) {
-  const rawUserId = readHeader(headers, 'x-flowplan-user-id');
-  const rawDeviceId = readHeader(headers, 'x-flowplan-device-id');
+  const rawUserId = readHeader(headers, 'x-flowplanv2-user-id');
+  const rawDeviceId = readHeader(headers, 'x-flowplanv2-device-id');
   const userId = isUuid(rawUserId)
     ? rawUserId
     : '00000000-0000-4000-8000-000000000001';

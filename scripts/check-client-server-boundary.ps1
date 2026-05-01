@@ -84,7 +84,7 @@ $trackerProcessedDataPatterns = @(
   'inputEvents(limit: 500'
 )
 
-Write-Host 'FlowPlan client/server boundary scan'
+Write-Host 'FlowPlanV2 client/server boundary scan'
 Write-Host "Root: $clientRoot"
 Write-Host 'Rule: UI and feature providers should use server-first APIs; local repositories are cache/legacy only.'
 Write-Host ''

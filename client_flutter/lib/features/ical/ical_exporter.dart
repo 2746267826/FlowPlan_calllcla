@@ -6,13 +6,13 @@ class ICalExporter {
 
   /// 将日程事件列表导出为标准 .ics 格式文本
   String export(List<CalendarEvent> events,
-      {String calendarName = 'FlowPlan'}) {
+      {String calendarName = 'FlowPlanV2'}) {
     final buffer = StringBuffer();
 
     // VCALENDAR 头
     buffer.writeln('BEGIN:VCALENDAR');
     buffer.writeln('VERSION:2.0');
-    buffer.writeln('PRODID:-//FlowPlan//FlowPlan Calendar//CN');
+    buffer.writeln('PRODID:-//FlowPlanV2//FlowPlanV2 Calendar//CN');
     buffer.writeln('CALSCALE:GREGORIAN');
     buffer.writeln('METHOD:PUBLISH');
     buffer.writeln('X-WR-CALNAME:$calendarName');

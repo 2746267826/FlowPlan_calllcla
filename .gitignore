@@ -40,6 +40,8 @@ server/dist/
 web_admin/dist/
 
 # Local secrets
+flowplanv2.local.env
+server/flowplanv2.local.env
 flowplan.local.env
 server/flowplan.local.env
 server/.env

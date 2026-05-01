@@ -2,8 +2,8 @@ param(
   [ValidateSet('debug', 'release')]
   [string]$Mode = 'debug',
 
-  [int]$ServerPort = 3200,
-  [int]$AdminPort = 5173,
+  [int]$ServerPort = 3202,
+  [int]$AdminPort = 5174,
   [int]$FlutterWebPort = 0,
   [string]$EnvFile = '',
   [string]$DatabaseUrl = '',
@@ -142,8 +142,8 @@ function Resolve-CommandPath {
 }
 
 function Resolve-NpmCommandPath {
-  if ($env:FLOWPLAN_NPM_CMD -and (Test-Path -LiteralPath $env:FLOWPLAN_NPM_CMD)) {
-    return $env:FLOWPLAN_NPM_CMD
+  if ($env:FLOWPLANV2_NPM_CMD -and (Test-Path -LiteralPath $env:FLOWPLANV2_NPM_CMD)) {
+    return $env:FLOWPLANV2_NPM_CMD
   }
 
   $cmd = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
@@ -278,7 +278,7 @@ function Test-PortBeforeStart {
       "Port is occupied: module=$ModuleName, port=$Port, url=$Url, status=not-ready",
       "Owner process: $owner",
       "Actions:",
-      "1. Close the old FlowPlan window",
+      "1. Close the old FlowPlanV2 window",
       "2. Use $SwitchHint to choose another port",
       "3. Stop the owner process manually"
     ) -join "`n"
@@ -305,9 +305,9 @@ function Write-CommandBlock {
 function Write-CopyableCommands {
   param([string]$FlutterModeArg)
   Write-Host ''
-  Write-Host '================ FlowPlan copyable commands ================'
+  Write-Host '================ FlowPlanV2 copyable commands ================'
   Add-Content -Path $SummaryLog -Value '' -Encoding UTF8
-  Add-Content -Path $SummaryLog -Value '================ FlowPlan copyable commands ================' -Encoding UTF8
+  Add-Content -Path $SummaryLog -Value '================ FlowPlanV2 copyable commands ================' -Encoding UTF8
 
   Write-CommandBlock '# 1. database schema' @(
     ('cd /d ' + (Quote-CmdValue $ServerDir)),
@@ -315,7 +315,7 @@ function Write-CopyableCommands {
   )
   Write-CommandBlock '# 2. server' @(
     ('cd /d ' + (Quote-CmdValue $ServerDir)),
-    (New-CmdSetLine -Name 'DATABASE_URL' -Value ([string]$env:DATABASE_URL)),
+    (New-CmdSetLine -Name 'FLOWPLANV2_DATABASE_URL' -Value ([string]$env:FLOWPLANV2_DATABASE_URL)),
     (New-CmdSetLine -Name 'PORT' -Value ([string]$ServerPort)),
     'npm run dev'
   )
@@ -340,7 +340,7 @@ function Write-CopyableCommands {
   )
   Write-CommandBlock '# 7. Flutter Web run' @(
     ('cd /d ' + (Quote-CmdValue $FlutterDir)),
-    (New-CmdSetLine -Name 'FLOWPLAN_API_BASE_URL' -Value "http://localhost:$ServerPort/api"),
+    (New-CmdSetLine -Name 'FLOWPLANV2_API_BASE_URL' -Value "http://localhost:$ServerPort/api"),
     "flutter run -d chrome --web-port $FlutterWebPort $FlutterModeArg"
   )
   Write-Host '============================================================='
@@ -445,7 +445,7 @@ function Start-LongRunningProcess {
 }
 
 try {
-  Write-FlowLog "FlowPlan launcher started. Mode=$Mode"
+  Write-FlowLog "FlowPlanV2 launcher started. Mode=$Mode"
   Write-FlowLog "Root: $Root"
   Write-FlowLog "Logs: $RunLogDir"
 
@@ -455,8 +455,8 @@ try {
     }
   } else {
     $defaultEnvFiles = @(
-      (Join-Path $Root 'flowplan.local.env'),
-      (Join-Path $ServerDir 'flowplan.local.env'),
+      (Join-Path $Root 'flowplanv2.local.env'),
+      (Join-Path $ServerDir 'flowplanv2.local.env'),
       (Join-Path $ServerDir '.env')
     )
     foreach ($candidate in $defaultEnvFiles) {
@@ -467,7 +467,11 @@ try {
   }
 
   if ($DatabaseUrl.Trim().Length -gt 0) {
-    [Environment]::SetEnvironmentVariable('DATABASE_URL', $DatabaseUrl.Trim(), 'Process')
+    [Environment]::SetEnvironmentVariable('FLOWPLANV2_DATABASE_URL', $DatabaseUrl.Trim(), 'Process')
+  }
+
+  if (-not $env:FLOWPLANV2_DATABASE_URL -and $env:DATABASE_URL) {
+    [Environment]::SetEnvironmentVariable('FLOWPLANV2_DATABASE_URL', $env:DATABASE_URL, 'Process')
   }
 
   if ($SuppressNodeWarnings) {
@@ -487,8 +491,8 @@ try {
   Write-CopyableCommands -FlutterModeArg $flutterModeArg
 
   if (-not $SkipServer) {
-    if (-not $env:DATABASE_URL) {
-      throw (Join-FlowText @($T.MissingDatabaseUrl, ' flowplan.local.env / -DatabaseUrl / $env:DATABASE_URL'))
+    if (-not $env:FLOWPLANV2_DATABASE_URL) {
+      throw (Join-FlowText @($T.MissingDatabaseUrl, ' flowplanv2.local.env / -DatabaseUrl / $env:FLOWPLANV2_DATABASE_URL'))
     }
     if (-not $SkipDbSchema) {
       Invoke-Step `
@@ -496,20 +500,20 @@ try {
         -WorkingDirectory $ServerDir `
         -FilePath $npm `
         -Arguments @('run', 'db:schema') `
-        -Environment @{ DATABASE_URL = $env:DATABASE_URL }
+        -Environment @{ FLOWPLANV2_DATABASE_URL = $env:FLOWPLANV2_DATABASE_URL }
     }
     $serverHealthUrl = "http://localhost:$ServerPort/api/health"
     $serverPrecheck = Test-PortBeforeStart `
-      -ModuleName 'FlowPlan Server' `
+      -ModuleName 'FlowPlanV2 Server' `
       -Port $ServerPort `
       -Url $serverHealthUrl `
       -SwitchHint "-ServerPort $($ServerPort + 1)"
     if ($serverPrecheck -ne 'ready') {
-      $serverEnv = @{ PORT = $ServerPort; DATABASE_URL = $env:DATABASE_URL }
+      $serverEnv = @{ PORT = $ServerPort; FLOWPLANV2_DATABASE_URL = $env:FLOWPLANV2_DATABASE_URL }
       if ($SuppressNodeWarnings) { $serverEnv.NODE_NO_WARNINGS = '1' }
-      $serverDisplay = Join-FlowText @('FlowPlan ', $T.Server)
+      $serverDisplay = Join-FlowText @('FlowPlanV2 ', $T.Server)
       Start-LongRunningProcess `
-        -Name 'flowplan-server' `
+        -Name 'flowplanv2-server' `
         -DisplayName $serverDisplay `
         -WindowTitle "$serverDisplay - Port $ServerPort" `
         -ModuleDescription $T.ServerDesc `
@@ -519,9 +523,9 @@ try {
         -WorkingDirectory $ServerDir `
         -Command $npmRunDev `
         -Environment $serverEnv
-      $serverReady = Wait-HttpReady -Url $serverHealthUrl -TimeoutSeconds 120 -Name 'FlowPlan Server'
+      $serverReady = Wait-HttpReady -Url $serverHealthUrl -TimeoutSeconds 120 -Name 'FlowPlanV2 Server'
       if (-not $serverReady) {
-        throw "FlowPlan Server is not ready. Check log: $(Join-Path $RunLogDir 'flowplan-server.log')"
+        throw "FlowPlanV2 Server is not ready. Check log: $(Join-Path $RunLogDir 'flowplanv2-server.log')"
       }
     }
   }
@@ -529,16 +533,16 @@ try {
   if (-not $SkipAdmin) {
     $adminUrl = "http://localhost:$AdminPort"
     $adminPrecheck = Test-PortBeforeStart `
-      -ModuleName 'FlowPlan Admin' `
+      -ModuleName 'FlowPlanV2 Admin' `
       -Port $AdminPort `
       -Url $adminUrl `
       -SwitchHint "-AdminPort $($AdminPort + 1)"
     if ($adminPrecheck -ne 'ready') {
       $adminEnv = @{ PORT = $AdminPort; VITE_PORT = $AdminPort; VITE_API_BASE_URL = "http://localhost:$ServerPort/api" }
       if ($SuppressNodeWarnings) { $adminEnv.NODE_NO_WARNINGS = '1' }
-      $adminDisplay = Join-FlowText @('FlowPlan ', $T.Admin)
+      $adminDisplay = Join-FlowText @('FlowPlanV2 ', $T.Admin)
       Start-LongRunningProcess `
-        -Name 'flowplan-web-admin' `
+        -Name 'flowplanv2-web-admin' `
         -DisplayName $adminDisplay `
         -WindowTitle "$adminDisplay - Port $AdminPort" `
         -ModuleDescription $T.AdminDesc `
@@ -548,9 +552,9 @@ try {
         -WorkingDirectory $AdminDir `
         -Command $npmRunDev `
         -Environment $adminEnv
-      $adminReady = Wait-HttpReady -Url $adminUrl -TimeoutSeconds 60 -Name 'FlowPlan Admin'
+      $adminReady = Wait-HttpReady -Url $adminUrl -TimeoutSeconds 60 -Name 'FlowPlanV2 Admin'
       if (-not $adminReady) {
-        throw "FlowPlan Admin is not ready. Check log: $(Join-Path $RunLogDir 'flowplan-web-admin.log')"
+        throw "FlowPlanV2 Admin is not ready. Check log: $(Join-Path $RunLogDir 'flowplanv2-web-admin.log')"
       }
     }
   }
@@ -582,15 +586,15 @@ try {
   if (-not $SkipRunFlutterWeb) {
     $flutterWebUrl = "http://localhost:$FlutterWebPort"
     $flutterWebPrecheck = Test-PortBeforeStart `
-      -ModuleName 'FlowPlan Flutter Web' `
+      -ModuleName 'FlowPlanV2 Flutter Web' `
       -Port $FlutterWebPort `
       -Url $flutterWebUrl `
       -SwitchHint "-FlutterWebPort $($FlutterWebPort + 1)"
     $runArgs = "flutter run -d chrome --web-port $FlutterWebPort $flutterModeArg"
     if ($flutterWebPrecheck -ne 'ready') {
-      $webDisplay = Join-FlowText @('FlowPlan ', $T.WebClient)
+      $webDisplay = Join-FlowText @('FlowPlanV2 ', $T.WebClient)
       Start-LongRunningProcess `
-        -Name "flowplan-flutter-web-$Mode" `
+        -Name "flowplanv2-flutter-web-$Mode" `
         -DisplayName $webDisplay `
         -WindowTitle "$webDisplay - Port $FlutterWebPort" `
         -ModuleDescription $T.WebDesc `
@@ -599,7 +603,7 @@ try {
         -CommonNote $T.WebNote `
         -WorkingDirectory $FlutterDir `
         -Command $runArgs `
-        -Environment @{ FLOWPLAN_API_BASE_URL = "http://localhost:$ServerPort/api" }
+        -Environment @{ FLOWPLANV2_API_BASE_URL = "http://localhost:$ServerPort/api" }
       Write-FlowLog "Flutter Web will try to open Chrome automatically. URL: $flutterWebUrl"
     }
   }

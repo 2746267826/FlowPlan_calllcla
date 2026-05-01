@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
-import '../../web_app/flowplan_web_app.dart';
+import '../../web_app/flowplanv2_web_app.dart';
 import '../../web_app/web_local_store.dart';
 
-Future<void> runFlowPlanEntry() async {
-  runApp(const _FlowPlanWebBootApp());
+Future<void> runFlowPlanV2Entry() async {
+  runApp(const _FlowPlanV2WebBootApp());
 }
 
-class _FlowPlanWebBootApp extends StatefulWidget {
-  const _FlowPlanWebBootApp();
+class _FlowPlanV2WebBootApp extends StatefulWidget {
+  const _FlowPlanV2WebBootApp();
 
   @override
-  State<_FlowPlanWebBootApp> createState() => _FlowPlanWebBootAppState();
+  State<_FlowPlanV2WebBootApp> createState() => _FlowPlanV2WebBootAppState();
 }
 
-class _FlowPlanWebBootAppState extends State<_FlowPlanWebBootApp> {
+class _FlowPlanV2WebBootAppState extends State<_FlowPlanV2WebBootApp> {
   Object? error;
 
   @override
@@ -27,7 +27,7 @@ class _FlowPlanWebBootAppState extends State<_FlowPlanWebBootApp> {
     try {
       final store = await WebLocalStore.load();
       if (!mounted) return;
-      runApp(FlowPlanWebApp(store: store));
+      runApp(FlowPlanV2WebApp(store: store));
     } catch (caught) {
       if (!mounted) return;
       setState(() => error = caught);
@@ -38,7 +38,7 @@ class _FlowPlanWebBootAppState extends State<_FlowPlanWebBootApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'FlowPlan',
+      title: 'FlowPlanV2',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
@@ -58,7 +58,7 @@ class _FlowPlanWebBootAppState extends State<_FlowPlanWebBootApp> {
                     const Icon(Icons.auto_awesome, size: 42, color: Color(0xFF2563EB)),
                     const SizedBox(height: 16),
                     Text(
-                      error == null ? 'FlowPlan 正在启动' : 'FlowPlan 启动失败',
+                      error == null ? 'FlowPlanV2 正在启动' : 'FlowPlanV2 启动失败',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),

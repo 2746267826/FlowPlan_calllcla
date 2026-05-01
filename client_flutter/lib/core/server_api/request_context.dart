@@ -11,9 +11,9 @@ class RequestContext {
 
   Map<String, String> toHeaders() {
     return {
-      'x-flowplan-device-id': deviceId,
-      'x-flowplan-platform': platform,
-      if (userId != null && userId!.isNotEmpty) 'x-flowplan-user-id': userId!,
+      'x-flowplanv2-device-id': deviceId,
+      'x-flowplanv2-platform': platform,
+      if (userId != null && userId!.isNotEmpty) 'x-flowplanv2-user-id': userId!,
     };
   }
 

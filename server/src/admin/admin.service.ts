@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { QueryResultRow } from 'pg';
-import { FlowPlanRequestContext } from '../common/request-context';
+import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { LocalObjectStorageService } from '../files/local-object-storage.service';
@@ -67,7 +67,7 @@ export class AdminService {
     private readonly objectStorage: LocalObjectStorageService,
   ) {}
 
-  async overview(context: FlowPlanRequestContext) {
+  async overview(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const [
       objectCounts,
@@ -151,7 +151,7 @@ export class AdminService {
     };
   }
 
-  async syncHealth(context: FlowPlanRequestContext) {
+  async syncHealth(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const devices = await this.database.query<QueryResultRow>(
       `
@@ -204,16 +204,16 @@ export class AdminService {
 
   async deviceConnectionHistory(
     deviceId: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     return this.devicesService.connectionHistory(deviceId, context);
   }
 
-  async deviceOnlineSummary(context: FlowPlanRequestContext) {
+  async deviceOnlineSummary(context: FlowPlanV2RequestContext) {
     return this.devicesService.onlineSummary(context);
   }
 
-  async newInfo(query: AdminQuery, context: FlowPlanRequestContext) {
+  async newInfo(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const since = this.readDate(query.since) ?? new Date(Date.now() - 15 * 60 * 1000);
     const deviceId = this.readDeviceId(query.deviceId);
@@ -248,7 +248,7 @@ export class AdminService {
     };
   }
 
-  async objects(query: AdminQuery, context: FlowPlanRequestContext) {
+  async objects(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const offset = this.readOffset(query.offset);
@@ -306,7 +306,7 @@ export class AdminService {
   async updateObject(
     objectId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -355,7 +355,7 @@ export class AdminService {
     return { ok: !!result, object: result ?? null };
   }
 
-  async actualRecords(query: AdminQuery, context: FlowPlanRequestContext) {
+  async actualRecords(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const offset = this.readOffset(query.offset);
@@ -392,7 +392,7 @@ export class AdminService {
   async updateActualRecord(
     actualId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -427,7 +427,7 @@ export class AdminService {
     return { ok: !!result, actualRecord: result };
   }
 
-  async files(query: AdminQuery, context: FlowPlanRequestContext) {
+  async files(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -482,7 +482,7 @@ export class AdminService {
   async updateFile(
     fileId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -514,7 +514,7 @@ export class AdminService {
     return { ok: !!result, file: result };
   }
 
-  async conflicts(query: AdminQuery, context: FlowPlanRequestContext) {
+  async conflicts(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
@@ -543,14 +543,14 @@ export class AdminService {
     return { conflicts: result.rows };
   }
 
-  async outlook(context: FlowPlanRequestContext) {
+  async outlook(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const mappings = await this.database.query<QueryResultRow>(
       `
       SELECT
         id::text AS id,
-        flowplan_object_type AS "flowplanObjectType",
-        flowplan_object_id::text AS "flowplanObjectId",
+        flowplanv2_object_type AS "flowplanV2ObjectType",
+        flowplanv2_object_id::text AS "flowplanV2ObjectId",
         outlook_object_type AS "outlookObjectType",
         outlook_object_id AS "outlookObjectId",
         outlook_calendar_id AS "outlookCalendarId",
@@ -572,7 +572,7 @@ export class AdminService {
     return { summary, mappings: mappings.rows };
   }
 
-  async auditLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+  async auditLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -605,7 +605,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  async reports(query: AdminQuery, context: FlowPlanRequestContext) {
+  async reports(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const offset = this.readOffset(query.offset);
@@ -634,7 +634,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  async pushDeliveries(query: AdminQuery, context: FlowPlanRequestContext) {
+  async pushDeliveries(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -662,7 +662,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  async aiDrafts(query: AdminQuery, context: FlowPlanRequestContext) {
+  async aiDrafts(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 80);
     const offset = this.readOffset(query.offset);
@@ -702,7 +702,7 @@ export class AdminService {
   async updateAiDraft(
     draftId: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -729,7 +729,7 @@ export class AdminService {
     return { ok: !!result, draft: result };
   }
 
-  async jobs(context: FlowPlanRequestContext) {
+  async jobs(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -757,7 +757,7 @@ export class AdminService {
   async upsertJob(
     jobKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -803,7 +803,7 @@ export class AdminService {
     return { ok: true, job: result };
   }
 
-  async remoteConfigs(context: FlowPlanRequestContext) {
+  async remoteConfigs(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -829,7 +829,7 @@ export class AdminService {
   async upsertRemoteConfig(
     configKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
@@ -878,7 +878,7 @@ export class AdminService {
     return { ok: true, config: result };
   }
 
-  async dashboard(context: FlowPlanRequestContext) {
+  async dashboard(context: FlowPlanV2RequestContext) {
     const [overview, syncHealth, audit, jobs] = await Promise.all([
       this.overview(context),
       this.syncHealth(context),
@@ -906,7 +906,7 @@ export class AdminService {
   async adminData(
     domain: string,
     query: AdminQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     switch (domain) {
       case 'tasks':
@@ -991,7 +991,7 @@ export class AdminService {
   async adminDataDetail(
     domain: string,
     id: string,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const table = this.tableForDomain(domain);
@@ -1019,7 +1019,7 @@ export class AdminService {
     domain: string,
     id: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     if (domain === 'objects' || domain === 'tasks' || domain === 'schedules') {
       return this.updateObject(id, body, context);
@@ -1046,7 +1046,7 @@ export class AdminService {
     };
   }
 
-  async adminSettings(context: FlowPlanRequestContext) {
+  async adminSettings(context: FlowPlanV2RequestContext) {
     const configs = await this.remoteConfigs(context);
     return {
       scopes: [
@@ -1074,7 +1074,7 @@ export class AdminService {
     };
   }
 
-  async monitoringHealth(context: FlowPlanRequestContext) {
+  async monitoringHealth(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const db = await this.database.query<{ now: Date }>('SELECT now() AS now');
     const counts = await this.database.query<QueryResultRow>(
@@ -1104,7 +1104,7 @@ export class AdminService {
     };
   }
 
-  async monitoringLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+  async monitoringLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const [audit, mutations, conflicts] = await Promise.all([
       this.auditLogs(query, context),
       this.syncMutations({ ...query, status: 'rejected', limit: query.limit ?? '50' }, context),
@@ -1117,14 +1117,14 @@ export class AdminService {
     };
   }
 
-  async monitoringJobs(context: FlowPlanRequestContext) {
+  async monitoringJobs(context: FlowPlanV2RequestContext) {
     return this.jobs(context);
   }
 
   async prepareOperation(
     operationKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const token = randomUUID();
     await this.recordAdminAction(context, 'admin.operation.prepare', {
@@ -1147,7 +1147,7 @@ export class AdminService {
   async confirmOperation(
     operationKey: string,
     body: Record<string, unknown>,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const token = this.clean(body.confirmationToken);
     if (!token) {
@@ -1173,7 +1173,7 @@ export class AdminService {
   }
 
   async recordAdminAction(
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
     action: string,
     details: Record<string, unknown>,
   ) {
@@ -1204,7 +1204,7 @@ export class AdminService {
     );
   }
 
-  private async adminDevices(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async adminDevices(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1248,7 +1248,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async syncChanges(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async syncChanges(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1279,7 +1279,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async syncMutations(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async syncMutations(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1315,7 +1315,7 @@ export class AdminService {
     return { limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async trackingIngestBatches(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async trackingIngestBatches(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1362,7 +1362,7 @@ export class AdminService {
     return { domain: 'tracking-ingest-batches', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async activitySegments(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async activitySegments(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1406,7 +1406,7 @@ export class AdminService {
     return { domain: 'activity-segments', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async taskWorkLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async taskWorkLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1452,7 +1452,7 @@ export class AdminService {
     return { domain: 'task-work-logs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async scheduleRuns(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async scheduleRuns(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1487,7 +1487,7 @@ export class AdminService {
     return { domain: 'schedule-runs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async scheduleDraftItems(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async scheduleDraftItems(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1524,7 +1524,7 @@ export class AdminService {
     return { domain: 'schedule-draft-items', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async planDeviations(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async planDeviations(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1567,7 +1567,7 @@ export class AdminService {
     return { domain: 'plan-deviations', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async reportEntries(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async reportEntries(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1594,7 +1594,7 @@ export class AdminService {
     return { domain: 'report-entries', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async reportEvidence(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async reportEvidence(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1627,7 +1627,7 @@ export class AdminService {
     return { domain: 'report-evidence', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
-  private async fileOperationLogs(query: AdminQuery, context: FlowPlanRequestContext) {
+  private async fileOperationLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const limit = this.readLimit(query.limit, 100);
     const offset = this.readOffset(query.offset);
@@ -1672,7 +1672,7 @@ export class AdminService {
   private async genericAdminTable(
     domain: string,
     query: AdminQuery,
-    context: FlowPlanRequestContext,
+    context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const table = this.tableForDomain(domain);

@@ -8,9 +8,9 @@ Future<PlatformStartup> preparePlatformStartup() async {
   return PlatformStartup(database: AppDatabase());
 }
 
-class FlowPlanPlatformBootstrapper extends StatelessWidget {
-  const FlowPlanPlatformBootstrapper({super.key});
+class FlowPlanV2PlatformBootstrapper extends StatelessWidget {
+  const FlowPlanV2PlatformBootstrapper({super.key});
 
   @override
-  Widget build(BuildContext context) => const FlowPlanApp();
+  Widget build(BuildContext context) => const FlowPlanV2App();
 }

@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -199,7 +199,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   const SizedBox(height: 12),
                   if (!_isAuthenticated) ...[
                     Text(
-                      '步骤 1：点击下方按钮后，FlowPlan 会按 Microsoft identity platform Authorization Code Flow + PKCE 打开浏览器登录个人 Outlook 账号。',
+                      '步骤 1：点击下方按钮后，FlowPlanV2 会按 Microsoft identity platform Authorization Code Flow + PKCE 打开浏览器登录个人 Outlook 账号。',
                       style: const TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
@@ -333,7 +333,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '\u4f60\u5df2\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u73b0\u6709 Outlook \u4ee4\u724c\u4ecd\u662f\u53ea\u8bfb\u6743\u9650\u3002\u8bf7\u91cd\u65b0\u8fdb\u884c\u4e00\u6b21\u6d4f\u89c8\u5668\u6388\u6743\uff0cFlowPlan \u624d\u80fd\u5bf9\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u6267\u884c\u5199\u56de\u3002',
+                            '\u4f60\u5df2\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u73b0\u6709 Outlook \u4ee4\u724c\u4ecd\u662f\u53ea\u8bfb\u6743\u9650\u3002\u8bf7\u91cd\u65b0\u8fdb\u884c\u4e00\u6b21\u6d4f\u89c8\u5668\u6388\u6743\uff0cFlowPlanV2 \u624d\u80fd\u5bf9\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u6267\u884c\u5199\u56de\u3002',
                             style: TextStyle(fontSize: 13),
                           ),
                           const SizedBox(height: 12),
@@ -473,7 +473,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   const _HelpRow(
                     num: '5.',
                     text:
-                        'Outlook 普通日历默认保持只读，FlowPlan 只会对自己托管的 Outlook 专属日历本执行写回。',
+                        'Outlook 普通日历默认保持只读，FlowPlanV2 只会对自己托管的 Outlook 专属日历本执行写回。',
                   ),
                 ],
               ),
@@ -500,7 +500,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   }
 
   String _permissionHelpText() {
-    return '当前实现固定申请 openid、profile、offline_access、User.Read、Calendars.ReadWrite，并通过 FlowPlan 内部同步模式控制只读 / 双向 / 暂停。';
+    return '当前实现固定申请 openid、profile、offline_access、User.Read、Calendars.ReadWrite，并通过 FlowPlanV2 内部同步模式控制只读 / 双向 / 暂停。';
   }
 
   Widget _sectionTitle(String title) {
@@ -571,7 +571,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
               icon: Icons.shield_outlined,
               iconColor: Color(0xFF43A047),
               message:
-                  '\u5373\u4fbf\u5728\u53cc\u5411\u540c\u6b65\u4e0b\uff0cFlowPlan \u4e5f\u53ea\u4f1a\u5199\u5165\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u666e\u901a Outlook \u65e5\u5386\u4ecd\u4fdd\u6301\u53ea\u8bfb\u3002',
+                  '\u5373\u4fbf\u5728\u53cc\u5411\u540c\u6b65\u4e0b\uff0cFlowPlanV2 \u4e5f\u53ea\u4f1a\u5199\u5165\u81ea\u5df1\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u666e\u901a Outlook \u65e5\u5386\u4ecd\u4fdd\u6301\u53ea\u8bfb\u3002',
             ),
           ],
         ],
@@ -625,7 +625,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                 status:
                     '\u5df2\u62c9\u53d6 ${detail.downloaded} \u6761\u65e5\u7a0b\u66f4\u65b0',
                 detail:
-                    '\u5df2\u540c\u6b65\u8fdb FlowPlan \u672c\u5730\u65e5\u5386\u672c ID\uff1a${detail.localCalendarId}\u3002',
+                    '\u5df2\u540c\u6b65\u8fdb FlowPlanV2 \u672c\u5730\u65e5\u5386\u672c ID\uff1a${detail.localCalendarId}\u3002',
               ),
             ),
           ),
@@ -708,7 +708,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     final localChanged = diagnostics?.localChangedSinceLastMirror ?? 0;
     final conflictCount = fieldConflictsAsync.asData?.value.length ?? 0;
     final conflictHint = pendingCleanup > 0 || localChanged > 0
-        ? '\u5df2\u53d1\u73b0 $pendingCleanup \u6761\u5f85\u6e05\u7406\u955c\u50cf\u7d22\u5f15\uff0c$localChanged \u6761\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u5f85\u5199\u56de\u3002\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab FlowPlan \u9759\u9ed8\u8986\u76d6\uff0c\u8bf7\u4f18\u5148\u5bfc\u51fa\u62a5\u544a\u68c0\u67e5\u3002'
+        ? '\u5df2\u53d1\u73b0 $pendingCleanup \u6761\u5f85\u6e05\u7406\u955c\u50cf\u7d22\u5f15\uff0c$localChanged \u6761\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u5f85\u5199\u56de\u3002\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab FlowPlanV2 \u9759\u9ed8\u8986\u76d6\uff0c\u8bf7\u4f18\u5148\u5bfc\u51fa\u62a5\u544a\u68c0\u67e5\u3002'
         : '\u5f53\u524d\u672a\u53d1\u73b0\u5f85\u6e05\u7406\u955c\u50cf\u7d22\u5f15\u6216\u672c\u5730\u5b57\u6bb5\u53d8\u66f4\u51b2\u7a81\u5019\u9009\u3002';
 
     return _Panel(
@@ -799,7 +799,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   title: conflict.taskSummary,
                   status: '待写回字段：${conflict.changedFields.join('、')}',
                   detail:
-                      '\u4efb\u52a1\u672c\uff1a${conflict.taskListName}\nOutlook \u955c\u50cf\u5bb9\u5668\uff1a${conflict.remoteCalendarName}\nFlowPlan \u4f1a\u5728\u53cc\u5411\u540c\u6b65\u65f6\u5c1d\u8bd5\u5199\u56de\u8fd9\u4e9b\u672c\u5730\u5b57\u6bb5\uff1b\u5982\u679c\u8fdc\u7aef\u62d2\u7edd\u6216\u5df2\u88ab\u5220\u9664\uff0c\u5c06\u8bb0\u4e3a\u51b2\u7a81\u800c\u4e0d\u9759\u9ed8\u8986\u76d6\u3002',
+                      '\u4efb\u52a1\u672c\uff1a${conflict.taskListName}\nOutlook \u955c\u50cf\u5bb9\u5668\uff1a${conflict.remoteCalendarName}\nFlowPlanV2 \u4f1a\u5728\u53cc\u5411\u540c\u6b65\u65f6\u5c1d\u8bd5\u5199\u56de\u8fd9\u4e9b\u672c\u5730\u5b57\u6bb5\uff1b\u5982\u679c\u8fdc\u7aef\u62d2\u7edd\u6216\u5df2\u88ab\u5220\u9664\uff0c\u5c06\u8bb0\u4e3a\u51b2\u7a81\u800c\u4e0d\u9759\u9ed8\u8986\u76d6\u3002',
                 ),
               ),
             ),
@@ -928,7 +928,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             onPressed: _syncing
                 ? null
                 : () => _confirmAndRunConflictAction(
-                      title: '\u4ee5 FlowPlan \u4e3a\u51c6',
+                      title: '\u4ee5 FlowPlanV2 \u4e3a\u51c6',
                       content:
                           '\u5c06\u201c${conflict.taskSummary}\u201d\u7684\u672c\u5730\u4efb\u52a1\u5185\u5bb9\u5199\u56de\u5230 Outlook \u955c\u50cf\uff0c\u662f\u5426\u7ee7\u7eed\uff1f',
                       busyText: '\u6b63\u5728\u628a\u672c\u5730\u5185\u5bb9\u5199\u56de Outlook \u955c\u50cf...',
@@ -1151,7 +1151,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'FlowPlan \u5bf9 Outlook \u7684\u5199\u56de\u59cb\u7ec8\u53d7\u5230\u53d7\u63a7\u8303\u56f4\u9650\u5236\uff0c\u4e0d\u4f1a\u76f4\u63a5\u6539\u52a8\u4f60\u7684\u666e\u901a Outlook \u65e5\u5386\u3002',
+            'FlowPlanV2 \u5bf9 Outlook \u7684\u5199\u56de\u59cb\u7ec8\u53d7\u5230\u53d7\u63a7\u8303\u56f4\u9650\u5236\uff0c\u4e0d\u4f1a\u76f4\u63a5\u6539\u52a8\u4f60\u7684\u666e\u901a Outlook \u65e5\u5386\u3002',
             style: TextStyle(fontSize: 13, color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -1161,16 +1161,16 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             title: '\u666e\u901a Outlook \u65e5\u5386',
             status: '\u59cb\u7ec8\u53ea\u8bfb',
             detail:
-                '\u65e0\u8bba\u5f53\u524d\u540c\u6b65\u6a21\u5f0f\u5982\u4f55\uff0cFlowPlan \u90fd\u53ea\u4f1a\u628a\u5b83\u4eec\u62c9\u53d6\u8fdb\u672c\u5730\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u3001\u8986\u76d6\u6216\u5220\u9664\u8fd9\u4e9b\u539f\u751f\u65e5\u5386\u6570\u636e\u3002',
+                '\u65e0\u8bba\u5f53\u524d\u540c\u6b65\u6a21\u5f0f\u5982\u4f55\uff0cFlowPlanV2 \u90fd\u53ea\u4f1a\u628a\u5b83\u4eec\u62c9\u53d6\u8fdb\u672c\u5730\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u76f4\u63a5\u4fee\u6539\u3001\u8986\u76d6\u6216\u5220\u9664\u8fd9\u4e9b\u539f\u751f\u65e5\u5386\u6570\u636e\u3002',
           ),
           const SizedBox(height: 12),
           _SyncScopeTile(
             icon: Icons.shield_outlined,
             accentColor: const Color(0xFF0078D4),
-            title: 'FlowPlan \u6258\u7ba1\u65e5\u5386\u5bb9\u5668',
+            title: 'FlowPlanV2 \u6258\u7ba1\u65e5\u5386\u5bb9\u5668',
             status: managedContainerStatus,
             detail:
-                '\u53ea\u6709\u5728\u540c\u6b65\u6a21\u5f0f\u4e3a\u201c\u53cc\u5411\u540c\u6b65\u201d\u4e14\u5f53\u524d\u4ee4\u724c\u5177\u5907\u8bfb\u5199\u6388\u6743\u65f6\uff0cFlowPlan \u624d\u80fd\u5199\u56de\u81ea\u5df1\u521b\u5efa\u6216\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002',
+                '\u53ea\u6709\u5728\u540c\u6b65\u6a21\u5f0f\u4e3a\u201c\u53cc\u5411\u540c\u6b65\u201d\u4e14\u5f53\u524d\u4ee4\u724c\u5177\u5907\u8bfb\u5199\u6388\u6743\u65f6\uff0cFlowPlanV2 \u624d\u80fd\u5199\u56de\u81ea\u5df1\u521b\u5efa\u6216\u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u65e5\u5386\u672c\u3002',
           ),
           const SizedBox(height: 12),
           const _SyncScopeTile(
@@ -1252,15 +1252,15 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 
   String _buildControlledWriteModeHint() {
     if (_syncMode == OutlookSyncMode.paused) {
-      return '\u5f53\u524d\u4e3a\u201c\u6682\u505c\u540c\u6b65\u201d\uff0cFlowPlan \u4e0d\u4f1a\u4e0e Outlook \u53d1\u751f\u4efb\u4f55\u8bfb\u5199\u3002';
+      return '\u5f53\u524d\u4e3a\u201c\u6682\u505c\u540c\u6b65\u201d\uff0cFlowPlanV2 \u4e0d\u4f1a\u4e0e Outlook \u53d1\u751f\u4efb\u4f55\u8bfb\u5199\u3002';
     }
     if (_syncMode == OutlookSyncMode.readOnly) {
-      return '\u5f53\u524d\u4e3a\u201c\u53ea\u8bfb\u540c\u6b65\u201d\uff0cFlowPlan \u53ea\u4f1a\u8bfb\u53d6 Outlook \u6570\u636e\uff0c\u4e0d\u4f1a\u5411\u8fdc\u7aef\u5199\u5165\u3002';
+      return '\u5f53\u524d\u4e3a\u201c\u53ea\u8bfb\u540c\u6b65\u201d\uff0cFlowPlanV2 \u53ea\u4f1a\u8bfb\u53d6 Outlook \u6570\u636e\uff0c\u4e0d\u4f1a\u5411\u8fdc\u7aef\u5199\u5165\u3002';
     }
     if (!_hasRequiredPermission) {
-      return '\u5f53\u524d\u5df2\u5207\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743\uff0cFlowPlan \u4f9d\u7136\u4e0d\u4f1a\u6267\u884c\u8fdc\u7aef\u5199\u56de\u3002';
+      return '\u5f53\u524d\u5df2\u5207\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\uff0c\u4f46\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743\uff0cFlowPlanV2 \u4f9d\u7136\u4e0d\u4f1a\u6267\u884c\u8fdc\u7aef\u5199\u56de\u3002';
     }
-    return '\u5f53\u524d\u5df2\u6ee1\u8db3\u53cc\u5411\u540c\u6b65\u4e0e\u6388\u6743\u6761\u4ef6\uff0cFlowPlan \u53ea\u4f1a\u5728\u53d7\u63a7\u5bb9\u5668\u5185\u6267\u884c\u5199\u56de\u3002';
+    return '\u5f53\u524d\u5df2\u6ee1\u8db3\u53cc\u5411\u540c\u6b65\u4e0e\u6388\u6743\u6761\u4ef6\uff0cFlowPlanV2 \u53ea\u4f1a\u5728\u53d7\u63a7\u5bb9\u5668\u5185\u6267\u884c\u5199\u56de\u3002';
   }
 
   Widget _buildSyncObjectsPanel({
@@ -1397,7 +1397,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         label: '\u5207\u6362\u4e3a\u53cc\u5411\u540c\u6b65',
         icon: Icons.swap_horiz_outlined,
         hint:
-            '\u8981\u8ba9 FlowPlan \u628a\u8fd9\u4e9b\u65e7\u7684 Outlook \u955c\u50cf\u4e00\u5e76\u6536\u53e3\uff0c\u9700\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u6a21\u5f0f\u3002',
+            '\u8981\u8ba9 FlowPlanV2 \u628a\u8fd9\u4e9b\u65e7\u7684 Outlook \u955c\u50cf\u4e00\u5e76\u6536\u53e3\uff0c\u9700\u5148\u5207\u6362\u5230\u201c\u53cc\u5411\u540c\u6b65\u201d\u6a21\u5f0f\u3002',
         onAction: () => _updateSyncMode(OutlookSyncMode.bidirectional),
       );
     }
@@ -1439,11 +1439,11 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     final managedCalendars = outlookCalendars
         .where(
           (calendar) =>
-              OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name),
+              OutlookSyncPolicy.isFlowPlanV2ManagedCalendarName(calendar.name),
         )
         .length;
 
-    return '\u5f53\u524d\u5171\u63a5\u5165 ${outlookCalendars.length} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u5176\u4e2d $managedCalendars \u4e2a\u4e3a FlowPlan \u6258\u7ba1\u5bb9\u5668\uff1b\u5df2\u7ed1\u5b9a ${taskBindings.length} / ${taskLists.length} \u4e2a\u4efb\u52a1\u672c\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u3002';
+    return '\u5f53\u524d\u5171\u63a5\u5165 ${outlookCalendars.length} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u5176\u4e2d $managedCalendars \u4e2a\u4e3a FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff1b\u5df2\u7ed1\u5b9a ${taskBindings.length} / ${taskLists.length} \u4e2a\u4efb\u52a1\u672c\u5230 Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668\u3002';
   }
 
   Widget _buildOutlookCalendarsList(
@@ -1482,7 +1482,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                 title: calendar.name,
                 status: presentation.status,
                 detail:
-                    '\u5728 FlowPlan \u4e2d\uff1a${calendar.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}\n${presentation.detail}',
+                    '\u5728 FlowPlanV2 \u4e2d\uff1a${calendar.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}\n${presentation.detail}',
                 actionLabel:
                     calendar.isVisible ? '\u9690\u85cf' : '\u663e\u793a',
                 actionIcon: calendar.isVisible
@@ -1575,7 +1575,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     String detail,
   }) _describeOutlookCalendar(EventCalendar calendar) {
     final isManaged =
-        OutlookSyncPolicy.isFlowPlanManagedCalendarName(calendar.name);
+        OutlookSyncPolicy.isFlowPlanV2ManagedCalendarName(calendar.name);
 
     if (!isManaged) {
       return (
@@ -1583,7 +1583,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         color: const Color(0xFF546E7A),
         status: '\u5916\u90e8 Outlook \u65e5\u5386\uff0c\u4ec5\u53ea\u8bfb\u5bfc\u5165',
         detail:
-            '\u8fd9\u7c7b\u65e5\u5386\u672c\u4e0d\u4f1a\u88ab FlowPlan \u5199\u56de\uff0c\u53ea\u4f1a\u4f5c\u4e3a\u5916\u90e8\u53c2\u8003\u6570\u636e\u540c\u6b65\u8fdb\u6765\u3002',
+            '\u8fd9\u7c7b\u65e5\u5386\u672c\u4e0d\u4f1a\u88ab FlowPlanV2 \u5199\u56de\uff0c\u53ea\u4f1a\u4f5c\u4e3a\u5916\u90e8\u53c2\u8003\u6570\u636e\u540c\u6b65\u8fdb\u6765\u3002',
       );
     }
 
@@ -1591,7 +1591,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return (
         icon: Icons.pause_circle_outline,
         color: Colors.orange,
-        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u5df2\u6682\u505c\u540c\u6b65',
+        status: 'FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u5df2\u6682\u505c\u540c\u6b65',
         detail:
             '\u6620\u5c04\u5173\u7cfb\u4ecd\u4f1a\u4fdd\u7559\uff0c\u4f46\u76ee\u524d\u4e0d\u4f1a\u7ee7\u7eed\u62c9\u53d6\u6216\u5199\u56de\u3002',
       );
@@ -1601,9 +1601,9 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return (
         icon: Icons.cloud_done_outlined,
         color: const Color(0xFF43A047),
-        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u53ef\u53d7\u63a7\u5199\u56de',
+        status: 'FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff0c\u53ef\u53d7\u63a7\u5199\u56de',
         detail:
-            '\u53ea\u6709\u8fd9\u7c7b\u6807\u8bb0\u4e3a FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u624d\u5141\u8bb8\u5728\u53cc\u5411\u6a21\u5f0f\u4e0b\u88ab\u5199\u56de\u3002',
+            '\u53ea\u6709\u8fd9\u7c7b\u6807\u8bb0\u4e3a FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u624d\u5141\u8bb8\u5728\u53cc\u5411\u6a21\u5f0f\u4e0b\u88ab\u5199\u56de\u3002',
       );
     }
 
@@ -1611,7 +1611,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       return (
         icon: Icons.lock_clock_outlined,
         color: const Color(0xFFFB8C00),
-        status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u4f46\u5f53\u524d\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743',
+        status: 'FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff0c\u4f46\u5f53\u524d\u4ecd\u7f3a\u5c11\u8bfb\u5199\u6388\u6743',
         detail:
             '\u5728\u91cd\u65b0\u5b8c\u6210 Outlook \u8bfb\u5199\u6388\u6743\u524d\uff0c\u8fd9\u4e9b\u5bb9\u5668\u4ecd\u53ea\u4f1a\u6309\u53ea\u8bfb\u903b\u8f91\u5904\u7406\u3002',
       );
@@ -1620,9 +1620,9 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     return (
       icon: Icons.shield_outlined,
       color: AppColors.primary,
-      status: 'FlowPlan \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u4ecd\u6309\u53ea\u8bfb\u5904\u7406',
+      status: 'FlowPlanV2 \u6258\u7ba1\u5bb9\u5668\uff0c\u5f53\u524d\u4ecd\u6309\u53ea\u8bfb\u5904\u7406',
       detail:
-          '\u867d\u7136\u8fd9\u662f FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u4f46\u53ea\u8bfb\u6a21\u5f0f\u4e0b\u4f9d\u7136\u4e0d\u4f1a\u5bf9\u5b83\u5199\u56de\u3002',
+          '\u867d\u7136\u8fd9\u662f FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\uff0c\u4f46\u53ea\u8bfb\u6a21\u5f0f\u4e0b\u4f9d\u7136\u4e0d\u4f1a\u5bf9\u5b83\u5199\u56de\u3002',
     );
   }
 
@@ -1636,7 +1636,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
     OutlookTaskListBinding? binding,
   ) {
     final localVisibility =
-        '\u5728 FlowPlan \u4e2d\uff1a${taskList.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}';
+        '\u5728 FlowPlanV2 \u4e2d\uff1a${taskList.isVisible ? '\u5df2\u663e\u793a' : '\u5df2\u9690\u85cf'}';
 
     if (binding == null) {
       return (
@@ -1644,7 +1644,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         color: const Color(0xFF9E9E9E),
         status: '\u672a\u7ed1\u5b9a Outlook \u4e13\u5c5e\u955c\u50cf\u5bb9\u5668',
         detail:
-            '$localVisibility\n\u8fd9\u4e2a\u4efb\u52a1\u672c\u76ee\u524d\u53ea\u5728 FlowPlan \u672c\u5730\u5de5\u4f5c\uff0c\u4e0d\u4f1a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u4efb\u52a1\u955c\u50cf\u3002',
+            '$localVisibility\n\u8fd9\u4e2a\u4efb\u52a1\u672c\u76ee\u524d\u53ea\u5728 FlowPlanV2 \u672c\u5730\u5de5\u4f5c\uff0c\u4e0d\u4f1a\u5411 Outlook \u5199\u5165\u4efb\u4f55\u4efb\u52a1\u955c\u50cf\u3002',
       );
     }
 
@@ -1684,7 +1684,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       color: AppColors.primary,
       status: '\u5df2\u7ed1\u5b9a\uff0c\u4f46\u5f53\u524d\u4ecd\u662f\u53ea\u8bfb\u6a21\u5f0f',
       detail:
-          '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u6620\u5c04\u4f1a\u88ab\u4fdd\u7559\uff0c\u4f46 FlowPlan \u6682\u4e0d\u4f1a\u5199\u56de\u8fd9\u4e2a\u4efb\u52a1\u955c\u50cf\u5bb9\u5668\u3002',
+          '$localVisibility\n\u8fdc\u7aef\u5bb9\u5668\uff1a${binding.remoteCalendarName}\n\u6620\u5c04\u4f1a\u88ab\u4fdd\u7559\uff0c\u4f46 FlowPlanV2 \u6682\u4e0d\u4f1a\u5199\u56de\u8fd9\u4e2a\u4efb\u52a1\u955c\u50cf\u5bb9\u5668\u3002',
     );
   }
 
@@ -1735,8 +1735,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       SnackBar(
         content: Text(
           nextValue
-              ? '\u5df2\u5728 FlowPlan \u4e2d\u663e\u793a\u300c${calendar.name}\u300d'
-              : '\u5df2\u5728 FlowPlan \u4e2d\u9690\u85cf\u300c${calendar.name}\u300d',
+              ? '\u5df2\u5728 FlowPlanV2 \u4e2d\u663e\u793a\u300c${calendar.name}\u300d'
+              : '\u5df2\u5728 FlowPlanV2 \u4e2d\u9690\u85cf\u300c${calendar.name}\u300d',
         ),
       ),
     );
@@ -1799,7 +1799,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('\u89e3\u9664 Outlook \u7ed1\u5b9a'),
         content: Text(
-          '\u786e\u5b9a\u8981\u89e3\u9664\u4efb\u52a1\u672c\u201c${taskList.name}\u201d\u4e0e\u300c${binding.remoteCalendarName}\u300d\u7684\u5bf9\u5e94\u5173\u7cfb\u5417\uff1f\u8fd9\u53ea\u4f1a\u89e3\u9664 FlowPlan \u4e2d\u7684\u6620\u5c04\uff0c\u4e0d\u4f1a\u76f4\u63a5\u5220\u6389 Outlook \u8fdc\u7aef\u5bb9\u5668\u3002',
+          '\u786e\u5b9a\u8981\u89e3\u9664\u4efb\u52a1\u672c\u201c${taskList.name}\u201d\u4e0e\u300c${binding.remoteCalendarName}\u300d\u7684\u5bf9\u5e94\u5173\u7cfb\u5417\uff1f\u8fd9\u53ea\u4f1a\u89e3\u9664 FlowPlanV2 \u4e2d\u7684\u6620\u5c04\uff0c\u4e0d\u4f1a\u76f4\u63a5\u5220\u6389 Outlook \u8fdc\u7aef\u5bb9\u5668\u3002',
         ),
         actions: [
           TextButton(
@@ -1862,7 +1862,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       _syncMode = mode;
       _hasRequiredPermission = _isAuthenticated && hasRequiredPermission;
       _status = !_isAuthenticated
-          ? '同步模式已切换为“${mode.label}”。连接 Outlook 后，FlowPlan 会按该模式决定是否写回。'
+          ? '同步模式已切换为“${mode.label}”。连接 Outlook 后，FlowPlanV2 会按该模式决定是否写回。'
           : hasRequiredPermission
               ? '\u540c\u6b65\u6a21\u5f0f\u5df2\u66f4\u65b0\u4e3a\u201c${mode.label}\u201d\u3002'
               : '\u540c\u6b65\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\u201c${mode.label}\u201d\uff0c\u4f46\u5f53\u524d Outlook \u6388\u6743\u4ecd\u4e3a${_authorizationLabel(_grantedMode)}\uff0c\u8bf7\u91cd\u65b0\u8ba4\u8bc1\u4e00\u6b21\u3002';
@@ -1935,7 +1935,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             _syncMode == OutlookSyncMode.paused || token.supportsMode(_syncMode);
         _authCodeController.clear();
         _status =
-            '认证成功。FlowPlan 已连接个人 Outlook 账号，并会在 access_token 过期后自动使用 refresh_token 刷新。';
+            '认证成功。FlowPlanV2 已连接个人 Outlook 账号，并会在 access_token 过期后自动使用 refresh_token 刷新。';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2040,8 +2040,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         _lastSync = lastSync;
         _lastSyncReport = lastSyncReport;
         _status = _syncMode == OutlookSyncMode.bidirectional
-            ? '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\uff0c\u4efb\u52a1\u955c\u50cf\u65b0\u5efa ${result.mirroredCreated} \u6761\uff0c\u66f4\u65b0 ${result.mirroredUpdated} \u6761\uff0c\u5220\u9664 ${result.mirroredDeleted} \u6761\uff0c\u51b2\u7a81 ${result.mirroredConflicted} \u6761\u3002\u8fd9\u4e9b\u5199\u56de\u4ecd\u53ea\u4f1a\u53d1\u751f\u5728 FlowPlan \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\u4e2d\uff1b\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab\u9759\u9ed8\u8986\u76d6\u3002'
-            : '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\u3002FlowPlan \u6ca1\u6709\u5411 Outlook \u5199\u5165\u4efb\u4f55\u6570\u636e\u3002';
+            ? '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\uff0c\u4efb\u52a1\u955c\u50cf\u65b0\u5efa ${result.mirroredCreated} \u6761\uff0c\u66f4\u65b0 ${result.mirroredUpdated} \u6761\uff0c\u5220\u9664 ${result.mirroredDeleted} \u6761\uff0c\u51b2\u7a81 ${result.mirroredConflicted} \u6761\u3002\u8fd9\u4e9b\u5199\u56de\u4ecd\u53ea\u4f1a\u53d1\u751f\u5728 FlowPlanV2 \u6258\u7ba1\u7684 Outlook \u4e13\u5c5e\u5bb9\u5668\u4e2d\uff1b\u51b2\u7a81\u9879\u4e0d\u4f1a\u88ab\u9759\u9ed8\u8986\u76d6\u3002'
+            : '\u540c\u6b65\u5b8c\u6210\uff1a\u5df2\u540c\u6b65 ${result.calendarBooks} \u4e2a Outlook \u65e5\u5386\u672c\uff0c\u66f4\u65b0 ${result.downloaded} \u6761\u65e5\u7a0b\u3002FlowPlanV2 \u6ca1\u6709\u5411 Outlook \u5199\u5165\u4efb\u4f55\u6570\u636e\u3002';
       });
     } catch (error) {
       final lastSyncReport = await SyncEngine.getLastSyncReport();
@@ -2124,7 +2124,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       final outputPath = await FilePicker.platform.saveFile(
         dialogTitle: '\u5bfc\u51fa Outlook \u540c\u6b65\u8bca\u65ad\u62a5\u544a',
         fileName:
-            'flowplan-outlook-diagnostics-${_formatReportFileDate(DateTime.now())}.md',
+            'flowplanv2-outlook-diagnostics-${_formatReportFileDate(DateTime.now())}.md',
         type: FileType.custom,
         allowedExtensions: const ['md', 'txt'],
       );
@@ -2183,7 +2183,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('完全重置 Outlook 日历本'),
         content: const Text(
-          '这会删除 FlowPlan 本地已经同步到的 Outlook 日历本和其中日程，不会删除任务本，也不会删除 Outlook 服务器中的任何数据。确认后下次同步会重新完整拉取 Outlook 日历。',
+          '这会删除 FlowPlanV2 本地已经同步到的 Outlook 日历本和其中日程，不会删除任务本，也不会删除 Outlook 服务器中的任何数据。确认后下次同步会重新完整拉取 Outlook 日历。',
         ),
         actions: [
           TextButton(

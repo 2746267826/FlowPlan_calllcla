@@ -1,4 +1,4 @@
-package com.flowplan.flawplanv2
+package com.flowplanv2.app
 
 import android.content.BroadcastReceiver
 import android.content.Context

@@ -64,7 +64,7 @@ class AiApi {
 
   Future<Map<String, dynamic>> createConversation({
     String title = 'AI 对话',
-    String source = 'flowplan',
+    String source = 'flowplanv2',
     String? providerKey,
     String? model,
     Map<String, Object?> contextScope = const <String, Object?>{},
@@ -88,7 +88,7 @@ class AiApi {
   Future<Map<String, dynamic>> sendMessage({
     String? conversationId,
     required String content,
-    String source = 'flowplan',
+    String source = 'flowplanv2',
     String? providerKey,
     String? model,
     String? title,
