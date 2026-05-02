@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import {
   createCipheriv,
   createDecipheriv,
@@ -136,7 +141,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     const userId = await this.devicesService.ensureUser(context.userId);
     const clientId = this.cleanString(body.clientId);
     if (!clientId) {
-      throw new Error('clientId is required');
+      throw new BadRequestException('clientId is required');
     }
 
     const state = this.base64Url(randomBytes(32));
@@ -200,7 +205,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     if (!(await this.hasTokenSecret(userId))) {
-      throw new Error('Outlook token secret is required before authorization');
+      throw new BadRequestException(
+        'Outlook token encryption secret is required before authorization. Configure FLOWPLANV2_OUTLOOK_TOKEN_SECRET or save it in the Outlook admin panel, then retry authorization.',
+      );
     }
     const parsed = this.readAuthCompletion(body);
     const session = await this.database.query<{
@@ -220,7 +227,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     );
     const authSession = session.rows[0];
     if (!authSession) {
-      throw new Error('Outlook authorization state is invalid or expired');
+      throw new BadRequestException(
+        'Outlook authorization state is invalid or expired. Start authorization again and paste the newest callback URL.',
+      );
     }
 
     const token = await this.exchangeCode(
@@ -231,7 +240,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       authSession.code_verifier,
     );
     if (!token.refresh_token) {
-      throw new Error('Outlook OAuth response did not include a refresh token');
+      throw new BadRequestException(
+        'Outlook OAuth response did not include a refresh token. Start authorization again and make sure offline_access is granted.',
+      );
     }
     const refreshToken = token.refresh_token;
     const expiresAt = new Date(Date.now() + Number(token.expires_in ?? 3600) * 1000);
@@ -299,7 +310,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     const userId = await this.devicesService.ensureUser(context.userId);
     const secret = this.cleanString(body.secret);
     if (!secret || secret.length < 32) {
-      throw new Error('Outlook token secret must be at least 32 characters');
+      throw new BadRequestException(
+        'Outlook token encryption secret must be at least 32 characters',
+      );
     }
     const confirmRotation = body.confirmRotation === true;
     const connection = await this.getConnection(userId);
@@ -307,7 +320,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       connection?.access_token_encrypted || connection?.refresh_token_encrypted,
     );
     if (hasTokens && !confirmRotation) {
-      throw new Error(
+      throw new BadRequestException(
         'Outlook tokens already exist. Confirm rotation to clear existing tokens and reconnect Outlook.',
       );
     }
@@ -1126,16 +1139,36 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   private readAuthCompletion(body: Record<string, unknown>) {
     const callbackUrl = this.cleanString(body.callbackUrl);
     if (callbackUrl) {
-      const url = new URL(callbackUrl);
+      let url: URL;
+      try {
+        url = new URL(callbackUrl);
+      } catch {
+        throw new BadRequestException(
+          'Outlook callbackUrl must be the full Microsoft redirect URL.',
+        );
+      }
+      const code = url.searchParams.get('code') ?? '';
+      const state = url.searchParams.get('state') ?? '';
+      if (!code || !state) {
+        throw new BadRequestException(
+          'Outlook callbackUrl must include both code and state query parameters.',
+        );
+      }
       return {
-        code: url.searchParams.get('code') ?? '',
-        state: url.searchParams.get('state') ?? '',
+        code,
+        state,
       };
     }
-    return {
+    const parsed = {
       code: this.cleanString(body.code) ?? '',
       state: this.cleanString(body.state) ?? '',
     };
+    if (!parsed.code || !parsed.state) {
+      throw new BadRequestException(
+        'Outlook authorization completion requires callbackUrl or both code and state.',
+      );
+    }
+    return parsed;
   }
 
   private async countCalendars(userId: string) {

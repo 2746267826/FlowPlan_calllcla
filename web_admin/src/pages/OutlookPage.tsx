@@ -30,7 +30,11 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
   const [loading, setLoading] = useState(true);
   const [startingAuth, setStartingAuth] = useState(false);
   const [completingAuth, setCompletingAuth] = useState(false);
+  const [savingTokenSecret, setSavingTokenSecret] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [tokenSecret, setTokenSecret] = useState('');
+  const [confirmTokenRotation, setConfirmTokenRotation] = useState(false);
+  const authConfigReady = Boolean(status.clientIdConfigured && status.tokenSecretConfigured);
 
   const load = async () => {
     setLoading(true);
@@ -118,6 +122,10 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
       message.warning('请粘贴 Microsoft 回调后的完整 URL');
       return;
     }
+    if (!status.tokenSecretConfigured) {
+      message.warning('请先配置 Outlook token 加密密钥');
+      return;
+    }
     setCompletingAuth(true);
     setAuthError('');
     try {
@@ -128,6 +136,27 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
       showAuthError('完成 Outlook 授权失败', error);
     } finally {
       setCompletingAuth(false);
+    }
+  };
+
+  const saveTokenSecret = async () => {
+    const trimmed = tokenSecret.trim();
+    if (!trimmed) {
+      message.warning('请先输入 Outlook token 加密密钥');
+      return;
+    }
+    setSavingTokenSecret(true);
+    setAuthError('');
+    try {
+      await props.api.saveOutlookTokenSecret(trimmed, confirmTokenRotation);
+      message.success('Outlook token 加密密钥已保存');
+      setTokenSecret('');
+      setConfirmTokenRotation(false);
+      await load();
+    } catch (error) {
+      showAuthError('保存 Outlook token 加密密钥失败', error);
+    } finally {
+      setSavingTokenSecret(false);
     }
   };
 
@@ -208,9 +237,9 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
           loading={loading}
         >
           <Steps
-            current={status.connected ? 2 : status.clientIdConfigured ? 1 : 0}
+            current={status.connected ? 2 : authConfigReady ? 1 : 0}
             items={[
-              { title: '授权配置', description: status.clientIdConfigured ? '客户端 ID 已配置' : '需要配置客户端 ID' },
+              { title: '授权配置', description: authConfigReady ? '客户端 ID 和令牌密钥已配置' : '需要配置客户端 ID 和令牌密钥' },
               { title: '账户授权', description: status.connected ? '账号已连接' : '等待授权回调' },
               { title: '只读同步', description: status.readOnly === false ? '请确认权限范围' : '按只读流程同步' },
             ]}
@@ -225,11 +254,29 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
                 onSearch={(clientId) => void startAuthorization(clientId)}
               />
             </Form.Item>
+            <Form.Item label="Outlook token 加密密钥">
+              <Space direction="vertical" size={8} className="full-width">
+                <Input.Password
+                  value={tokenSecret}
+                  onChange={(event) => setTokenSecret(event.target.value)}
+                  placeholder={status.tokenSecretConfigured ? '已配置，如需轮换请输入新密钥' : '至少 32 个字符，用于加密保存 Outlook token'}
+                  visibilityToggle={false}
+                />
+                <Space wrap>
+                  <Switch checked={confirmTokenRotation} onChange={setConfirmTokenRotation} />
+                  <Typography.Text type="secondary">确认轮换并清空现有 Outlook token</Typography.Text>
+                  <Button loading={savingTokenSecret} onClick={() => void saveTokenSecret()}>
+                    保存密钥
+                  </Button>
+                </Space>
+              </Space>
+            </Form.Item>
             <Form.Item label="授权回调 URL">
               <Input.Search
                 enterButton="完成授权"
                 loading={completingAuth}
                 placeholder="粘贴 Microsoft 回调后的完整 URL"
+                disabled={!status.tokenSecretConfigured}
                 onSearch={(callbackUrl) => void completeAuthorization(callbackUrl)}
               />
             </Form.Item>
