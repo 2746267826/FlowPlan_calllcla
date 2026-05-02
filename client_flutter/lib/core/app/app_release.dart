@@ -2,9 +2,9 @@
 /// Keep this file in sync with pubspec.yaml, Runner.rc, and version.txt.
 const appProductName = 'FlowPlanV2';
 const appTagline = '\u4e2d\u6587\u4f18\u5148\u7684\u672c\u5730\u667a\u80fd\u89c4\u5212\u5de5\u5177';
-const appMarketingVersion = '1.4.4';
-const appBuildNumber = '144';
-const appMsixVersion = '1.4.4.144';
+const appMarketingVersion = '1.5.0';
+const appBuildNumber = '150';
+const appMsixVersion = '1.5.0.150';
 
 String get appDisplayVersion => 'v$appMarketingVersion';
 

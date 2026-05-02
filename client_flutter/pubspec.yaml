@@ -2,7 +2,7 @@ name: flowplanv2
 description: AI 智能排程日历 — 跨平台本地优先任务管理
 
 publish_to: 'none'
-version: 1.4.4+144
+version: 1.5.0+150
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -83,6 +83,6 @@ msix_config:
   display_name: FlowPlanV2
   publisher_display_name: FlowPlanV2
   identity_name: com.flowplanv2
-  msix_version: 1.4.4.144
+  msix_version: 1.5.0.150
   logo_path: windows/runner/resources/app_icon_512.png
   trim_logo: false
