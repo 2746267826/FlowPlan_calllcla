@@ -32,6 +32,7 @@ import { WebController } from './web/web.controller';
 import { WebService } from './web/web.service';
 import { ModelsController } from './models/models.controller';
 import { ModelsService } from './models/models.service';
+import { OutlookService } from './outlook/outlook.service';
 
 @Module({
   controllers: [
@@ -70,6 +71,7 @@ import { ModelsService } from './models/models.service';
     TrackingService,
     WebService,
     ModelsService,
+    OutlookService,
   ],
 })
 export class AppModule {}

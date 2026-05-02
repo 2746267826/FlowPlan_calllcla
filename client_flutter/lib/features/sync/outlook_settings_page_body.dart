@@ -49,7 +49,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _loadState();
+    _status = 'Outlook 日程由服务端只读同步后下发。';
   }
 
   @override
@@ -111,6 +111,9 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_outlookIsServerManaged) {
+      return _buildServerManagedPage(context);
+    }
     final eventCalendarsAsync = ref.watch(allEventCalendarsProvider);
     final taskListsAsync = ref.watch(allTaskListsProvider);
     final taskListBindingsAsync = ref.watch(outlookTaskListBindingsProvider);
@@ -461,14 +464,12 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
                   ),
                   const _HelpRow(
                     num: '2.',
-                    text:
-                        '重定向 URI 必须固定为：https://login.microsoftonline.com/common/oauth2/nativeclient',
+                    text: '重定向 URI 由管理端统一配置。',
                   ),
                   _HelpRow(num: '3.', text: _permissionHelpText()),
                   const _HelpRow(
                     num: '4.',
-                    text:
-                        'Authority 固定使用 https://login.microsoftonline.com/consumers，不要使用学校域名、organizations 或具体 tenant ID。',
+                    text: 'Authority 由管理端统一配置。',
                   ),
                   const _HelpRow(
                     num: '5.',
@@ -482,6 +483,118 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  bool get _outlookIsServerManaged => true;
+
+  Widget _buildServerManagedPage(BuildContext context) {
+    final pageWidth = MediaQuery.of(context).size.width;
+    final pagePadding = pageWidth < 600 ? 16.0 : 24.0;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Outlook'),
+      ),
+      body: ListView(
+        padding: EdgeInsets.all(pagePadding),
+        children: [
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.cloud_sync_outlined),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '由服务端管理',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            '客户端不再保存 Outlook token，也不直接访问 Microsoft Graph。',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _syncing ? null : _refreshServerOutlook,
+                    icon: _syncing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_outlined, size: 18),
+                    label: Text(_syncing ? '正在刷新 Outlook' : '手动刷新 Outlook'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '刷新会请求服务端只读拉取 Outlook，然后通过 FlowPlanV2 同步下发日历本和日程。',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '只读边界',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                _serverManagedBullet('授权、Client ID 和 token 仅在管理端/服务端配置。'),
+                _serverManagedBullet('客户端日历中的 Outlook 日程为只读来源。'),
+                _serverManagedBullet('离线或服务端失败时不会回退到本地 Graph 同步。'),
+              ],
+            ),
+          ),
+          if (_status != null) ...[
+            const SizedBox(height: 16),
+            _Panel(
+              child: Text(_status!),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _serverManagedBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_outline, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text)),
+        ],
       ),
     );
   }
@@ -500,7 +613,7 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
   }
 
   String _permissionHelpText() {
-    return '当前实现固定申请 openid、profile、offline_access、User.Read、Calendars.ReadWrite，并通过 FlowPlanV2 内部同步模式控制只读 / 双向 / 暂停。';
+    return '当前 Outlook 授权已迁移到服务端，客户端只消费服务端下发的只读日程。';
   }
 
   Widget _sectionTitle(String title) {
@@ -1987,6 +2100,45 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
       _authCodeController.clear();
       _status = '已断开 Outlook 连接，本地保存的令牌已清除。';
     });
+  }
+
+  Future<void> _refreshServerOutlook() async {
+    setState(() {
+      _syncing = true;
+      _status = '正在请求服务端刷新 Outlook...';
+    });
+
+    try {
+      final clientApi = await ref.read(clientApiProvider.future);
+      final result = await clientApi.refreshOutlook();
+      final serverSyncEngine = await ref.read(serverSyncEngineProvider.future);
+      final pullResult = await serverSyncEngine.pullChanges();
+      await ref.read(reminderServiceProvider).rebuildSystemSchedule();
+      ref.invalidate(reminderSystemStatusProvider);
+      ref.invalidate(allEventCalendarsProvider);
+      ref.invalidate(eventsForSelectedDateProvider);
+      ref.invalidate(managementEventsProvider);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncing = false;
+        _lastSync = DateTime.now();
+        final pulledChanges = pullResult['changes'] is List
+            ? (pullResult['changes'] as List).length
+            : 0;
+        _status =
+            'Outlook 已由服务端刷新：${result['status'] ?? 'completed'}，日历本 ${result['calendarCount'] ?? 0} 个，更新 ${result['eventUpserts'] ?? 0} 条，删除 ${result['eventDeletes'] ?? 0} 条；客户端已拉取 $pulledChanges 条服务端变更。';
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncing = false;
+        _status = 'Outlook 服务端刷新失败：$error';
+      });
+    }
   }
 
   Future<void> _performSync() async {

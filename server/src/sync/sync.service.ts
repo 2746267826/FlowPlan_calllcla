@@ -368,6 +368,28 @@ export class SyncService {
     }
 
     const existing = await this.findTargetObject(client, userId, mutation);
+    if (this.isOutlookReadOnlyMutation(mutation, existing)) {
+      const reason =
+        'Outlook synced calendar objects are read-only and must be refreshed from the server.';
+      await this.recordMutation(client, {
+        mutation,
+        userId,
+        deviceId,
+        serverObjectId: existing?.id,
+        serverVersion: existing?.server_version,
+        result: 'rejected',
+        errorMessage: reason,
+      });
+      return {
+        kind: 'rejected',
+        rejected: {
+          mutationUid: mutation.mutationUid,
+          objectType: mutation.objectType,
+          localId: mutation.localId,
+          reason,
+        },
+      };
+    }
     if (
       existing &&
       mutation.baseServerVersion != null &&
@@ -533,6 +555,21 @@ export class SyncService {
       ],
     );
     return updated.rows[0];
+  }
+
+  private isOutlookReadOnlyMutation(
+    mutation: SyncMutationDto,
+    existing: SyncObjectRow | null,
+  ) {
+    if (!['calendar_book', 'calendar_event'].includes(mutation.objectType)) {
+      return false;
+    }
+    const payload = mutation.payload ?? {};
+    if (payload.source === 'outlook' || payload.readOnly === true) {
+      return true;
+    }
+    const existingPayload = existing?.payload ?? {};
+    return existingPayload.source === 'outlook' || existingPayload.readOnly === true;
   }
 
   private async createConflict(

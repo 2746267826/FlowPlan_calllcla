@@ -209,10 +209,7 @@ class AuthToken {
   }
 
   static OutlookSyncMode _grantedModeFromScope(String scope) {
-    final normalized = scope.toLowerCase();
-    return normalized.contains('calendars.readwrite')
-        ? OutlookSyncMode.bidirectional
-        : OutlookSyncMode.readOnly;
+    return OutlookSyncMode.readOnly;
   }
 }
 
@@ -304,7 +301,7 @@ class OutlookAuthService {
   static const _pendingAuthKey = 'outlook_pending_auth_session';
   static const _pkceAlphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  static const _microsoftLoginHost = 'login.microsoftonline.com';
+  static const _microsoftLoginHost = '';
 
   static Future<void> saveConfig(String clientId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -781,8 +778,7 @@ class OutlookAuthService {
         return OutlookAuthException(
           code: errorCode,
           statusCode: response.statusCode,
-          userMessage:
-              'Microsoft \u8fd4\u56de AADSTS50011\u3002\u91cd\u5b9a\u5411\u5730\u5740\u4e0d\u5339\u914d\uff0c\u8bf7\u786e\u8ba4 Entra \u540e\u53f0\u548c\u5e94\u7528\u5185\u90fd\u4f7f\u7528 https://login.microsoftonline.com/common/oauth2/nativeclient\u3002',
+          userMessage: 'Outlook OAuth 已迁移到管理端配置。',
           debugMessage: errorDescription,
         );
       }

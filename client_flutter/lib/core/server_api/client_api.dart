@@ -131,6 +131,10 @@ class ClientApi {
     );
   }
 
+  Future<Map<String, dynamic>> refreshOutlook() {
+    return _apiClient.postJson('/client/outlook/refresh');
+  }
+
   Future<Map<String, dynamic>> heartbeat({
     required String deviceId,
     required Map<String, Object?> body,

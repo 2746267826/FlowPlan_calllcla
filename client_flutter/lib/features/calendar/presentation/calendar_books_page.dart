@@ -613,6 +613,15 @@ class CalendarBooksPage extends ConsumerWidget {
     WidgetRef ref,
     TaskList taskList,
   ) async {
+    final serverManagedOutlook = DateTime.now().millisecondsSinceEpoch >= 0;
+    if (serverManagedOutlook) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Outlook 任务镜像写回已下线；Outlook 日程现在由服务端只读同步。'),
+        ),
+      );
+      return;
+    }
     final config = await OutlookAuthService.loadConfig();
     if (config == null) {
       if (!context.mounted) {

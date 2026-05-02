@@ -1584,3 +1584,74 @@ CREATE TABLE IF NOT EXISTS tracking_ingest_chunks (
 
 CREATE INDEX IF NOT EXISTS tracking_ingest_chunks_batch_idx
   ON tracking_ingest_chunks(user_id, batch_id, chunk_index);
+
+CREATE TABLE IF NOT EXISTS outlook_connections (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id text NOT NULL,
+  authority text NOT NULL DEFAULT 'https://login.microsoftonline.com/consumers',
+  redirect_uri text NOT NULL DEFAULT 'https://login.microsoftonline.com/common/oauth2/nativeclient',
+  scope text NOT NULL DEFAULT 'openid profile offline_access User.Read Calendars.Read',
+  account_email text,
+  account_display_name text,
+  refresh_token_encrypted text,
+  access_token_encrypted text,
+  access_token_expires_at timestamptz,
+  status text NOT NULL DEFAULT 'disconnected',
+  sync_interval_minutes integer NOT NULL DEFAULT 15,
+  last_sync_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS outlook_auth_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  state text NOT NULL UNIQUE,
+  code_verifier text NOT NULL,
+  client_id text NOT NULL,
+  redirect_uri text NOT NULL,
+  scope text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS outlook_auth_sessions_user_idx
+  ON outlook_auth_sessions(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS outlook_calendar_states (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  remote_calendar_id text NOT NULL,
+  name text,
+  color_hex text,
+  delta_link text,
+  is_visible boolean NOT NULL DEFAULT true,
+  last_synced_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, remote_calendar_id)
+);
+
+CREATE INDEX IF NOT EXISTS outlook_calendar_states_user_idx
+  ON outlook_calendar_states(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS outlook_sync_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  trigger_source text NOT NULL,
+  status text NOT NULL,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  calendar_count integer NOT NULL DEFAULT 0,
+  event_upserts integer NOT NULL DEFAULT 0,
+  event_deletes integer NOT NULL DEFAULT 0,
+  error_message text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS outlook_sync_runs_user_idx
+  ON outlook_sync_runs(user_id, started_at DESC);

@@ -1,20 +1,15 @@
 class OutlookOAuthPlatformConfig {
   const OutlookOAuthPlatformConfig._();
 
-  static const authority = 'https://login.microsoftonline.com/consumers';
-  static const authorizeEndpoint = '$authority/oauth2/v2.0/authorize';
-  static const tokenEndpoint = '$authority/oauth2/v2.0/token';
+  static const authority = '';
+  static const authorizeEndpoint = '';
+  static const tokenEndpoint = '';
   static const defaultClientId = '';
-  static const redirectUri =
-      'https://login.microsoftonline.com/common/oauth2/nativeclient';
-  static const graphBaseUrl = 'https://graph.microsoft.com/v1.0';
+  static const redirectUri = '';
+  static const graphBaseUrl = '';
   static const preferTimezone = 'Asia/Shanghai';
   static const scopes = <String>[
-    'openid',
-    'profile',
-    'offline_access',
-    'User.Read',
-    'Calendars.ReadWrite',
+    'Calendars.Read',
   ];
 
   static String get scopeString => scopes.join(' ');

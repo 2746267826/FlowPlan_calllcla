@@ -354,6 +354,11 @@ class ServerSyncChangeApplier {
   ) async {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
+    final eventCalendarId =
+        _int(payload, 'eventCalendarId', 'event_calendar_id') ??
+            await _findCalendarIdByRemoteId(
+              _string(payload, 'eventCalendarRemoteId', 'remoteCalendarId'),
+            );
     final companion = CalendarEventsCompanion(
       id: id == null ? const Value.absent() : Value(id),
       uid: Value(change.uid ?? _string(payload, 'uid') ?? change.serverId),
@@ -367,7 +372,7 @@ class ServerSyncChangeApplier {
       status: Value(_string(payload, 'status') ?? 'CONFIRMED'),
       transp: Value(_string(payload, 'transp') ?? 'OPAQUE'),
       source: Value(_string(payload, 'source') ?? 'server'),
-      eventCalendarId: Value(_int(payload, 'eventCalendarId', 'event_calendar_id')),
+      eventCalendarId: Value(eventCalendarId),
       colorHex: Value(_string(payload, 'colorHex', 'color_hex') ?? '#6B5EE4'),
       isBlock: Value(_bool(payload, 'isBlock', 'is_block') ?? false),
     );
@@ -377,6 +382,21 @@ class ServerSyncChangeApplier {
     }
     await _database.update(_database.calendarEvents).replace(companion);
     return id.toString();
+  }
+
+  Future<int?> _findCalendarIdByRemoteId(String? remoteCalendarId) async {
+    if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
+      return null;
+    }
+    final query = _database.select(_database.eventCalendars)
+      ..where(
+        (table) =>
+            table.source.equals('outlook') &
+            table.syncUrl.equals(remoteCalendarId),
+      )
+      ..limit(1);
+    final calendar = await query.getSingleOrNull();
+    return calendar?.id;
   }
 
   Future<String> _upsertTaskItem(

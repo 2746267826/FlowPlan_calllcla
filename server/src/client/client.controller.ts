@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { readRequestContext } from '../common/request-context';
+import { OutlookService } from '../outlook/outlook.service';
 import { SyncPushDto } from '../sync/dto';
 import { SyncService } from '../sync/sync.service';
 import { WebService } from '../web/web.service';
@@ -21,6 +22,7 @@ export class ClientController {
     private readonly clientService: ClientService,
     private readonly webService: WebService,
     private readonly syncService: SyncService,
+    private readonly outlookService: OutlookService,
   ) {}
 
   @Get('bootstrap')
@@ -141,6 +143,11 @@ export class ClientController {
     @Headers() headers: Record<string, unknown>,
   ) {
     return this.syncService.push(body, readRequestContext(headers));
+  }
+
+  @Post('outlook/refresh')
+  refreshOutlook(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.syncNow(readRequestContext(headers), 'client');
   }
 
   @Post('import/local-snapshot')

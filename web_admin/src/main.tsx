@@ -8,6 +8,7 @@ type ModuleKey =
   | 'dashboard'
   | 'data'
   | 'settings'
+  | 'outlook'
   | 'sync'
   | 'files'
   | 'models'
@@ -93,6 +94,11 @@ const modules: Array<{
     key: 'settings',
     label: '设置中心',
     description: '远程设置、AI、同步、报告、文件、Outlook 和模型策略。',
+  },
+  {
+    key: 'outlook',
+    label: 'Outlook',
+    description: 'Server-side read-only Outlook calendar sync and diagnostics.',
   },
   {
     key: 'sync',
@@ -728,6 +734,9 @@ function App() {
         {activeModule === 'settings' ? (
           <SettingsPage request={request} onDataRefresh={markDataRefreshed} onToast={setToast} />
         ) : null}
+        {activeModule === 'outlook' ? (
+          <OutlookPage request={request} onDataRefresh={markDataRefreshed} onToast={setToast} />
+        ) : null}
         {activeModule === 'sync' ? (
           <SyncPage request={request} selectedDeviceId={selectedDeviceId} onDataRefresh={markDataRefreshed} onOpenDetail={openDetail} onToast={setToast} />
         ) : null}
@@ -1182,6 +1191,284 @@ function SettingsPage(props: {
             </section>
           ))
         : null}
+    </div>
+  );
+}
+
+function OutlookPage(props: {
+  request: <T,>(path: string, options?: RequestInit) => Promise<T>;
+  onDataRefresh: () => void;
+  onToast: (message: string) => void;
+}) {
+  const { onDataRefresh, onToast, request } = props;
+  const [status, setStatus] = useState<ApiRecord | null>(null);
+  const [calendars, setCalendars] = useState<ApiRecord[]>([]);
+  const [runs, setRuns] = useState<ApiRecord[]>([]);
+  const [diagnostics, setDiagnostics] = useState<ApiRecord | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [tokenSecret, setTokenSecret] = useState('');
+  const [callbackUrl, setCallbackUrl] = useState('');
+  const [authStart, setAuthStart] = useState<ApiRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [statusResult, calendarResult, runResult, diagnosticResult] = await Promise.all([
+        request<ApiRecord>('/api/admin/outlook/status'),
+        request<ApiRecord>('/api/admin/outlook/calendars'),
+        request<ApiRecord>('/api/admin/outlook/runs'),
+        request<ApiRecord>('/api/admin/outlook/diagnostics'),
+      ]);
+      setStatus(statusResult);
+      setCalendars(asArray(calendarResult.calendars).map(asRecord));
+      setRuns(asArray(runResult.runs).map(asRecord));
+      setDiagnostics(diagnosticResult);
+      onDataRefresh();
+    } catch (loadError) {
+      setError(errorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [onDataRefresh, request]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const startAuth = async () => {
+    if (!clientId.trim()) {
+      onToast('Client ID is required.');
+      return;
+    }
+    setBusy('auth');
+    try {
+      const result = await request<ApiRecord>('/api/admin/outlook/auth/start', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: clientId.trim() }),
+      });
+      setAuthStart(result);
+      const authorizeUrl = displayValue(result.authorizeUrl);
+      if (authorizeUrl) window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
+      onToast('Outlook authorization URL created.');
+      void load();
+    } catch (startError) {
+      onToast(errorMessage(startError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveTokenSecret = async () => {
+    if (tokenSecret.trim().length < 32) {
+      onToast('Token secret must be at least 32 characters.');
+      return;
+    }
+    const confirmRotation = Boolean(status?.connected) || Boolean(status?.clientIdConfigured);
+    const confirmed = confirmRotation
+      ? window.confirm('Saving a new token secret may clear existing Outlook tokens. Continue and reconnect Outlook if needed?')
+      : true;
+    if (!confirmed) return;
+    setBusy('secret');
+    try {
+      const result = await request<ApiRecord>('/api/admin/outlook/token-secret', {
+        method: 'POST',
+        body: JSON.stringify({
+          secret: tokenSecret.trim(),
+          confirmRotation,
+        }),
+      });
+      setTokenSecret('');
+      onToast(`Outlook token secret saved. Tokens cleared: ${displayValue(result.tokensCleared)}`);
+      void load();
+    } catch (secretError) {
+      onToast(errorMessage(secretError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const completeAuth = async () => {
+    if (!callbackUrl.trim()) {
+      onToast('Paste the final redirect URL or authorization code.');
+      return;
+    }
+    setBusy('complete');
+    try {
+      await request<ApiRecord>('/api/admin/outlook/auth/complete', {
+        method: 'POST',
+        body: JSON.stringify({ callbackUrl: callbackUrl.trim(), state: authStart?.state }),
+      });
+      setCallbackUrl('');
+      onToast('Outlook connected with Calendars.Read.');
+      void load();
+    } catch (completeError) {
+      onToast(errorMessage(completeError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const syncNow = async () => {
+    setBusy('sync');
+    try {
+      const result = await request<ApiRecord>('/api/admin/outlook/sync', {
+        method: 'POST',
+      });
+      onToast(`Outlook sync ${displayValue(result.status)}`);
+      void load();
+    } catch (syncError) {
+      onToast(errorMessage(syncError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const reset = async () => {
+    const first = window.confirm(
+      'Reset local Outlook data in FlowPlanV2? This will not delete data in Outlook cloud.',
+    );
+    if (!first) return;
+    const second = window.confirm(
+      'Confirm reset: local Outlook calendar mappings, events, delta links, and sync state will be cleared.',
+    );
+    if (!second) return;
+    setBusy('reset');
+    try {
+      const result = await request<ApiRecord>('/api/admin/outlook/reset', {
+        method: 'POST',
+      });
+      onToast(`Reset completed. Deleted local objects: ${displayValue(result.deletedObjects)}`);
+      void load();
+    } catch (resetError) {
+      onToast(errorMessage(resetError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <div className="page-grid">
+      <section className="hero-panel">
+        <div>
+          <h2>Outlook server read-only sync</h2>
+          <p>Admin owns OAuth. Server pulls Outlook every 15 minutes. Clients only receive calendar_book and calendar_event changes from FlowPlanV2 sync.</p>
+        </div>
+        <button className="secondary" onClick={load} type="button">
+          Refresh
+        </button>
+      </section>
+
+      {loading ? <LoadingBlock label="Loading Outlook status" /> : null}
+      {error ? <ErrorBlock message={error} onRetry={load} /> : null}
+
+      {!loading && !error ? (
+        <>
+          <section className="console-panel">
+            <PanelHeader title="Connection" description="OAuth uses personal Microsoft accounts and requests only Calendars.Read." />
+            <div className="metric-grid compact">
+              <StatusSummary label="Connected" value={status?.connected} />
+              <StatusSummary label="Status" value={status?.status} />
+              <StatusSummary label="Account" value={status?.accountEmail ?? status?.accountDisplayName} />
+              <StatusSummary label="Read only" value={status?.readOnly} />
+              <StatusSummary label="Scope" value={status?.scope} />
+              <StatusSummary label="Last sync" value={status?.lastSyncAt} />
+              <StatusSummary label="Calendars" value={status?.calendars} />
+              <StatusSummary label="Token secret" value={status?.tokenSecretConfigured} />
+              <StatusSummary label="Secret source" value={status?.tokenSecretSource} />
+            </div>
+            {status?.lastError ? <ErrorBlock message={displayValue(status.lastError)} /> : null}
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Token Secret" description="Used by the server to encrypt Outlook tokens. Environment value still has priority if present." />
+            <div className="settings-editor">
+              <label>
+                FLOWPLANV2_OUTLOOK_TOKEN_SECRET
+                <input
+                  autoComplete="new-password"
+                  type="password"
+                  value={tokenSecret}
+                  onChange={(event) => setTokenSecret(event.target.value)}
+                />
+              </label>
+              <button disabled={busy === 'secret'} onClick={saveTokenSecret} type="button">
+                Save token secret
+              </button>
+            </div>
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Authorization" description="Save the app Client ID, open Microsoft login, then paste the final redirect URL." />
+            <div className="settings-editor">
+              <label>
+                Client ID
+                <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
+              </label>
+              <label>
+                Redirect URL or code
+                <textarea value={callbackUrl} onChange={(event) => setCallbackUrl(event.target.value)} />
+              </label>
+              <button disabled={busy === 'auth'} onClick={startAuth} type="button">
+                Start Outlook auth
+              </button>
+              <button disabled={busy === 'complete'} onClick={completeAuth} type="button">
+                Complete Outlook auth
+              </button>
+            </div>
+            {authStart ? <pre>{JSON.stringify(authStart, null, 2)}</pre> : null}
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Sync controls" description="Manual pull and reset affect only FlowPlanV2 server data; Outlook cloud data is never deleted." />
+            <div className="filter-row">
+              <button disabled={busy === 'sync'} onClick={syncNow} type="button">
+                Manual pull Outlook
+              </button>
+              <button className="danger" disabled={busy === 'reset'} onClick={reset} type="button">
+                Reset Outlook local data
+              </button>
+            </div>
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Calendars" description="Server-side Outlook calendar mappings and delta state." />
+            <MiniTable
+              columns={[
+                { key: 'name', label: 'Name', width: 220 },
+                { key: 'remoteCalendarId', label: 'Remote calendar', width: 260 },
+                { key: 'colorHex', label: 'Color', width: 90 },
+                { key: 'lastSyncedAt', label: 'Last synced', type: 'date', width: 150 },
+              ]}
+              rows={calendars}
+            />
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Sync runs" description="Automatic, admin manual, client refresh, and reset runs." />
+            <MiniTable
+              columns={[
+                { key: 'triggerSource', label: 'Trigger', width: 120 },
+                { key: 'status', label: 'Status', type: 'status', width: 100 },
+                { key: 'startedAt', label: 'Started', type: 'date', width: 150 },
+                { key: 'calendarCount', label: 'Calendars', type: 'number', width: 90 },
+                { key: 'eventUpserts', label: 'Upserts', type: 'number', width: 90 },
+                { key: 'eventDeletes', label: 'Deletes', type: 'number', width: 90 },
+                { key: 'errorMessage', label: 'Error', width: 260 },
+              ]}
+              rows={runs}
+            />
+          </section>
+
+          <section className="console-panel">
+            <PanelHeader title="Diagnostics" description="Read-only boundary and local object counts." />
+            <pre>{JSON.stringify(diagnostics ?? {}, null, 2)}</pre>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

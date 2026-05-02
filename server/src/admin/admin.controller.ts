@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { readRequestContext } from '../common/request-context';
+import { OutlookService } from '../outlook/outlook.service';
 import { ResolveConflictDto } from '../sync/dto';
 import { SyncService } from '../sync/sync.service';
 import { AdminService, AdminQuery } from './admin.service';
@@ -18,6 +19,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly syncService: SyncService,
+    private readonly outlookService: OutlookService,
   ) {}
 
   @Get('overview')
@@ -243,7 +245,61 @@ export class AdminController {
 
   @Get('outlook')
   outlook(@Headers() headers: Record<string, unknown>) {
-    return this.adminService.outlook(readRequestContext(headers));
+    return this.outlookService.status(readRequestContext(headers));
+  }
+
+  @Get('outlook/status')
+  outlookStatus(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.status(readRequestContext(headers));
+  }
+
+  @Post('outlook/auth/start')
+  outlookAuthStart(
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.outlookService.startAuth(body, readRequestContext(headers));
+  }
+
+  @Post('outlook/auth/complete')
+  outlookAuthComplete(
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.outlookService.completeAuth(body, readRequestContext(headers));
+  }
+
+  @Post('outlook/token-secret')
+  outlookTokenSecret(
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.outlookService.saveTokenSecret(body, readRequestContext(headers));
+  }
+
+  @Post('outlook/sync')
+  outlookSync(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.syncNow(readRequestContext(headers), 'admin');
+  }
+
+  @Post('outlook/reset')
+  outlookReset(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.reset(readRequestContext(headers));
+  }
+
+  @Get('outlook/calendars')
+  outlookCalendars(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.calendars(readRequestContext(headers));
+  }
+
+  @Get('outlook/runs')
+  outlookRuns(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.runs(readRequestContext(headers));
+  }
+
+  @Get('outlook/diagnostics')
+  outlookDiagnostics(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.diagnostics(readRequestContext(headers));
   }
 
   @Get('audit-logs')
