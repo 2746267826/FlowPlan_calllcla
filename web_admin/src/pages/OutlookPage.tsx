@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Steps, Switch, Tabs, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Steps, Switch, Tabs, Typography, message } from 'antd';
 import { CloudSyncOutlined, KeyOutlined, ReloadOutlined } from '@ant-design/icons';
 import { PageContainer, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components';
 import { useEffect, useMemo, useState } from 'react';
@@ -122,8 +122,27 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
                 onSearch={async (clientId) => {
                   if (!clientId.trim()) return;
                   const result = await props.api.startOutlookAuth(clientId.trim());
+                  const authorizeUrl = extractAuthorizeUrl(result);
                   message.success('已生成授权入口');
-                  Modal.info({ title: '授权入口', content: displayValue(result.authUrl ?? result.url ?? result) });
+                  Modal.info({
+                    title: '授权入口',
+                    width: 760,
+                    okText: '关闭',
+                    content: (
+                      <Space direction="vertical" size={12} className="full-width">
+                        <Typography.Text type="secondary">
+                          请打开下面的 Microsoft 授权链接，完成登录和授权后，把回调 URL 粘贴到“授权回调 URL”输入框。
+                        </Typography.Text>
+                        <Input.TextArea readOnly value={authorizeUrl} autoSize={{ minRows: 4, maxRows: 8 }} />
+                        <Space>
+                          <Button type="primary" href={authorizeUrl} target="_blank" rel="noreferrer">
+                            打开授权页面
+                          </Button>
+                          <Button onClick={() => void navigator.clipboard?.writeText(authorizeUrl)}>复制链接</Button>
+                        </Space>
+                      </Space>
+                    ),
+                  });
                   await load();
                 }}
               />
@@ -174,4 +193,12 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
       </Space>
     </PageContainer>
   );
+}
+
+function extractAuthorizeUrl(result: ApiRecord): string {
+  const candidates = [result.authorizeUrl, result.authorizationUrl, result.authUrl, result.url];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return displayValue(result);
 }

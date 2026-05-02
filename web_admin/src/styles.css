@@ -179,8 +179,9 @@ body {
   overflow: auto;
   padding: 12px;
   border-radius: 6px;
-  background: #111827;
-  color: #dbeafe;
+  border: 1px solid #dbe3ec;
+  background: #f8fafc;
+  color: #111827;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
