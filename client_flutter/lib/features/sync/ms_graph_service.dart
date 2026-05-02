@@ -196,7 +196,7 @@ class MsGraphService {
         .whereType<String>()
         .where((name) => name.isNotEmpty)
         .toList(growable: false);
-    return names.isEmpty ? null : names.join('ã€?);
+    return names.isEmpty ? null : names.join(', ');
   }
 
   static String? _extractBodyText(Map<String, dynamic> graphEvent) {
@@ -226,7 +226,7 @@ class MsGraphService {
         .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'</div\s*>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'</li\s*>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'<li\s*>', caseSensitive: false), 'â€?');
+        .replaceAll(RegExp(r'<li\s*>', caseSensitive: false), '- ');
     final withoutTags = withLineBreaks.replaceAll(RegExp(r'<[^>]+>'), ' ');
     final decoded = withoutTags
         .replaceAll('&nbsp;', ' ')
