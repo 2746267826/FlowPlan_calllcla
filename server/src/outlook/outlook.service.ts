@@ -20,6 +20,7 @@ const REDIRECT_URI =
 const SCOPE = 'openid profile offline_access User.Read Calendars.Read';
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const SYNC_INTERVAL_MINUTES = 15;
+const GRAPH_CALENDAR_VIEW_PAGE_SIZE = 50;
 
 type OutlookConnectionRow = {
   id: string;
@@ -706,7 +707,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         calendar.id,
       )}/calendarView/delta?startDateTime=${encodeURIComponent(
         windowStart.toISOString(),
-      )}&endDateTime=${encodeURIComponent(windowEnd.toISOString())}&$top=100`;
+      )}&endDateTime=${encodeURIComponent(windowEnd.toISOString())}`;
     let newDeltaLink: string | null = null;
     let upserts = 0;
     let deletes = 0;
@@ -716,7 +717,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         value?: OutlookEvent[];
         '@odata.nextLink'?: string;
         '@odata.deltaLink'?: string;
-      }>(url, accessToken);
+      }>(url, accessToken, [
+        `odata.maxpagesize=${GRAPH_CALENDAR_VIEW_PAGE_SIZE}`,
+      ]);
       for (const event of page.value ?? []) {
         if (event['@removed']) {
           const deleted = await this.deleteSyncObject(
@@ -1060,7 +1063,11 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return calendars;
   }
 
-  private async graphGet<T>(pathOrUrl: string, accessToken: string): Promise<T> {
+  private async graphGet<T>(
+    pathOrUrl: string,
+    accessToken: string,
+    preferValues: string[] = [],
+  ): Promise<T> {
     const url = pathOrUrl.startsWith('https://')
       ? pathOrUrl
       : `${GRAPH_BASE}${pathOrUrl}`;
@@ -1072,7 +1079,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json',
-        Prefer: 'outlook.timezone="UTC"',
+        Prefer: this.graphPreferHeader(preferValues),
       },
     });
     if (!response.ok) {
@@ -1080,6 +1087,12 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       throw new Error(`Outlook Graph GET failed (${response.status}): ${body}`);
     }
     return (await response.json()) as T;
+  }
+
+  private graphPreferHeader(preferValues: string[]) {
+    return Array.from(
+      new Set([...preferValues, 'outlook.timezone="UTC"'].filter(Boolean)),
+    ).join(', ');
   }
 
   private async exchangeCode(
