@@ -1,4 +1,18 @@
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Steps, Switch, Tabs, Typography, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Form,
+  Input,
+  Modal,
+  Space,
+  Steps,
+  Switch,
+  Tabs,
+  Typography,
+  message,
+} from 'antd';
 import { CloudSyncOutlined, KeyOutlined, ReloadOutlined } from '@ant-design/icons';
 import { PageContainer, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,12 +28,15 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
   const [runs, setRuns] = useState<ApiRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<ApiRecord>({});
   const [loading, setLoading] = useState(true);
+  const [startingAuth, setStartingAuth] = useState(false);
+  const [completingAuth, setCompletingAuth] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
       const [statusResult, calendarsResult, runsResult, diagnosticsResult] = await Promise.all([
-        props.api.outlookStatus().catch((error) => ({ status: 'failed', lastError: String(error) })),
+        props.api.outlookStatus().catch((error) => ({ status: 'failed', lastError: errorMessage(error) })),
         props.api.outlookCalendars().catch(() => ({})),
         props.api.outlookRuns().catch(() => ({})),
         props.api.outlookDiagnostics().catch(() => ({})),
@@ -37,6 +54,82 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
   useEffect(() => {
     void load();
   }, []);
+
+  const showAuthError = (title: string, error: unknown) => {
+    const detail = errorMessage(error);
+    setAuthError(detail);
+    Modal.error({
+      title,
+      width: 680,
+      content: (
+        <Space direction="vertical" size={10} className="full-width">
+          <Typography.Text>操作没有完成，服务端返回了以下错误：</Typography.Text>
+          <pre className="json-pre compact">{detail}</pre>
+          <Typography.Text type="secondary">
+            请确认回调 URL 是 Microsoft 授权后浏览器地址栏中的完整地址，并且服务端 Outlook 配置、Client ID、redirect URI 一致。
+          </Typography.Text>
+        </Space>
+      ),
+    });
+  };
+
+  const startAuthorization = async (clientId: string) => {
+    const trimmed = clientId.trim();
+    if (!trimmed) {
+      message.warning('请先输入 Microsoft 应用 Client ID');
+      return;
+    }
+    setStartingAuth(true);
+    setAuthError('');
+    try {
+      const result = await props.api.startOutlookAuth(trimmed);
+      const authorizeUrl = extractAuthorizeUrl(result);
+      message.success('已生成授权入口');
+      Modal.info({
+        title: '授权入口',
+        width: 760,
+        okText: '关闭',
+        content: (
+          <Space direction="vertical" size={12} className="full-width">
+            <Typography.Text type="secondary">
+              请打开下面的 Microsoft 授权链接，完成登录和授权后，把回调 URL 粘贴到“授权回调 URL”输入框。
+            </Typography.Text>
+            <Input.TextArea readOnly value={authorizeUrl} autoSize={{ minRows: 4, maxRows: 8 }} />
+            <Space>
+              <Button type="primary" href={authorizeUrl} target="_blank" rel="noreferrer">
+                打开授权页面
+              </Button>
+              <Button onClick={() => void navigator.clipboard?.writeText(authorizeUrl)}>复制链接</Button>
+            </Space>
+          </Space>
+        ),
+      });
+      await load();
+    } catch (error) {
+      showAuthError('生成 Outlook 授权入口失败', error);
+    } finally {
+      setStartingAuth(false);
+    }
+  };
+
+  const completeAuthorization = async (callbackUrl: string) => {
+    const trimmed = callbackUrl.trim();
+    if (!trimmed) {
+      message.warning('请粘贴 Microsoft 回调后的完整 URL');
+      return;
+    }
+    setCompletingAuth(true);
+    setAuthError('');
+    try {
+      await props.api.completeOutlookAuth(trimmed);
+      message.success('Outlook 授权已完成');
+      await load();
+    } catch (error) {
+      showAuthError('完成 Outlook 授权失败', error);
+    } finally {
+      setCompletingAuth(false);
+    }
+  };
 
   const runSync = () => {
     Modal.confirm({
@@ -93,14 +186,23 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
           <StatisticCard statistic={{ title: '日历数', value: calendars.length }} />
           <StatisticCard statistic={{ title: '上次同步', value: formatDate(status.lastSyncAt) }} />
         </StatisticCard.Group>
+
         {status.lastError ? <Alert type="error" showIcon message="Outlook 最近错误" description={displayValue(status.lastError)} /> : null}
+        {authError ? <Alert type="error" showIcon closable message="授权操作失败" description={authError} onClose={() => setAuthError('')} /> : null}
+
         <Card
           title="授权与同步控制"
           extra={
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
-              <Button icon={<CloudSyncOutlined />} onClick={runSync}>立即同步</Button>
-              <Button danger onClick={reset}>重置集成</Button>
+              <Button icon={<ReloadOutlined />} onClick={() => void load()}>
+                刷新
+              </Button>
+              <Button icon={<CloudSyncOutlined />} onClick={runSync}>
+                立即同步
+              </Button>
+              <Button danger onClick={reset}>
+                重置集成
+              </Button>
             </Space>
           }
           loading={loading}
@@ -117,61 +219,52 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
             <Form.Item label="客户端 ID">
               <Input.Search
                 enterButton="开始授权"
+                loading={startingAuth}
                 prefix={<KeyOutlined />}
                 placeholder="输入 Microsoft 应用 Client ID"
-                onSearch={async (clientId) => {
-                  if (!clientId.trim()) return;
-                  const result = await props.api.startOutlookAuth(clientId.trim());
-                  const authorizeUrl = extractAuthorizeUrl(result);
-                  message.success('已生成授权入口');
-                  Modal.info({
-                    title: '授权入口',
-                    width: 760,
-                    okText: '关闭',
-                    content: (
-                      <Space direction="vertical" size={12} className="full-width">
-                        <Typography.Text type="secondary">
-                          请打开下面的 Microsoft 授权链接，完成登录和授权后，把回调 URL 粘贴到“授权回调 URL”输入框。
-                        </Typography.Text>
-                        <Input.TextArea readOnly value={authorizeUrl} autoSize={{ minRows: 4, maxRows: 8 }} />
-                        <Space>
-                          <Button type="primary" href={authorizeUrl} target="_blank" rel="noreferrer">
-                            打开授权页面
-                          </Button>
-                          <Button onClick={() => void navigator.clipboard?.writeText(authorizeUrl)}>复制链接</Button>
-                        </Space>
-                      </Space>
-                    ),
-                  });
-                  await load();
-                }}
+                onSearch={(clientId) => void startAuthorization(clientId)}
               />
             </Form.Item>
             <Form.Item label="授权回调 URL">
               <Input.Search
                 enterButton="完成授权"
+                loading={completingAuth}
                 placeholder="粘贴 Microsoft 回调后的完整 URL"
-                onSearch={async (callbackUrl) => {
-                  if (!callbackUrl.trim()) return;
-                  await props.api.completeOutlookAuth(callbackUrl.trim());
-                  message.success('Outlook 授权已完成');
-                  await load();
-                }}
+                onSearch={(callbackUrl) => void completeAuthorization(callbackUrl)}
               />
             </Form.Item>
           </Form>
         </Card>
+
         <Tabs
           items={[
             {
               key: 'mapping',
               label: '日历映射',
-              children: <ProTable<ApiRecord> rowKey={(row) => displayValue(pickId(row) ?? JSON.stringify(row))} search={false} options={false} columns={calendarColumns} dataSource={calendars} pagination={{ pageSize: 8 }} />,
+              children: (
+                <ProTable<ApiRecord>
+                  rowKey={(row) => displayValue(pickId(row) ?? JSON.stringify(row))}
+                  search={false}
+                  options={false}
+                  columns={calendarColumns}
+                  dataSource={calendars}
+                  pagination={{ pageSize: 8 }}
+                />
+              ),
             },
             {
               key: 'runs',
               label: '同步历史',
-              children: <ProTable<ApiRecord> rowKey={(row) => displayValue(pickId(row) ?? JSON.stringify(row))} search={false} options={false} columns={runColumns} dataSource={runs} pagination={{ pageSize: 8 }} />,
+              children: (
+                <ProTable<ApiRecord>
+                  rowKey={(row) => displayValue(pickId(row) ?? JSON.stringify(row))}
+                  search={false}
+                  options={false}
+                  columns={runColumns}
+                  dataSource={runs}
+                  pagination={{ pageSize: 8 }}
+                />
+              ),
             },
             {
               key: 'diagnostics',
@@ -201,4 +294,8 @@ function extractAuthorizeUrl(result: ApiRecord): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return displayValue(result);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
