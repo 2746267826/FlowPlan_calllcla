@@ -2703,6 +2703,9 @@ export class FilesService {
     if (!path) {
       return null;
     }
+    if (path.startsWith('/')) {
+      return posix.normalize(path);
+    }
     if (win32.isAbsolute(path)) {
       return win32.normalize(path);
     }
