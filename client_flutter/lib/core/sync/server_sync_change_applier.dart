@@ -180,12 +180,9 @@ class ServerSyncChangeApplier {
     if (change.action == 'delete') {
       if (state != null) {
         await _deleteLocal(change.objectType, state.localId);
-        await _stateStore.markSynced(
+        await _stateStore.removeState(
           objectType: change.objectType,
           localId: state.localId,
-          serverId: change.serverId,
-          serverVersion: change.serverVersion,
-          uid: change.uid,
         );
       }
       return;
@@ -258,6 +255,10 @@ class ServerSyncChangeApplier {
     switch (objectType) {
       case 'calendar_book':
         if (id != null) {
+          await _database.customStatement(
+            'DELETE FROM calendar_events WHERE event_calendar_id = ?',
+            [id],
+          );
           await (_database.delete(_database.eventCalendars)
                 ..where((row) => row.id.equals(id)))
               .go();

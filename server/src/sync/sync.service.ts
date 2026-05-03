@@ -515,7 +515,6 @@ export class SyncService {
         WHERE user_id = $1
           AND object_type = $2
           AND uid = $3
-          AND deleted_at IS NULL
         LIMIT 1
         `,
         [userId, mutation.objectType, mutation.uid],
@@ -597,6 +596,21 @@ export class SyncService {
         deviceId,
       ],
     );
+
+    if (updated.rows[0] && existing.deleted_at) {
+      await client.query(
+        `
+        DELETE FROM sync_objects
+        WHERE user_id = $1
+          AND object_type = $2
+          AND uid = $3
+          AND id <> $4
+          AND deleted_at IS NOT NULL
+        `,
+        [userId, mutation.objectType, mutation.uid, existing.id],
+      );
+    }
+
     return updated.rows[0];
   }
 

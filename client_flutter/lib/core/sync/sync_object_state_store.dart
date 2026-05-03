@@ -200,6 +200,19 @@ class SyncObjectStateStore {
     );
   }
 
+  Future<void> removeState({
+    required String objectType,
+    required String localId,
+  }) {
+    return _database.customStatement(
+      '''
+      DELETE FROM sync_object_states
+      WHERE object_type = ? AND local_id = ?
+      ''',
+      [objectType, localId],
+    );
+  }
+
   Future<List<SyncObjectState>> listByState(
     SyncState state, {
     int limit = 100,

@@ -424,6 +424,32 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   async reset(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const result = await this.database.transaction(async (client) => {
+      await client.query(
+        `
+        DELETE FROM sync_changes
+        WHERE user_id = $1
+          AND server_object_id IN (
+            SELECT id FROM sync_objects
+            WHERE user_id = $1
+              AND object_type IN ('calendar_book', 'calendar_event')
+              AND payload->>'source' = 'outlook'
+              AND deleted_at IS NOT NULL
+          )
+        `,
+        [userId],
+      );
+
+      await client.query(
+        `
+        DELETE FROM sync_objects
+        WHERE user_id = $1
+          AND object_type IN ('calendar_book', 'calendar_event')
+          AND payload->>'source' = 'outlook'
+          AND deleted_at IS NOT NULL
+        `,
+        [userId],
+      );
+
       const deleted = await client.query<{
         id: string;
         object_type: string;
