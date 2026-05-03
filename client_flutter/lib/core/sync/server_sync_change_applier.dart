@@ -512,7 +512,7 @@ class ServerSyncChangeApplier {
     final remoteCalendarId =
         _calendarRemoteId(payload) ?? _calendarIdFromOutlookEventUid(uid);
     if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
-      throw StateError('Remote calendar event is missing calendar identity.');
+      return _ensureDefaultCalendarId();
     }
     final existing = await _findCalendarIdByRemoteId(remoteCalendarId);
     if (existing != null) {
@@ -523,6 +523,32 @@ class ServerSyncChangeApplier {
       colorHex: _string(payload, 'colorHex', 'color_hex'),
       calendarName: _string(payload, 'calendarName', 'calendar_name'),
     );
+  }
+
+  Future<int> _ensureDefaultCalendarId() async {
+    final defaultCalendar = await _database.select(_database.eventCalendars)
+      ..where((t) => t.isDefault.equals(true))
+      ..limit(1);
+    final existing = await defaultCalendar.getSingleOrNull();
+    if (existing != null) {
+      return existing.id;
+    }
+    final anyCalendar = await _database.select(_database.eventCalendars)
+      ..limit(1);
+    final any = await anyCalendar.getSingleOrNull();
+    if (any != null) {
+      return any.id;
+    }
+    return _database.into(_database.eventCalendars).insert(
+          EventCalendarsCompanion.insert(
+            name: '默认日历',
+            colorHex: const Value('#6B5EE4'),
+            isVisible: const Value(true),
+            isDefault: const Value(true),
+            source: const Value('local'),
+            createdAt: DateTime.now(),
+          ),
+        );
   }
 
   Future<int> _createOutlookPlaceholderCalendar(
