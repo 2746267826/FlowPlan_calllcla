@@ -45,37 +45,98 @@ export class FileTreeService {
         serverRootPath: rootPath,
       });
     }
+    const startedAt = new Date();
+    const maxNodes = this.readNumber(body.maxNodes, 5000);
     await this.database.query(
       `
       UPDATE file_roots
-      SET scan_status = 'scanning', last_error = NULL, updated_at = now()
+      SET
+        scan_status = 'scanning',
+        last_error = NULL,
+        metadata = metadata || $3::jsonb,
+        updated_at = now()
       WHERE user_id = $1 AND id = $2
       `,
-      [userId, rootId],
+      [
+        userId,
+        rootId,
+        JSON.stringify({
+          lastScan: {
+            status: 'scanning',
+            startedAt: startedAt.toISOString(),
+            maxNodes,
+            rootPath,
+          },
+        }),
+      ],
     );
-    const maxNodes = this.readNumber(body.maxNodes, 5000);
     const nodes: Record<string, unknown>[] = [];
     try {
       await this.collectLocalNodesForRoot(userId, rootId, rootPath, maxNodes, nodes);
     } catch (error) {
+      const failedAt = new Date();
+      const errorMessage = this.errorMessage(error);
       await this.database.query(
         `
         UPDATE file_roots
-        SET scan_status = 'failed', last_error = $3, updated_at = now()
+        SET
+          scan_status = 'failed',
+          last_error = $3,
+          metadata = metadata || $4::jsonb,
+          updated_at = now()
         WHERE user_id = $1 AND id = $2
         `,
-        [userId, rootId, this.errorMessage(error)],
+        [
+          userId,
+          rootId,
+          errorMessage,
+          JSON.stringify({
+            lastScan: {
+              status: 'failed',
+              startedAt: startedAt.toISOString(),
+              finishedAt: failedAt.toISOString(),
+              durationMs: failedAt.getTime() - startedAt.getTime(),
+              maxNodes,
+              rootPath,
+              scanned: nodes.length,
+              error: errorMessage,
+            },
+          }),
+        ],
       );
-      return { ok: false, reason: 'scan_failed', error: this.errorMessage(error), applied: 0 };
+      await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan', null, {
+        rootId,
+        rootPath,
+        status: 'failed',
+        errorMessage,
+        scanned: nodes.length,
+        durationMs: failedAt.getTime() - startedAt.getTime(),
+      });
+      return { ok: false, reason: 'scan_failed', error: errorMessage, applied: 0 };
     }
     const applied = await this.applyNodeSnapshot(
-      { rootId, nodes, scanStatus: 'completed' },
+      {
+        rootId,
+        nodes,
+        scanStatus: 'completed',
+        scanDiagnostic: {
+          status: 'completed',
+          startedAt: startedAt.toISOString(),
+          maxNodes,
+          rootPath,
+          scanned: nodes.length,
+          reachedMaxNodes: nodes.length >= maxNodes,
+        },
+      },
       context,
     );
     await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan', null, {
       rootId,
       rootPath,
+      status: 'success',
       scanned: nodes.length,
+      applied: applied.applied,
+      durationMs: new Date().getTime() - startedAt.getTime(),
     });
     return { ...applied, ok: true, rootId, scanned: nodes.length };
   }
@@ -256,13 +317,37 @@ export class FileTreeService {
         }
         applied += 1;
       }
+      const scanStatus = this.clean(body.scanStatus) ?? 'completed';
+      const scanDiagnostic = this.asRecord(body.scanDiagnostic);
+      const finishedAt = new Date();
+      const startedAt = this.clean(scanDiagnostic.startedAt);
+      const startedTime = startedAt ? new Date(startedAt).getTime() : NaN;
+      const rootMetadataPatch =
+        Object.keys(scanDiagnostic).length > 0
+          ? {
+              lastScan: {
+                ...scanDiagnostic,
+                status: scanStatus,
+                applied,
+                finishedAt: finishedAt.toISOString(),
+                durationMs: Number.isFinite(startedTime)
+                  ? finishedAt.getTime() - startedTime
+                  : undefined,
+              },
+            }
+          : {};
       await client.query(
         `
         UPDATE file_roots
-        SET scan_status = $3, last_scan_at = now(), last_error = NULL, updated_at = now()
+        SET
+          scan_status = $3,
+          last_scan_at = now(),
+          last_error = NULL,
+          metadata = metadata || $4::jsonb,
+          updated_at = now()
         WHERE user_id = $1 AND id = $2
         `,
-        [userId, rootId, this.clean(body.scanStatus) ?? 'completed'],
+        [userId, rootId, scanStatus, JSON.stringify(rootMetadataPatch)],
       );
       await this.recordFileOperation(client, userId, deviceId, 'file.nodes.snapshot', null, {
         rootId,
@@ -527,7 +612,12 @@ export class FileTreeService {
         userId,
         deviceId,
         action,
-        details.sessionId ?? details.providerKey ?? details.conflictId ?? null,
+        details.rootId ??
+          details.nodeId ??
+          details.sessionId ??
+          details.providerKey ??
+          details.conflictId ??
+          null,
         JSON.stringify(details),
       ],
     );

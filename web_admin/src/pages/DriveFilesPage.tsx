@@ -1,23 +1,55 @@
-import { Alert, Button, Card, Form, Input, InputNumber, Space, Table, Tag, Typography, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Form,
+  Input,
+  InputNumber,
+  Popconfirm,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CloudSyncOutlined, FolderAddOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  CloudSyncOutlined,
+  DeleteOutlined,
+  FolderAddOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { useEffect, useMemo, useState } from 'react';
 import type { AdminApiClient } from '../api/adminApi';
 import type { ApiRecord } from '../types';
-import { formatDate } from '../utils/format';
+import { formatDate, prettyJson } from '../utils/format';
 import { RawDataCollapse } from '../components/RawDataCollapse';
 
 interface DriveRootRecord extends ApiRecord {
   id: string;
   rootUid?: string;
   name?: string;
+  providerType?: string;
   rootUri?: string;
   rootDisplayPath?: string;
   scanStatus?: string;
   lastScanAt?: string;
   lastError?: string;
+  syncPolicy?: string;
   nodeCount?: number;
+  fileCount?: number;
+  folderCount?: number;
+  totalBytes?: number;
+  lastNodeUpdateAt?: string;
+  storageObjectCount?: number;
+  storageTotalBytes?: number;
+  lastOperation?: string;
+  lastOperationStatus?: string;
+  lastOperationError?: string;
+  lastOperationAt?: string;
   updatedAt?: string;
   metadata?: ApiRecord;
 }
@@ -39,16 +71,23 @@ export function DriveFilesPage(props: {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [scanningRootId, setScanningRootId] = useState<string | null>(null);
+  const [deletingRootId, setDeletingRootId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
+  const [pageError, setPageError] = useState<string | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
 
   const load = async () => {
     setLoading(true);
+    setPageError(null);
     try {
       const result = await props.api.driveRoots(keyword);
       setPayload(result);
       setRoots(readRoots(result));
       props.onDataRefresh();
+    } catch (error) {
+      const detail = errorMessage(error);
+      setPageError(`加载 Drive roots 失败：${detail}`);
+      messageApi.error('加载 Drive roots 失败');
     } finally {
       setLoading(false);
     }
@@ -60,6 +99,7 @@ export function DriveFilesPage(props: {
 
   const onSubmit = async (values: DriveRootFormValues) => {
     setSaving(true);
+    setPageError(null);
     try {
       const result = await props.api.upsertDriveRoot({
         name: values.name.trim(),
@@ -68,11 +108,15 @@ export function DriveFilesPage(props: {
         maxNodes: values.maxNodes,
       });
       if (result.ok !== true) {
-        throw new Error(String(result.message ?? result.reason ?? '云盘根目录保存失败。'));
+        throw new Error(String(result.message ?? result.reason ?? 'Drive root 保存失败'));
       }
-      messageApi.success('云盘根目录已保存。');
+      messageApi.success('Drive root 已保存');
       form.resetFields(['name', 'rootUri', 'rootDisplayPath']);
       await load();
+    } catch (error) {
+      const detail = errorMessage(error);
+      setPageError(`保存 Drive root 失败：${detail}`);
+      messageApi.error('保存 Drive root 失败');
     } finally {
       setSaving(false);
     }
@@ -81,16 +125,45 @@ export function DriveFilesPage(props: {
   const scanRoot = async (root: DriveRootRecord) => {
     const rootId = String(root.id);
     setScanningRootId(rootId);
+    setPageError(null);
     try {
       const maxNodes = readMaxNodes(root) ?? form.getFieldValue('maxNodes') ?? 5000;
       const result = await props.api.scanDriveRoot(rootId, { maxNodes });
       if (result.ok !== true) {
-        throw new Error(String(result.error ?? result.reason ?? '云盘根目录扫描失败。'));
+        throw new Error(String(result.error ?? result.reason ?? 'Drive root 扫描失败'));
       }
-      messageApi.success(`扫描完成：${String(result.scanned ?? result.applied ?? 0)} 个节点。`);
+      messageApi.success(`扫描完成：${String(result.scanned ?? result.applied ?? 0)} 个节点`);
+      await load();
+    } catch (error) {
+      const detail = errorMessage(error);
+      setPageError(`扫描 Drive root 失败：${detail}`);
+      messageApi.error('扫描 Drive root 失败');
       await load();
     } finally {
       setScanningRootId(null);
+    }
+  };
+
+  const deleteRoot = async (root: DriveRootRecord) => {
+    const rootId = String(root.id);
+    setDeletingRootId(rootId);
+    setPageError(null);
+    try {
+      const result = await props.api.deleteDriveRoot(rootId);
+      if (result.ok !== true) {
+        throw new Error(String(result.reason ?? result.message ?? 'Drive root 删除失败'));
+      }
+      const counts = asRecord(result.deletedCounts);
+      messageApi.success(
+        `已删除 root 索引：${String(counts.nodes ?? 0)} 个节点，服务器文件未删除`,
+      );
+      await load();
+    } catch (error) {
+      const detail = errorMessage(error);
+      setPageError(`删除 Drive root 失败：${detail}`);
+      messageApi.error('删除 Drive root 失败');
+    } finally {
+      setDeletingRootId(null);
     }
   };
 
@@ -99,8 +172,16 @@ export function DriveFilesPage(props: {
       {
         title: '名称',
         dataIndex: 'name',
-        width: 220,
+        width: 180,
         ellipsis: true,
+        render: (value, row) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong>{String(value ?? '未命名 root')}</Typography.Text>
+            <Typography.Text type="secondary" copyable={{ text: row.id }} style={{ fontSize: 12 }}>
+              {row.id}
+            </Typography.Text>
+          </Space>
+        ),
       },
       {
         title: '服务器路径',
@@ -109,64 +190,107 @@ export function DriveFilesPage(props: {
         render: (value) => <Typography.Text copyable>{String(value ?? '')}</Typography.Text>,
       },
       {
-        title: '状态',
+        title: '扫描状态',
         dataIndex: 'scanStatus',
-        width: 130,
+        width: 170,
         render: (value, row) => (
           <Space direction="vertical" size={2}>
-            <Tag color={statusColor(String(value ?? 'idle'))}>{String(value ?? 'idle')}</Tag>
+            <Tag color={scanStatusColor(String(value ?? 'idle'))}>{String(value ?? 'idle')}</Tag>
             {row.lastError ? (
-              <Typography.Text type="danger" ellipsis style={{ maxWidth: 220 }}>
+              <Typography.Text type="danger" copyable ellipsis style={{ maxWidth: 240 }}>
                 {row.lastError}
               </Typography.Text>
-            ) : null}
+            ) : (
+              <Typography.Text type="secondary">无错误</Typography.Text>
+            )}
           </Space>
         ),
       },
       {
-        title: '节点数',
-        dataIndex: 'nodeCount',
-        width: 90,
-        render: (value) => String(value ?? 0),
+        title: '规模',
+        width: 170,
+        render: (_, row) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>{formatCount(row.nodeCount)} 节点</Typography.Text>
+            <Typography.Text type="secondary">
+              {formatCount(row.fileCount)} 文件 / {formatCount(row.folderCount)} 文件夹
+            </Typography.Text>
+            <Typography.Text type="secondary">{formatBytes(row.totalBytes)}</Typography.Text>
+          </Space>
+        ),
       },
       {
-        title: '上次扫描',
-        dataIndex: 'lastScanAt',
-        width: 180,
-        render: (value) => formatDate(value),
+        title: '最近活动',
+        width: 210,
+        render: (_, row) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Text>扫描：{formatDate(row.lastScanAt)}</Typography.Text>
+            <Typography.Text type="secondary">节点：{formatDate(row.lastNodeUpdateAt)}</Typography.Text>
+            <Typography.Text type="secondary">
+              操作：{row.lastOperation ? `${row.lastOperation} / ${formatDate(row.lastOperationAt)}` : '无'}
+            </Typography.Text>
+          </Space>
+        ),
       },
       {
         title: '操作',
-        width: 120,
+        width: 190,
         render: (_, row) => (
-          <Button
-            icon={<CloudSyncOutlined />}
-            loading={scanningRootId === row.id}
-            onClick={() => void scanRoot(row)}
-          >
-            扫描
-          </Button>
+          <Space>
+            <Button
+              icon={<CloudSyncOutlined />}
+              loading={scanningRootId === row.id}
+              onClick={() => void scanRoot(row)}
+            >
+              扫描
+            </Button>
+            <Popconfirm
+              title="删除这个 Drive root？"
+              description="只删除 root 配置和文件树索引，不删除服务器真实目录和已保留的存储对象。"
+              okText="删除索引"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => void deleteRoot(row)}
+            >
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={deletingRootId === row.id}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
         ),
       },
     ],
-    [scanningRootId],
+    [deletingRootId, scanningRootId],
   );
 
   return (
     <PageContainer
       title="文件资料"
-      content="配置服务器端的云盘根目录，扫描其文件树，然后让客户端从服务器浏览和下载文件。"
+      content="配置服务器端 Drive 根目录，扫描文件树，并为客户端提供只读浏览和下载入口。"
     >
       {contextHolder}
       <Space direction="vertical" size={16} className="full-width">
         <Alert
           type="info"
           showIcon
-          message="服务器是数据的唯一来源"
-          description="添加服务器进程可读取的绝对文件系统路径。客户端设备将浏览扫描的文件树，并通过可恢复的传输会话下载文件。"
+          message="服务器是文件资料的唯一来源"
+          description="这里录入的是服务器进程可读取的绝对路径。客户端只浏览扫描后的文件树，并通过下载会话保存到本机。删除 root 只删除索引，不删除真实服务器目录。"
         />
 
-        <Card title="Add or Update Drive Root">
+        {pageError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="操作失败"
+            description={<Typography.Paragraph copyable>{pageError}</Typography.Paragraph>}
+          />
+        ) : null}
+
+        <Card title="新增或更新 Drive Root">
           <Form
             form={form}
             layout="vertical"
@@ -176,9 +300,9 @@ export function DriveFilesPage(props: {
             <Form.Item
               label="显示名称"
               name="name"
-              rules={[{ required: true, message: '请输入云盘根目录名称。' }]}
+              rules={[{ required: true, message: '请输入 Drive root 名称。' }]}
             >
-              <Input placeholder="课程文件、项目档案、文档..." />
+              <Input placeholder="课程文件、项目档案、文档库..." />
             </Form.Item>
             <Form.Item
               label="服务器绝对路径"
@@ -189,28 +313,28 @@ export function DriveFilesPage(props: {
               <Input placeholder="C:\\FlowPlanDrive\\Documents" />
             </Form.Item>
             <Form.Item label="显示路径" name="rootDisplayPath">
-              <Input placeholder="可选的友好路径，显示给客户端" />
+              <Input placeholder="可选：显示给客户端的友好路径" />
             </Form.Item>
-            <Form.Item label="扫描节点限制" name="maxNodes">
+            <Form.Item label="扫描节点上限" name="maxNodes">
               <InputNumber min={1} max={200000} step={500} style={{ width: 220 }} />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<FolderAddOutlined />} loading={saving}>
-              保存云盘根目录
+              保存 Drive root
             </Button>
           </Form>
         </Card>
 
         <Card
-          title="云盘根目录"
+          title="Drive Roots"
           extra={
             <Space>
               <Input.Search
                 allowClear
-                placeholder="搜索根目录"
+                placeholder="搜索 root 名称或路径"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 onSearch={() => void load()}
-                style={{ width: 240 }}
+                style={{ width: 260 }}
               />
               <Button icon={<ReloadOutlined />} onClick={() => void load()}>
                 刷新
@@ -224,11 +348,87 @@ export function DriveFilesPage(props: {
             dataSource={roots}
             columns={columns}
             pagination={{ pageSize: 8, showSizeChanger: true }}
+            expandable={{
+              expandedRowRender: (row) => <RootDiagnostics root={row} />,
+            }}
           />
-          <RawDataCollapse title="云盘根目录原始响应" value={payload} />
+          <RawDataCollapse title="Drive roots 原始响应" value={payload} />
         </Card>
       </Space>
     </PageContainer>
+  );
+}
+
+function RootDiagnostics(props: { root: DriveRootRecord }) {
+  const { root } = props;
+  const lastScan = asRecord(root.metadata?.lastScan);
+  return (
+    <Space direction="vertical" size={16} className="full-width">
+      <Card size="small" title="诊断摘要">
+        <Space wrap size={16}>
+          <Statistic title="节点" value={formatCount(root.nodeCount)} />
+          <Statistic title="文件" value={formatCount(root.fileCount)} />
+          <Statistic title="文件夹" value={formatCount(root.folderCount)} />
+          <Statistic title="文件总量" value={formatBytes(root.totalBytes)} />
+          <Statistic title="保留对象" value={formatCount(root.storageObjectCount)} />
+          <Statistic title="对象容量" value={formatBytes(root.storageTotalBytes)} />
+        </Space>
+      </Card>
+
+      <Descriptions size="small" bordered column={2}>
+        <Descriptions.Item label="Root ID">{root.id}</Descriptions.Item>
+        <Descriptions.Item label="Root UID">{root.rootUid ?? '无'}</Descriptions.Item>
+        <Descriptions.Item label="Provider">{root.providerType ?? 'server_storage'}</Descriptions.Item>
+        <Descriptions.Item label="Sync Policy">{root.syncPolicy ?? 'metadata_only'}</Descriptions.Item>
+        <Descriptions.Item label="服务器路径">
+          <Typography.Text copyable>{root.rootUri ?? '无'}</Typography.Text>
+        </Descriptions.Item>
+        <Descriptions.Item label="显示路径">{root.rootDisplayPath ?? '无'}</Descriptions.Item>
+        <Descriptions.Item label="扫描状态">
+          <Tag color={scanStatusColor(String(root.scanStatus ?? 'idle'))}>{root.scanStatus ?? 'idle'}</Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label="最后扫描">{formatDate(root.lastScanAt)}</Descriptions.Item>
+        <Descriptions.Item label="最后节点更新">{formatDate(root.lastNodeUpdateAt)}</Descriptions.Item>
+        <Descriptions.Item label="最后操作">
+          {root.lastOperation ? `${root.lastOperation} / ${root.lastOperationStatus ?? 'unknown'} / ${formatDate(root.lastOperationAt)}` : '无'}
+        </Descriptions.Item>
+      </Descriptions>
+
+      {root.lastError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="最近错误"
+          description={<Typography.Paragraph copyable>{root.lastError}</Typography.Paragraph>}
+        />
+      ) : null}
+
+      <Descriptions size="small" bordered column={2} title="最近扫描诊断">
+        <Descriptions.Item label="状态">{String(lastScan.status ?? '无')}</Descriptions.Item>
+        <Descriptions.Item label="耗时">{formatDuration(lastScan.durationMs)}</Descriptions.Item>
+        <Descriptions.Item label="开始">{formatDate(lastScan.startedAt)}</Descriptions.Item>
+        <Descriptions.Item label="结束">{formatDate(lastScan.finishedAt)}</Descriptions.Item>
+        <Descriptions.Item label="扫描上限">{formatCount(lastScan.maxNodes)}</Descriptions.Item>
+        <Descriptions.Item label="扫描数量">{formatCount(lastScan.scanned)}</Descriptions.Item>
+        <Descriptions.Item label="应用数量">{formatCount(lastScan.applied)}</Descriptions.Item>
+        <Descriptions.Item label="达到上限">{lastScan.reachedMaxNodes === true ? '是' : '否'}</Descriptions.Item>
+        <Descriptions.Item label="扫描路径" span={2}>
+          <Typography.Text copyable>{String(lastScan.rootPath ?? root.rootUri ?? '无')}</Typography.Text>
+        </Descriptions.Item>
+        {lastScan.error ? (
+          <Descriptions.Item label="失败原因" span={2}>
+            <Typography.Text type="danger" copyable>
+              {String(lastScan.error)}
+            </Typography.Text>
+          </Descriptions.Item>
+        ) : null}
+      </Descriptions>
+
+      <RawDataCollapse title="Root metadata" value={root.metadata ?? {}} />
+      <Typography.Paragraph copyable={{ text: prettyJson(root) }} type="secondary">
+        复制完整 root 诊断 JSON
+      </Typography.Paragraph>
+    </Space>
   );
 }
 
@@ -255,7 +455,46 @@ function readMaxNodes(root: DriveRootRecord) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
 }
 
-function statusColor(status: string) {
+function asRecord(value: unknown): ApiRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as ApiRecord) : {};
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatCount(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed).toLocaleString('zh-CN') : '0';
+}
+
+function formatBytes(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = parsed;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatDuration(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return '无';
+  }
+  if (parsed < 1000) {
+    return `${Math.trunc(parsed)} ms`;
+  }
+  return `${(parsed / 1000).toFixed(2)} s`;
+}
+
+function scanStatusColor(status: string) {
   if (status === 'completed') return 'green';
   if (status === 'failed') return 'red';
   if (status === 'scanning' || status === 'running') return 'blue';

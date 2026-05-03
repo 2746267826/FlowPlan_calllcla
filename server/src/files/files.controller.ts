@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -151,6 +152,17 @@ export class FilesController {
     return this.filesService.scanDriveRoot(
       rootId,
       body,
+      readRequestContext(headers),
+    );
+  }
+
+  @Delete('drive/roots/:rootId')
+  deleteDriveRoot(
+    @Param('rootId') rootId: string,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.filesService.deleteDriveRoot(
+      rootId,
       readRequestContext(headers),
     );
   }

@@ -108,6 +108,12 @@ export class AdminApiClient {
     });
   }
 
+  deleteDriveRoot(rootId: string) {
+    return this.request<ApiRecord>(`/api/files/drive/roots/${encodeURIComponent(rootId)}`, {
+      method: 'DELETE',
+    });
+  }
+
   settings() {
     return this.request<ApiRecord>('/api/admin/settings');
   }

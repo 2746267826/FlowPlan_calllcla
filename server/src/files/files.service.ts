@@ -1284,14 +1284,53 @@ export class FilesService {
         r.last_error AS "lastError",
         r.sync_policy AS "syncPolicy",
         r.metadata,
-        COUNT(n.id)::int AS "nodeCount",
-        MAX(n.updated_at) AS "lastNodeUpdateAt",
+        COALESCE(node_summary.node_count, 0)::int AS "nodeCount",
+        COALESCE(node_summary.file_count, 0)::int AS "fileCount",
+        COALESCE(node_summary.folder_count, 0)::int AS "folderCount",
+        COALESCE(node_summary.total_bytes, 0)::bigint AS "totalBytes",
+        node_summary.last_node_update_at AS "lastNodeUpdateAt",
+        COALESCE(storage_summary.storage_object_count, 0)::int AS "storageObjectCount",
+        COALESCE(storage_summary.storage_total_bytes, 0)::bigint AS "storageTotalBytes",
+        last_operation.operation AS "lastOperation",
+        last_operation.status AS "lastOperationStatus",
+        last_operation.error_message AS "lastOperationError",
+        last_operation.created_at AS "lastOperationAt",
         r.updated_at AS "updatedAt"
       FROM file_roots r
-      LEFT JOIN file_nodes n ON n.user_id = r.user_id AND n.root_id = r.id AND n.is_deleted = false
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS node_count,
+          COUNT(*) FILTER (WHERE n.node_type = 'file')::int AS file_count,
+          COUNT(*) FILTER (WHERE n.node_type = 'folder')::int AS folder_count,
+          COALESCE(SUM(n.size_bytes) FILTER (WHERE n.node_type = 'file'), 0)::bigint AS total_bytes,
+          MAX(n.updated_at) AS last_node_update_at
+        FROM file_nodes n
+        WHERE n.user_id = r.user_id
+          AND n.root_id = r.id
+          AND n.is_deleted = false
+      ) node_summary ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS storage_object_count,
+          COALESCE(SUM(so.size_bytes), 0)::bigint AS storage_total_bytes
+        FROM file_storage_objects so
+        WHERE so.user_id = r.user_id
+          AND so.metadata->>'rootId' = r.id::text
+      ) storage_summary ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          op.operation,
+          op.status,
+          op.error_message,
+          op.created_at
+        FROM file_operation_logs op
+        WHERE op.user_id = r.user_id
+          AND op.metadata->>'rootId' = r.id::text
+        ORDER BY op.created_at DESC
+        LIMIT 1
+      ) last_operation ON true
       WHERE r.user_id = $1
         AND ($2::text IS NULL OR r.name ILIKE $2 OR r.root_uri ILIKE $2 OR r.root_display_path ILIKE $2)
-      GROUP BY r.id
       ORDER BY r.updated_at DESC, r.name ASC
       `,
       [userId, search],
@@ -1371,6 +1410,103 @@ export class FilesService {
       return row.rows[0];
     });
     return { ok: true, root: result };
+  }
+
+  async deleteDriveRoot(rootId: string, context: FlowPlanV2RequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    const deleted = await this.database.transaction(async (client) => {
+      const rootResult = await client.query<QueryResultRow>(
+        `
+        SELECT
+          r.id::text AS id,
+          r.root_uid AS "rootUid",
+          r.name,
+          r.provider_type AS "providerType",
+          r.root_uri AS "rootUri",
+          r.root_display_path AS "rootDisplayPath",
+          r.scan_status AS "scanStatus",
+          r.last_scan_at AS "lastScanAt",
+          r.last_error AS "lastError",
+          COALESCE(node_summary.node_count, 0)::int AS "nodeCount",
+          COALESCE(node_summary.file_count, 0)::int AS "fileCount",
+          COALESCE(node_summary.folder_count, 0)::int AS "folderCount",
+          COALESCE(node_summary.total_bytes, 0)::bigint AS "totalBytes",
+          COALESCE(storage_summary.storage_object_count, 0)::int AS "storageObjectCount",
+          COALESCE(storage_summary.storage_total_bytes, 0)::bigint AS "storageTotalBytes"
+        FROM file_roots r
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*)::int AS node_count,
+            COUNT(*) FILTER (WHERE n.node_type = 'file')::int AS file_count,
+            COUNT(*) FILTER (WHERE n.node_type = 'folder')::int AS folder_count,
+            COALESCE(SUM(n.size_bytes) FILTER (WHERE n.node_type = 'file'), 0)::bigint AS total_bytes
+          FROM file_nodes n
+          WHERE n.user_id = r.user_id
+            AND n.root_id = r.id
+            AND n.is_deleted = false
+        ) node_summary ON true
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*)::int AS storage_object_count,
+            COALESCE(SUM(so.size_bytes), 0)::bigint AS storage_total_bytes
+          FROM file_storage_objects so
+          WHERE so.user_id = r.user_id
+            AND so.metadata->>'rootId' = r.id::text
+        ) storage_summary ON true
+        WHERE r.user_id = $1 AND r.id = $2
+        LIMIT 1
+        `,
+        [userId, rootId],
+      );
+      const root = rootResult.rows[0];
+      if (!root) {
+        return null;
+      }
+      await client.query(
+        `
+        DELETE FROM file_roots
+        WHERE user_id = $1 AND id = $2
+        `,
+        [userId, rootId],
+      );
+      const deletedCounts = {
+        nodes: this.toNumber(root.nodeCount),
+        files: this.toNumber(root.fileCount),
+        folders: this.toNumber(root.folderCount),
+        totalBytes: this.toNumber(root.totalBytes),
+      };
+      await this.recordFileOperation(client, userId, deviceId, 'file.drive.root.delete', null, {
+        rootId,
+        rootUid: root.rootUid,
+        rootName: root.name,
+        rootUri: root.rootUri,
+        rootDisplayPath: root.rootDisplayPath,
+        deletedCounts,
+        storageObjectCount: this.toNumber(root.storageObjectCount),
+        storageTotalBytes: this.toNumber(root.storageTotalBytes),
+        storageObjectsRetained: true,
+        physicalFilesDeleted: false,
+        status: 'success',
+      });
+      return { root, deletedCounts };
+    });
+    if (!deleted) {
+      return { ok: false, reason: 'root_not_found' };
+    }
+    return {
+      ok: true,
+      deletedRoot: {
+        id: deleted.root.id,
+        rootUid: deleted.root.rootUid,
+        name: deleted.root.name,
+        rootUri: deleted.root.rootUri,
+        rootDisplayPath: deleted.root.rootDisplayPath,
+      },
+      deletedCounts: deleted.deletedCounts,
+      storageObjectsRetained: true,
+      physicalFilesDeleted: false,
+    };
   }
 
   async fileNodes(query: FilesQuery, context: FlowPlanV2RequestContext) {
@@ -2547,7 +2683,12 @@ export class FilesService {
         userId,
         deviceId,
         action,
-        details.sessionId ?? details.providerKey ?? details.conflictId ?? null,
+        details.rootId ??
+          details.nodeId ??
+          details.sessionId ??
+          details.providerKey ??
+          details.conflictId ??
+          null,
         JSON.stringify(details),
       ],
     );
