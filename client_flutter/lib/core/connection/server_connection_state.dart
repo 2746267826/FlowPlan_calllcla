@@ -23,6 +23,11 @@ class ServerConnectionState {
     this.conflictCount = 0,
     this.nextHeartbeatSeconds = 30,
     this.syncing = false,
+    this.syncPhase,
+    this.syncReason,
+    this.progressCurrent,
+    this.progressTotal,
+    this.lastSyncSummary = const <String, Object?>{},
   });
 
   final ServerConnectionLevel level;
@@ -37,6 +42,11 @@ class ServerConnectionState {
   final int conflictCount;
   final int nextHeartbeatSeconds;
   final bool syncing;
+  final String? syncPhase;
+  final String? syncReason;
+  final int? progressCurrent;
+  final int? progressTotal;
+  final Map<String, Object?> lastSyncSummary;
 
   bool get hasConflict => conflictCount > 0;
 
@@ -54,6 +64,12 @@ class ServerConnectionState {
     int? conflictCount,
     int? nextHeartbeatSeconds,
     bool? syncing,
+    String? syncPhase,
+    String? syncReason,
+    int? progressCurrent,
+    int? progressTotal,
+    Map<String, Object?>? lastSyncSummary,
+    bool clearProgress = false,
   }) {
     return ServerConnectionState(
       level: level ?? this.level,
@@ -69,6 +85,12 @@ class ServerConnectionState {
       nextHeartbeatSeconds:
           nextHeartbeatSeconds ?? this.nextHeartbeatSeconds,
       syncing: syncing ?? this.syncing,
+      syncPhase: clearProgress ? null : syncPhase ?? this.syncPhase,
+      syncReason: clearProgress ? null : syncReason ?? this.syncReason,
+      progressCurrent:
+          clearProgress ? null : progressCurrent ?? this.progressCurrent,
+      progressTotal: clearProgress ? null : progressTotal ?? this.progressTotal,
+      lastSyncSummary: lastSyncSummary ?? this.lastSyncSummary,
     );
   }
 }

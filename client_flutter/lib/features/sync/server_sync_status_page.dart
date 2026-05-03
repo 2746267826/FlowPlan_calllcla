@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/client_bootstrap_service.dart';
+import '../../core/connection/server_connection_state.dart';
 import '../../core/database/app_database.dart';
 import '../../core/router/app_router.dart';
 import '../../core/server_api/server_config_store.dart';
@@ -297,6 +298,8 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
               data: (service) => _RuntimeCard(state: service.state),
             ),
             const SizedBox(height: 12),
+            const _LiveServerSyncProgressCard(),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -481,6 +484,82 @@ class _RuntimeCard extends StatelessWidget {
       default:
         return '尚未连接服务端';
     }
+  }
+}
+
+class _LiveServerSyncProgressCard extends ConsumerWidget {
+  const _LiveServerSyncProgressCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final serviceAsync = ref.watch(serverConnectionServiceProvider);
+    return serviceAsync.when(
+      loading: () => const _Notice(
+        icon: Icons.sync_outlined,
+        title: '同步进度',
+        message: '正在初始化同步状态...',
+        color: Colors.blueGrey,
+      ),
+      error: (error, _) => _Notice(
+        icon: Icons.sync_problem_outlined,
+        title: '同步进度读取失败',
+        message: error.toString(),
+        color: Colors.redAccent,
+      ),
+      data: (service) => ListenableBuilder(
+        listenable: service,
+        builder: (context, _) => _ProgressCard(state: service.state),
+      ),
+    );
+  }
+}
+
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({required this.state});
+
+  final ServerConnectionState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = state.lastSyncSummary;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  state.syncing ? Icons.sync : Icons.cloud_done_outlined,
+                  color: state.syncing ? Colors.blue : Colors.green,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    state.syncing ? '正在同步' : '同步进度',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (state.syncing)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('阶段：${_syncPhaseLabel(state.syncPhase)}'),
+            if (state.syncReason != null) Text('原因：${state.syncReason}'),
+            if (state.progressCurrent != null || state.progressTotal != null)
+              Text('进度：${_syncProgressText(state)}'),
+            if (summary.isNotEmpty)
+              Text('最近结果：${_syncSummaryText(summary)}'),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -771,4 +850,59 @@ String _formatNullable(DateTime? value) {
   final hour = value.hour.toString().padLeft(2, '0');
   final minute = value.minute.toString().padLeft(2, '0');
   return '$month-$day $hour:$minute';
+}
+
+String _syncPhaseLabel(String? phase) {
+  switch (phase) {
+    case 'queued':
+      return '已排队';
+    case 'preparing':
+      return '准备同步';
+    case 'pushing':
+      return '推送本地变更';
+    case 'tracking_upload':
+      return '上传追踪缓冲';
+    case 'pulling':
+      return '拉取服务端变更';
+    case 'applying':
+      return '应用服务端变更';
+    case 'completed':
+      return '同步完成';
+    case 'failed':
+      return '同步失败';
+    default:
+      return '空闲';
+  }
+}
+
+String _syncProgressText(ServerConnectionState state) {
+  final current = state.progressCurrent;
+  final total = state.progressTotal;
+  if (current == null && total == null) {
+    return '无';
+  }
+  if (total == null || total <= 0) {
+    return '${current ?? 0}';
+  }
+  return '${current ?? 0}/$total';
+}
+
+String _syncSummaryText(Map<String, Object?> summary) {
+  final parts = <String>[];
+  void add(String label, Object? value) {
+    if (value != null) {
+      parts.add('$label $value');
+    }
+  }
+
+  add('accepted', summary['accepted']);
+  add('conflicts', summary['conflicts']);
+  add('rejected', summary['rejected']);
+  add('pushed', summary['pushed']);
+  add('pulled', summary['pulledChanges']);
+  final tracking = summary['trackingUpload'];
+  if (tracking != null) {
+    parts.add('tracking $tracking');
+  }
+  return parts.isEmpty ? summary.toString() : parts.join(' · ');
 }

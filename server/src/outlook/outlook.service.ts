@@ -86,6 +86,38 @@ type SyncResult = {
   errorMessage?: string | null;
 };
 
+type OutlookRunDiagnostics = {
+  graphHttpMethods: string[];
+  triggerSource: string;
+  calendars: Array<{
+    remoteCalendarId: string;
+    name: string;
+    deltaMode: boolean;
+    pageCount: number;
+    eventCount: number;
+    upserts: number;
+    deletes: number;
+  }>;
+  fieldStats: {
+    totalEvents: number;
+    removedEvents: number;
+    missingSubject: number;
+    missingLocation: number;
+    missingBodyPreview: number;
+    missingOrganizer: number;
+    missingAttendees: number;
+    privateEvents: number;
+    recurrenceFallbacks: number;
+    masterLookupFailures: number;
+    sensitivity: Record<string, number>;
+    showAs: Record<string, number>;
+    type: Record<string, number>;
+  };
+  graphEventSamples: Array<Record<string, unknown>>;
+  recurrenceFallbackSamples: Array<Record<string, unknown>>;
+  errors: Array<Record<string, unknown>>;
+};
+
 @Injectable()
 export class OutlookService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | undefined;
@@ -495,7 +527,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
 
   async diagnostics(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const [status, objectCounts, mappings] = await Promise.all([
+    const [status, objectCounts, mappings, recentRuns, fieldCoverage] =
+      await Promise.all([
       this.status(context),
       this.database.query(
         `
@@ -519,11 +552,57 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         `,
         [userId],
       ),
+      this.database.query(
+        `
+        SELECT
+          id::text,
+          trigger_source AS "triggerSource",
+          status,
+          started_at AS "startedAt",
+          finished_at AS "finishedAt",
+          calendar_count AS "calendarCount",
+          event_upserts AS "eventUpserts",
+          event_deletes AS "eventDeletes",
+          error_message AS "errorMessage",
+          metadata
+        FROM outlook_sync_runs
+        WHERE user_id = $1
+        ORDER BY started_at DESC
+        LIMIT 10
+        `,
+        [userId],
+      ),
+      this.database.query(
+        `
+        SELECT
+          COUNT(*)::int AS "eventCount",
+          COUNT(*) FILTER (
+            WHERE COALESCE(payload->>'subject', payload->>'title', payload->>'summary', '') = ''
+          )::int AS "missingTitle",
+          COUNT(*) FILTER (
+            WHERE COALESCE(payload->>'location', '') = ''
+          )::int AS "missingLocation",
+          COUNT(*) FILTER (
+            WHERE COALESCE(payload->>'bodyPreview', payload->>'description', '') = ''
+          )::int AS "missingBodyPreview",
+          COUNT(*) FILTER (
+            WHERE COALESCE(payload->>'organizerName', payload->>'organizerEmail', '') = ''
+          )::int AS "missingOrganizer"
+        FROM sync_objects
+        WHERE user_id = $1
+          AND object_type = 'calendar_event'
+          AND deleted_at IS NULL
+          AND payload->>'source' = 'outlook'
+        `,
+        [userId],
+      ),
     ]);
     return {
       ...status,
       objectCounts: objectCounts.rows,
       mappings: mappings.rows,
+      recentRuns: recentRuns.rows,
+      fieldCoverage: fieldCoverage.rows[0] ?? null,
       writeBackEnabled: false,
       graphWriteMethodsAllowed: [],
     };
@@ -586,6 +665,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     let calendarCount = 0;
     let eventUpserts = 0;
     let eventDeletes = 0;
+    const diagnostics = this.createRunDiagnostics(triggerSource);
 
     try {
       const connection = await this.getConnection(userId);
@@ -597,10 +677,16 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       calendarCount = calendars.length;
 
       for (const calendar of calendars) {
-        await this.syncCalendar(userId, accessToken, calendar, (delta) => {
-          eventUpserts += delta.upserts;
-          eventDeletes += delta.deletes;
-        });
+        await this.syncCalendar(
+          userId,
+          accessToken,
+          calendar,
+          diagnostics,
+          (delta) => {
+            eventUpserts += delta.upserts;
+            eventDeletes += delta.deletes;
+          },
+        );
       }
 
       await this.database.query(
@@ -628,7 +714,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           calendarCount,
           eventUpserts,
           eventDeletes,
-          JSON.stringify({ graphHttpMethods: ['GET'] }),
+          JSON.stringify(diagnostics),
         ],
       );
 
@@ -646,6 +732,13 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      diagnostics.errors.push({
+        message,
+        calendarCount,
+        eventUpserts,
+        eventDeletes,
+        occurredAt: new Date().toISOString(),
+      });
       await this.database.query(
         `
         UPDATE outlook_connections
@@ -663,10 +756,18 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           calendar_count = $2,
           event_upserts = $3,
           event_deletes = $4,
-          error_message = $5
+          error_message = $5,
+          metadata = $6::jsonb
         WHERE id = $1
         `,
-        [runId, calendarCount, eventUpserts, eventDeletes, message],
+        [
+          runId,
+          calendarCount,
+          eventUpserts,
+          eventDeletes,
+          message,
+          JSON.stringify(diagnostics),
+        ],
       );
       return {
         ok: false,
@@ -689,6 +790,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     accessToken: string,
     calendar: OutlookCalendar,
+    diagnostics: OutlookRunDiagnostics,
     onDelta: (delta: { upserts: number; deletes: number }) => void,
   ) {
     await this.upsertCalendarBook(userId, calendar);
@@ -717,6 +819,17 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     let newDeltaLink: string | null = null;
     let upserts = 0;
     let deletes = 0;
+    const calendarDiagnostics = {
+      remoteCalendarId: calendar.id,
+      name: calendar.name ?? 'Outlook',
+      deltaMode: Boolean(deltaLink),
+      pageCount: 0,
+      eventCount: 0,
+      upserts: 0,
+      deletes: 0,
+    };
+    const seriesMasterCache = new Map<string, OutlookEvent>();
+    diagnostics.calendars.push(calendarDiagnostics);
 
     while (url) {
       const page = await this.graphGet<{
@@ -726,7 +839,10 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       }>(url, accessToken, [
         `odata.maxpagesize=${GRAPH_CALENDAR_VIEW_PAGE_SIZE}`,
       ]);
+      calendarDiagnostics.pageCount++;
       for (const event of page.value ?? []) {
+        calendarDiagnostics.eventCount++;
+        this.recordGraphEventDiagnostics(diagnostics, calendar, event);
         this.logGraphEventSnapshot(calendar, event);
         if (event['@removed']) {
           const deleted = await this.deleteSyncObject(
@@ -735,9 +851,26 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
             this.eventUid(calendar.id, event.id),
           );
           deletes += deleted ? 1 : 0;
+          calendarDiagnostics.deletes += deleted ? 1 : 0;
         } else {
-          const changed = await this.upsertCalendarEvent(userId, calendar, event);
+          if (event.type === 'seriesMaster') {
+            seriesMasterCache.set(this.masterCacheKey(calendar.id, event.id), event);
+          }
+          const eventToSave = await this.withSeriesMasterFallback(
+            userId,
+            accessToken,
+            calendar,
+            event,
+            seriesMasterCache,
+            diagnostics,
+          );
+          const changed = await this.upsertCalendarEvent(
+            userId,
+            calendar,
+            eventToSave,
+          );
           upserts += changed ? 1 : 0;
+          calendarDiagnostics.upserts += changed ? 1 : 0;
         }
       }
       url = page['@odata.nextLink'] ?? '';
@@ -767,6 +900,301 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       ],
     );
     onDelta({ upserts, deletes });
+  }
+
+  private createRunDiagnostics(triggerSource: string): OutlookRunDiagnostics {
+    return {
+      graphHttpMethods: ['GET'],
+      triggerSource,
+      calendars: [],
+      fieldStats: {
+        totalEvents: 0,
+        removedEvents: 0,
+        missingSubject: 0,
+        missingLocation: 0,
+        missingBodyPreview: 0,
+        missingOrganizer: 0,
+        missingAttendees: 0,
+        privateEvents: 0,
+        recurrenceFallbacks: 0,
+        masterLookupFailures: 0,
+        sensitivity: {},
+        showAs: {},
+        type: {},
+      },
+      graphEventSamples: [],
+      recurrenceFallbackSamples: [],
+      errors: [],
+    };
+  }
+
+  private recordGraphEventDiagnostics(
+    diagnostics: OutlookRunDiagnostics,
+    calendar: OutlookCalendar,
+    event: OutlookEvent,
+  ) {
+    const stats = diagnostics.fieldStats;
+    stats.totalEvents++;
+    const removed = Boolean(event['@removed']);
+    if (removed) {
+      stats.removedEvents++;
+    }
+    if (!this.cleanString(event.subject)) {
+      stats.missingSubject++;
+    }
+    if (!this.eventLocation(event)) {
+      stats.missingLocation++;
+    }
+    if (!this.cleanString(event.bodyPreview)) {
+      stats.missingBodyPreview++;
+    }
+    if (!event.organizer?.emailAddress) {
+      stats.missingOrganizer++;
+    }
+    if (!event.attendees || event.attendees.length === 0) {
+      stats.missingAttendees++;
+    }
+    if (event.sensitivity === 'private') {
+      stats.privateEvents++;
+    }
+    this.incrementBucket(stats.sensitivity, event.sensitivity ?? 'unknown');
+    this.incrementBucket(stats.showAs, event.showAs ?? 'unknown');
+    this.incrementBucket(stats.type, event.type ?? 'unknown');
+
+    if (diagnostics.graphEventSamples.length >= 50) {
+      return;
+    }
+    diagnostics.graphEventSamples.push({
+      calendarId: calendar.id,
+      calendarName: calendar.name ?? 'Outlook',
+      id: event.id,
+      subject: event.subject ?? null,
+      start: event.start ?? null,
+      end: event.end ?? null,
+      location: event.location ?? null,
+      locations: event.locations ?? [],
+      bodyPreview: event.bodyPreview ?? null,
+      organizer: event.organizer ?? null,
+      attendees: event.attendees ?? [],
+      isAllDay: event.isAllDay ?? null,
+      sensitivity: event.sensitivity ?? null,
+      showAs: event.showAs ?? null,
+      type: event.type ?? null,
+      seriesMasterId: event.seriesMasterId ?? null,
+      removed,
+      mappedPayload: removed
+        ? null
+        : {
+            title: this.eventSubject(event),
+            location: this.eventLocation(event),
+            description: this.eventDescription(event),
+            organizerName: this.cleanString(event.organizer?.emailAddress?.name),
+            organizerEmail: this.cleanString(
+              event.organizer?.emailAddress?.address,
+            ),
+            attendeeCount: event.attendees?.length ?? 0,
+          },
+    });
+  }
+
+  private incrementBucket(bucket: Record<string, number>, value: string) {
+    bucket[value] = (bucket[value] ?? 0) + 1;
+  }
+
+  private async withSeriesMasterFallback(
+    userId: string,
+    accessToken: string,
+    calendar: OutlookCalendar,
+    event: OutlookEvent,
+    seriesMasterCache: Map<string, OutlookEvent>,
+    diagnostics: OutlookRunDiagnostics,
+  ): Promise<OutlookEvent> {
+    if (!this.needsSeriesMasterFallback(event)) {
+      return event;
+    }
+    const seriesMasterId = this.cleanString(event.seriesMasterId);
+    if (!seriesMasterId) {
+      return event;
+    }
+    const cacheKey = this.masterCacheKey(calendar.id, seriesMasterId);
+    let master: OutlookEvent | null = seriesMasterCache.get(cacheKey) ?? null;
+    if (!master) {
+      master = await this.loadSeriesMasterFromDatabase(userId, calendar.id, seriesMasterId);
+      if (master) {
+        seriesMasterCache.set(cacheKey, master);
+      }
+    }
+    if (!master) {
+      master = await this.fetchSeriesMasterEvent(accessToken, calendar.id, seriesMasterId);
+      if (master) {
+        seriesMasterCache.set(cacheKey, master);
+      }
+    }
+    if (!master) {
+      diagnostics.fieldStats.masterLookupFailures++;
+      return event;
+    }
+    diagnostics.fieldStats.recurrenceFallbacks++;
+    const merged = this.mergeOccurrenceWithMaster(event, master);
+    this.recordRecurrenceFallbackSample(diagnostics, event, merged);
+    return merged;
+  }
+
+  private needsSeriesMasterFallback(event: OutlookEvent) {
+    if (event.type !== 'occurrence' && event.type !== 'exception') {
+      return false;
+    }
+    if (!this.cleanString(event.seriesMasterId)) {
+      return false;
+    }
+    return (
+      !this.cleanString(event.subject) ||
+      !this.eventLocation(event) ||
+      !this.cleanString(event.bodyPreview) ||
+      !event.organizer?.emailAddress
+    );
+  }
+
+  private mergeOccurrenceWithMaster(event: OutlookEvent, master: OutlookEvent): OutlookEvent {
+    return {
+      ...event,
+      subject: this.cleanString(event.subject) ?? this.cleanString(master.subject) ?? undefined,
+      bodyPreview:
+        this.cleanString(event.bodyPreview) ?? this.cleanString(master.bodyPreview) ?? undefined,
+      body: event.body?.content ? event.body : master.body,
+      location: this.eventLocation(event) ? event.location : master.location,
+      locations:
+        event.locations && event.locations.length > 0 ? event.locations : master.locations,
+      organizer: event.organizer?.emailAddress ? event.organizer : master.organizer,
+      attendees:
+        event.attendees && event.attendees.length > 0 ? event.attendees : master.attendees,
+      sensitivity: event.sensitivity ?? master.sensitivity,
+      showAs: event.showAs ?? master.showAs,
+      webLink: event.webLink ?? master.webLink,
+      isAllDay: event.isAllDay ?? master.isAllDay,
+    };
+  }
+
+  private async loadSeriesMasterFromDatabase(
+    userId: string,
+    calendarId: string,
+    seriesMasterId: string,
+  ): Promise<OutlookEvent | null> {
+    const uid = this.eventUid(calendarId, seriesMasterId);
+    const result = await this.database.query<{ payload: Record<string, unknown> }>(
+      `
+      SELECT payload
+      FROM sync_objects
+      WHERE user_id = $1
+        AND object_type = 'calendar_event'
+        AND uid = $2
+        AND deleted_at IS NULL
+      LIMIT 1
+      `,
+      [userId, uid],
+    );
+    const payload = result.rows[0]?.payload;
+    if (!payload) {
+      return null;
+    }
+    return this.outlookEventFromPayload(payload, seriesMasterId);
+  }
+
+  private async fetchSeriesMasterEvent(
+    accessToken: string,
+    calendarId: string,
+    seriesMasterId: string,
+  ): Promise<OutlookEvent | null> {
+    try {
+      return await this.graphGet<OutlookEvent>(
+        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(
+          seriesMasterId,
+        )}`,
+        accessToken,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private outlookEventFromPayload(
+    payload: Record<string, unknown>,
+    fallbackId: string,
+  ): OutlookEvent {
+    const location = this.cleanString(payload.location);
+    const organizerName = this.cleanString(payload.organizerName);
+    const organizerEmail = this.cleanString(payload.organizerEmail);
+    const emailAddress: { name?: string; address?: string } = {};
+    if (organizerName) {
+      emailAddress.name = organizerName;
+    }
+    if (organizerEmail) {
+      emailAddress.address = organizerEmail;
+    }
+    return {
+      id: this.cleanString(payload.remoteEventId) ?? fallbackId,
+      subject:
+        this.cleanString(payload.subject) ??
+        this.cleanString(payload.title) ??
+        this.cleanString(payload.summary) ??
+        undefined,
+      bodyPreview:
+        this.cleanString(payload.bodyPreview) ??
+        this.cleanString(payload.description) ??
+        undefined,
+      location: location ? { displayName: location } : undefined,
+      organizer:
+        organizerName || organizerEmail
+          ? {
+              emailAddress,
+            }
+          : undefined,
+      sensitivity: this.cleanString(payload.sensitivity) ?? undefined,
+      showAs: this.cleanString(payload.showAs) ?? undefined,
+      type: this.cleanString(payload.type) ?? undefined,
+      seriesMasterId: this.cleanString(payload.seriesMasterId) ?? undefined,
+      webLink: this.cleanString(payload.webLink) ?? undefined,
+    };
+  }
+
+  private masterCacheKey(calendarId: string, seriesMasterId: string) {
+    return `${calendarId}:${seriesMasterId}`;
+  }
+
+  private recordRecurrenceFallbackSample(
+    diagnostics: OutlookRunDiagnostics,
+    rawEvent: OutlookEvent,
+    mergedEvent: OutlookEvent,
+  ) {
+    if (diagnostics.recurrenceFallbackSamples.length >= 50) {
+      return;
+    }
+    diagnostics.recurrenceFallbackSamples.push({
+      id: rawEvent.id,
+      type: rawEvent.type ?? null,
+      seriesMasterId: rawEvent.seriesMasterId ?? null,
+      raw: {
+        subject: rawEvent.subject ?? null,
+        location: rawEvent.location ?? null,
+        bodyPreview: rawEvent.bodyPreview ?? null,
+        organizer: rawEvent.organizer ?? null,
+        start: rawEvent.start ?? null,
+        end: rawEvent.end ?? null,
+      },
+      mappedPayload: {
+        title: this.eventSubject(mergedEvent),
+        location: this.eventLocation(mergedEvent),
+        bodyPreview: this.cleanString(mergedEvent.bodyPreview),
+        organizerName: this.cleanString(
+          mergedEvent.organizer?.emailAddress?.name,
+        ),
+        organizerEmail: this.cleanString(
+          mergedEvent.organizer?.emailAddress?.address,
+        ),
+        start: mergedEvent.start ?? null,
+        end: mergedEvent.end ?? null,
+      },
+    });
   }
 
   private async upsertCalendarBook(userId: string, calendar: OutlookCalendar) {

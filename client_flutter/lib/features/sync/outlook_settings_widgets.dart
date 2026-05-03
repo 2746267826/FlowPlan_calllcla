@@ -424,3 +424,136 @@ class _SyncScopeTile extends StatelessWidget {
   }
 }
 
+class _OutlookRunLogTile extends StatelessWidget {
+  const _OutlookRunLogTile({required this.run});
+
+  final Map<String, dynamic> run;
+
+  @override
+  Widget build(BuildContext context) {
+    final metadata = _map(run['metadata']);
+    final fieldStats = _map(metadata['fieldStats']);
+    final samples = _listOfMaps(metadata['graphEventSamples']);
+    final fallbackSamples = _listOfMaps(metadata['recurrenceFallbackSamples']);
+    final calendars = _listOfMaps(metadata['calendars']);
+    final status = '${run['status'] ?? 'unknown'}';
+    final error = '${run['errorMessage'] ?? ''}'.trim();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        leading: Icon(
+          status == 'succeeded'
+              ? Icons.check_circle_outline
+              : status == 'failed'
+                  ? Icons.error_outline
+                  : Icons.sync,
+          color: status == 'succeeded'
+              ? Colors.green
+              : status == 'failed'
+                  ? Colors.redAccent
+                  : AppColors.primary,
+        ),
+        title: Text(
+          '${run['triggerSource'] ?? 'unknown'} · $status · ${run['startedAt'] ?? ''}',
+        ),
+        subtitle: Text(
+          '日历 ${run['calendarCount'] ?? 0}，更新 ${run['eventUpserts'] ?? 0}，删除 ${run['eventDeletes'] ?? 0}',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        children: [
+          if (error.isNotEmpty)
+            _InlineStateHint(
+              icon: Icons.error_outline,
+              iconColor: Colors.redAccent,
+              message: error,
+            ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Graph 字段统计：总事件 ${fieldStats['totalEvents'] ?? 0}，删除 ${fieldStats['removedEvents'] ?? 0}，private ${fieldStats['privateEvents'] ?? 0}，缺 subject ${fieldStats['missingSubject'] ?? 0}，缺 location ${fieldStats['missingLocation'] ?? 0}，缺 bodyPreview ${fieldStats['missingBodyPreview'] ?? 0}，缺 organizer ${fieldStats['missingOrganizer'] ?? 0}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '重复日程补全：已补 ${fieldStats['recurrenceFallbacks'] ?? 0}，master 查找失败 ${fieldStats['masterLookupFailures'] ?? 0}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          if (calendars.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '日历分页：${calendars.map((item) => '${item['name'] ?? 'Outlook'} ${item['pageCount'] ?? 0}页/${item['eventCount'] ?? 0}项').join('；')}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ),
+          ],
+          if (samples.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            for (final sample in samples.take(5))
+              _OutlookGraphSampleTile(sample: sample),
+          ],
+          if (fallbackSamples.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'occurrence master fallback 样本',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final sample in fallbackSamples.take(5))
+              _OutlookGraphSampleTile(sample: sample),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static Map<String, dynamic> _map(Object? value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return const <String, dynamic>{};
+  }
+
+  static List<Map<String, dynamic>> _listOfMaps(Object? value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+}
+
+class _OutlookGraphSampleTile extends StatelessWidget {
+  const _OutlookGraphSampleTile({required this.sample});
+
+  final Map<String, dynamic> sample;
+
+  @override
+  Widget build(BuildContext context) {
+    final mapped = sample['mappedPayload'];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SelectableText(
+        'Graph: id=${sample['id']}, subject=${sample['subject']}, location=${sample['location']}, bodyPreview=${sample['bodyPreview']}, organizer=${sample['organizer']}, attendees=${sample['attendees']}, start=${sample['start']}, end=${sample['end']}, sensitivity=${sample['sensitivity']}, showAs=${sample['showAs']}, type=${sample['type']}, removed=${sample['removed']}\nMapped payload: $mapped',
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+}
+

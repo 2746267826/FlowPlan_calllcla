@@ -135,6 +135,14 @@ class ClientApi {
     return _apiClient.postJson('/client/outlook/refresh');
   }
 
+  Future<Map<String, dynamic>> adminOutlookRuns() {
+    return _apiClient.getJson('/admin/outlook/runs');
+  }
+
+  Future<Map<String, dynamic>> adminOutlookDiagnostics() {
+    return _apiClient.getJson('/admin/outlook/diagnostics');
+  }
+
   Future<Map<String, dynamic>> heartbeat({
     required String deviceId,
     required Map<String, Object?> body,

@@ -34,6 +34,7 @@ class OfflineMutationRunner {
         acceptedCount: 0,
         conflictCount: 0,
         rejectedCount: 0,
+        pendingCount: 0,
       );
     }
 
@@ -103,6 +104,7 @@ class OfflineMutationRunner {
         acceptedCount: accepted.length,
         conflictCount: conflicts.length,
         rejectedCount: rejected.length,
+        pendingCount: mutations.length,
       );
     } catch (error) {
       await _store.markFailed(

@@ -9,7 +9,6 @@ import '../database/app_database.dart';
 import '../server_api/client_api.dart';
 import '../server_api/remote_settings_repository.dart';
 import '../sync/sync_engine.dart';
-import '../sync/sync_write_recorder.dart';
 
 class ClientBootstrapService extends ChangeNotifier {
   ClientBootstrapService({
@@ -39,11 +38,11 @@ class ClientBootstrapService extends ChangeNotifier {
 
   Timer? _timer;
   ClientRuntimeState _state = const ClientRuntimeState();
+  ValueChanged<ClientSyncProgress>? onProgress;
 
   ClientRuntimeState get state => _state;
 
   void start() {
-    SyncWriteRecorder.onMutationRecorded = () => syncNow(source: 'write');
     _timer ??= Timer.periodic(const Duration(minutes: 5), (_) {
       unawaited(syncNow(source: 'timer'));
     });
@@ -53,11 +52,11 @@ class ClientBootstrapService extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
-    SyncWriteRecorder.onMutationRecorded = null;
     super.dispose();
   }
 
   Future<ClientRuntimeState> bootstrapAndSync({String source = 'manual'}) async {
+    _reportProgress('preparing', source: source, message: 'Preparing sync');
     _setState(_state.copyWith(syncing: true, lastError: null));
     Map<String, dynamic>? bootstrapSnapshot;
     int? settingsVersion;
@@ -69,9 +68,27 @@ class ClientBootstrapService extends ChangeNotifier {
       final remoteSettings = await _remoteSettingsRepository.refresh();
       settingsVersion = remoteSettings.version;
       final engine = await _syncEngineLoader();
+      _reportProgress('pushing', source: source, message: 'Pushing local changes');
       final push = await engine.pushPending();
+      _reportProgress(
+        'tracking_upload',
+        source: source,
+        current: push.processedCount,
+        total: push.pendingCount,
+        message: 'Uploading tracking buffer',
+      );
       final trackingUpload = await _tryUploadTrackingBuffer(source);
-      final pull = await engine.pullChanges();
+      _reportProgress('pulling', source: source, message: 'Pulling server changes');
+      final pull = await engine.pullChanges(
+        onProgress: (pulled, pages) {
+          _reportProgress(
+            'applying',
+            source: source,
+            current: pulled,
+            message: 'Applying server changes',
+          );
+        },
+      );
       await _operationLogs.record(
         actor: 'system',
         action: 'client_bootstrap_sync',
@@ -96,6 +113,22 @@ class ClientBootstrapService extends ChangeNotifier {
         settingsVersion: remoteSettings.version,
         lastSyncAt: DateTime.now(),
       ));
+      _reportProgress(
+        'completed',
+        source: source,
+        current: (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+        message: 'Sync completed',
+        summary: <String, Object?>{
+          'source': source,
+          'accepted': push.acceptedCount,
+          'conflicts': push.conflictCount,
+          'rejected': push.rejectedCount,
+          'pushed': push.processedCount,
+          'pulledChanges':
+              (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+          'trackingUpload': trackingUpload,
+        },
+      );
       return _state;
     } catch (error) {
       final serverReached = bootstrapSnapshot != null;
@@ -131,17 +164,42 @@ class ClientBootstrapService extends ChangeNotifier {
               lastError: error.toString(),
             );
       _setState(next);
+      _reportProgress(
+        'failed',
+        source: source,
+        message: error.toString(),
+        summary: <String, Object?>{'source': source, 'error': error.toString()},
+      );
       return _state;
     }
   }
 
   Future<ClientRuntimeState> syncNow({String source = 'manual'}) async {
+    _reportProgress('preparing', source: source, message: 'Preparing sync');
     _setState(_state.copyWith(syncing: true, lastError: null));
     try {
       final engine = await _syncEngineLoader();
+      _reportProgress('pushing', source: source, message: 'Pushing local changes');
       final push = await engine.pushPending();
+      _reportProgress(
+        'tracking_upload',
+        source: source,
+        current: push.processedCount,
+        total: push.pendingCount,
+        message: 'Uploading tracking buffer',
+      );
       final trackingUpload = await _tryUploadTrackingBuffer(source);
-      final pull = await engine.pullChanges();
+      _reportProgress('pulling', source: source, message: 'Pulling server changes');
+      final pull = await engine.pullChanges(
+        onProgress: (pulled, pages) {
+          _reportProgress(
+            'applying',
+            source: source,
+            current: pulled,
+            message: 'Applying server changes',
+          );
+        },
+      );
       await _operationLogs.record(
         actor: source == 'manual' ? 'user' : 'system',
         action: 'client_sync_now',
@@ -162,6 +220,22 @@ class ClientBootstrapService extends ChangeNotifier {
         serverReachable: true,
         lastSyncAt: DateTime.now(),
       ));
+      _reportProgress(
+        'completed',
+        source: source,
+        current: (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+        message: 'Sync completed',
+        summary: <String, Object?>{
+          'source': source,
+          'accepted': push.acceptedCount,
+          'conflicts': push.conflictCount,
+          'rejected': push.rejectedCount,
+          'pushed': push.processedCount,
+          'pulledChanges':
+              (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+          'trackingUpload': trackingUpload,
+        },
+      );
       return _state;
     } catch (error) {
       final serverWasReachable = _state.serverReachable == true;
@@ -172,6 +246,12 @@ class ClientBootstrapService extends ChangeNotifier {
         serverReachable: serverWasReachable,
         lastError: error.toString(),
       ));
+      _reportProgress(
+        'failed',
+        source: source,
+        message: error.toString(),
+        summary: <String, Object?>{'source': source, 'error': error.toString()},
+      );
       return _state;
     }
   }
@@ -330,6 +410,45 @@ class ClientBootstrapService extends ChangeNotifier {
     _state = next;
     notifyListeners();
   }
+
+  void _reportProgress(
+    String phase, {
+    required String source,
+    int? current,
+    int? total,
+    String? message,
+    Map<String, Object?>? summary,
+  }) {
+    onProgress?.call(
+      ClientSyncProgress(
+        phase: phase,
+        source: source,
+        current: current,
+        total: total,
+        message: message,
+        summary: summary ?? const <String, Object?>{},
+      ),
+    );
+  }
+}
+
+@immutable
+class ClientSyncProgress {
+  const ClientSyncProgress({
+    required this.phase,
+    required this.source,
+    this.current,
+    this.total,
+    this.message,
+    this.summary = const <String, Object?>{},
+  });
+
+  final String phase;
+  final String source;
+  final int? current;
+  final int? total;
+  final String? message;
+  final Map<String, Object?> summary;
 }
 
 @immutable

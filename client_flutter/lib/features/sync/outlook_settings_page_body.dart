@@ -574,6 +574,8 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _buildServerManagedDiagnosticsPanel(),
           if (_status != null) ...[
             const SizedBox(height: 16),
             _Panel(
@@ -583,6 +585,89 @@ class _OutlookSettingsPageState extends ConsumerState<OutlookSettingsPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildServerManagedDiagnosticsPanel() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _loadServerManagedOutlookDiagnostics(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _Panel(
+            child: _InlineStateHint(
+              icon: Icons.hourglass_empty_outlined,
+              message: '正在读取 Outlook 服务端诊断日志...',
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return _Panel(
+            child: _InlineStateHint(
+              icon: Icons.error_outline,
+              iconColor: Colors.redAccent,
+              message: 'Outlook 服务端诊断读取失败：${snapshot.error}',
+            ),
+          );
+        }
+        final data = snapshot.data ?? const <String, dynamic>{};
+        final runs = _listOfMaps(data['runs']);
+        final diagnostics = _map(data['diagnostics']);
+        final fieldCoverage = _map(diagnostics['fieldCoverage']);
+        final recentRuns = _listOfMaps(diagnostics['recentRuns']);
+        final visibleRuns = runs.isNotEmpty ? runs : recentRuns;
+        return _Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Outlook 同步运行日志',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '字段覆盖：事件 ${fieldCoverage['eventCount'] ?? 0}，缺标题 ${fieldCoverage['missingTitle'] ?? 0}，缺地点 ${fieldCoverage['missingLocation'] ?? 0}，缺正文 ${fieldCoverage['missingBodyPreview'] ?? 0}，缺组织者 ${fieldCoverage['missingOrganizer'] ?? 0}',
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              if (visibleRuns.isEmpty)
+                const _InlineStateHint(
+                  icon: Icons.inbox_outlined,
+                  message: '暂无 Outlook 服务端同步运行记录。',
+                )
+              else
+                for (final run in visibleRuns.take(8))
+                  _OutlookRunLogTile(run: run),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadServerManagedOutlookDiagnostics() async {
+    final clientApi = await ref.read(clientApiProvider.future);
+    final runs = await clientApi.adminOutlookRuns();
+    final diagnostics = await clientApi.adminOutlookDiagnostics();
+    return <String, dynamic>{
+      'runs': runs['runs'],
+      'diagnostics': diagnostics,
+    };
+  }
+
+  static Map<String, dynamic> _map(Object? value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return const <String, dynamic>{};
+  }
+
+  static List<Map<String, dynamic>> _listOfMaps(Object? value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
   }
 
   Widget _serverManagedBullet(String text) {

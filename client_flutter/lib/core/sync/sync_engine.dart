@@ -28,26 +28,56 @@ class ServerSyncEngine {
     return pushed;
   }
 
-  Future<Map<String, dynamic>> pullChanges() async {
-    final cursor = await _cursorStore.readPullCursor();
-    final response = await _apiClient.getJson(
-      '/sync/pull',
-      query: cursor == null || cursor.isEmpty ? null : {'cursor': cursor},
-    );
-    final appliedChangeIds =
-        await _changeApplier?.applyPullResponse(response) ?? const <String>[];
-    final nextCursor = response['nextCursor'] as String?;
-    if (nextCursor != null && nextCursor.isNotEmpty) {
-      await _cursorStore.savePullCursor(nextCursor);
-      await _apiClient.postJson(
-        '/sync/ack',
-        body: {
-          'cursor': nextCursor,
-          'appliedChangeIds': appliedChangeIds,
-        },
-      );
+  Future<Map<String, dynamic>> pullChanges({
+    int limit = 200,
+    void Function(int pulledChanges, int pageCount)? onProgress,
+  }) async {
+    var cursor = await _cursorStore.readPullCursor();
+    var pageCount = 0;
+    var pulledChanges = 0;
+    final allChanges = <Object?>[];
+    Map<String, dynamic> latestResponse = const <String, dynamic>{};
+
+    while (true) {
+      final query = <String, String>{
+        'limit': limit.toString(),
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      };
+      final response = await _apiClient.getJson('/sync/pull', query: query);
+      latestResponse = response;
+      pageCount++;
+      final rawChanges = response['changes'];
+      final changes = rawChanges is List ? rawChanges : const <Object?>[];
+      allChanges.addAll(changes);
+      pulledChanges += changes.length;
+      onProgress?.call(pulledChanges, pageCount);
+
+      final appliedChangeIds =
+          await _changeApplier?.applyPullResponse(response) ?? const <String>[];
+      final nextCursor = response['nextCursor'] as String?;
+      if (nextCursor != null && nextCursor.isNotEmpty) {
+        await _cursorStore.savePullCursor(nextCursor);
+        await _apiClient.postJson(
+          '/sync/ack',
+          body: {
+            'cursor': nextCursor,
+            'appliedChangeIds': appliedChangeIds,
+          },
+        );
+      }
+
+      if (changes.length < limit || nextCursor == null || nextCursor == cursor) {
+        break;
+      }
+      cursor = nextCursor;
     }
+
     await _cursorStore.markPulledAt(DateTime.now());
-    return response;
+    return <String, dynamic>{
+      ...latestResponse,
+      'changes': allChanges,
+      'pageCount': pageCount,
+      'pulledChanges': pulledChanges,
+    };
   }
 }

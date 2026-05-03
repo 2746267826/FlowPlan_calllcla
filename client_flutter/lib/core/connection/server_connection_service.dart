@@ -26,7 +26,9 @@ class ServerConnectionService extends ChangeNotifier {
         _serverConfigStore = serverConfigStore,
         _operationLogs = operationLogs,
         _deviceId = deviceId,
-        _platform = platform;
+        _platform = platform {
+    _bootstrapService.onProgress = _handleBootstrapProgress;
+  }
 
   static const _maxBackoffSeconds = 300;
 
@@ -40,9 +42,13 @@ class ServerConnectionService extends ChangeNotifier {
 
   Timer? _heartbeatTimer;
   Timer? _fullSyncTimer;
+  Timer? _syncDebounceTimer;
   bool _started = false;
   bool _busy = false;
+  bool _syncRequestedWhileBusy = false;
   int _failureCount = 0;
+  String? _queuedSource;
+  String? _queuedReason;
 
   ServerConnectionState _state = const ServerConnectionState();
 
@@ -53,11 +59,13 @@ class ServerConnectionService extends ChangeNotifier {
       return;
     }
     _started = true;
-    SyncWriteRecorder.onMutationRecorded = () => syncNow(source: 'write');
+    SyncWriteRecorder.onMutationRecorded = () async {
+      requestSync(source: 'write', reason: 'local_write');
+    };
     unawaited(_initialize());
     _fullSyncTimer?.cancel();
     _fullSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      unawaited(syncNow(source: 'timer'));
+      requestSync(source: 'timer', reason: 'periodic_full_sync');
     });
   }
 
@@ -65,54 +73,104 @@ class ServerConnectionService extends ChangeNotifier {
   void dispose() {
     _heartbeatTimer?.cancel();
     _fullSyncTimer?.cancel();
+    _syncDebounceTimer?.cancel();
     if (SyncWriteRecorder.onMutationRecorded != null) {
       SyncWriteRecorder.onMutationRecorded = null;
+    }
+    if (identical(_bootstrapService.onProgress, _handleBootstrapProgress)) {
+      _bootstrapService.onProgress = null;
     }
     super.dispose();
   }
 
-  Future<void> syncNow({String source = 'manual'}) async {
+  void requestSync({
+    String source = 'manual',
+    String? reason,
+    bool immediate = false,
+  }) {
+    _queuedSource = source;
+    _queuedReason = reason;
     if (_busy) {
+      _syncRequestedWhileBusy = true;
+      _setState(_state.copyWith(
+        syncPhase: 'queued',
+        syncReason: reason ?? source,
+      ));
       return;
     }
-    _busy = true;
-    await _refreshLocalSummary();
-    _setState(_state.copyWith(
-      level: ServerConnectionLevel.syncing,
-      syncing: true,
-      clearError: true,
-    ));
-    try {
-      final runtime = source == 'startup'
-          ? await _bootstrapService.bootstrapAndSync(source: source)
-          : await _bootstrapService.syncNow(source: source);
-      if (runtime.serverReachable == false) {
-        throw runtime.lastError ?? 'Server is not reachable.';
-      }
-      _failureCount = 0;
-      await _refreshLocalSummary();
-      final syncError = runtime.lastError;
-      final hasSyncError = syncError != null && syncError.isNotEmpty;
+    _syncDebounceTimer?.cancel();
+    final delay = immediate ? Duration.zero : const Duration(seconds: 2);
+    _syncDebounceTimer = Timer(delay, () {
+      unawaited(syncNow(source: _queuedSource ?? source, reason: _queuedReason));
+    });
+  }
+
+  Future<void> syncNow({String source = 'manual', String? reason}) async {
+    _queuedSource = _queuedSource ?? source;
+    _queuedReason = _queuedReason ?? reason;
+    if (_busy) {
+      _syncRequestedWhileBusy = true;
       _setState(_state.copyWith(
-        level: hasSyncError
-            ? ServerConnectionLevel.degraded
-            : _state.conflictCount > 0
-            ? ServerConnectionLevel.conflicted
-            : ServerConnectionLevel.online,
-        lastSyncAt: hasSyncError
-            ? runtime.lastSyncAt ?? _state.lastSyncAt
-            : runtime.lastSyncAt ?? DateTime.now(),
-        syncing: false,
-        lastError: syncError,
-        clearError: !hasSyncError,
+        syncPhase: 'queued',
+        syncReason: reason ?? source,
       ));
-      if (hasSyncError) {
-        _scheduleHeartbeat(const Duration(seconds: 30));
-      } else {
-        await heartbeat(eventSource: 'sync_success');
+      return;
+    }
+    do {
+      final runSource = _queuedSource ?? source;
+      final runReason = _queuedReason ?? reason;
+      _queuedSource = null;
+      _queuedReason = null;
+      _syncRequestedWhileBusy = false;
+      await _runSync(source: runSource, reason: runReason);
+    } while (_syncRequestedWhileBusy);
+  }
+
+  Future<void> _runSync({required String source, String? reason}) async {
+    _busy = true;
+    try {
+      await _refreshLocalSummary();
+      _setState(_state.copyWith(
+        level: ServerConnectionLevel.syncing,
+        syncing: true,
+        syncPhase: 'preparing',
+        syncReason: reason ?? source,
+        clearError: true,
+      ));
+      try {
+        final runtime = source == 'startup'
+            ? await _bootstrapService.bootstrapAndSync(source: source)
+            : await _bootstrapService.syncNow(source: source);
+        if (runtime.serverReachable == false) {
+          throw runtime.lastError ?? 'Server is not reachable.';
+        }
+        _failureCount = 0;
+        await _refreshLocalSummary();
+        final syncError = runtime.lastError;
+        final hasSyncError = syncError != null && syncError.isNotEmpty;
+        _setState(_state.copyWith(
+          level: hasSyncError
+              ? ServerConnectionLevel.degraded
+              : _state.conflictCount > 0
+                  ? ServerConnectionLevel.conflicted
+                  : ServerConnectionLevel.online,
+          lastSyncAt: hasSyncError
+              ? runtime.lastSyncAt ?? _state.lastSyncAt
+              : runtime.lastSyncAt ?? DateTime.now(),
+          syncing: false,
+          syncPhase: hasSyncError ? 'failed' : 'completed',
+          syncReason: reason ?? source,
+          lastError: syncError,
+          clearError: !hasSyncError,
+        ));
+        if (hasSyncError) {
+          _scheduleHeartbeat(const Duration(seconds: 30));
+        } else {
+          await heartbeat(eventSource: 'sync_success');
+        }
+      } catch (error) {
+        await _handleFailure(error, source: source);
       }
-    } catch (error) {
-      await _handleFailure(error, source: source);
     } finally {
       _busy = false;
     }
@@ -170,6 +228,13 @@ class ServerConnectionService extends ChangeNotifier {
         clearError: true,
       ));
       _scheduleHeartbeat(Duration(seconds: nextSeconds));
+      if (response['hasServerChanges'] == true && eventSource != 'sync_success') {
+        requestSync(
+          source: 'heartbeat_remote_change',
+          reason: 'server_changes_available',
+          immediate: true,
+        );
+      }
     } catch (error) {
       await _handleFailure(error, source: 'heartbeat');
     }
@@ -262,6 +327,17 @@ class ServerConnectionService extends ChangeNotifier {
   void _setState(ServerConnectionState next) {
     _state = next;
     notifyListeners();
+  }
+
+  void _handleBootstrapProgress(ClientSyncProgress progress) {
+    _setState(_state.copyWith(
+      syncPhase: progress.phase,
+      syncReason: progress.source,
+      progressCurrent: progress.current,
+      progressTotal: progress.total,
+      lastSyncSummary:
+          progress.summary.isEmpty ? null : Map<String, Object?>.from(progress.summary),
+    ));
   }
 
   int? _readInt(Object? value) {

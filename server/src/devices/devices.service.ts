@@ -316,12 +316,15 @@ export class DevicesService {
       metadata: this.asRecord(body.metadata),
     });
 
+    const syncCursor = await this.readSyncCursorSummary(userId, deviceId);
+
     return {
       ok: true,
       connectionStatus: nextStatus,
       serverTime: new Date().toISOString(),
       nextHeartbeatSeconds: errorMessage ? 60 : 30,
-      shouldPull: true,
+      shouldPull: syncCursor.hasServerChanges,
+      ...syncCursor,
     };
   }
 
@@ -511,6 +514,42 @@ export class DevicesService {
     }
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  private async readSyncCursorSummary(userId: string, deviceId: string) {
+    const result = await this.database.query<{
+      latestChangeCursor: string;
+      clientPullCursor: string;
+    }>(
+      `
+      SELECT
+        COALESCE((
+          SELECT MAX(id)
+          FROM sync_changes
+          WHERE user_id = $1
+            AND (device_id IS NULL OR device_id <> $2)
+        ), 0)::text AS "latestChangeCursor",
+        COALESCE((
+          SELECT cursor_value
+          FROM sync_cursors
+          WHERE user_id = $1 AND device_id = $2
+          LIMIT 1
+        ), 0)::text AS "clientPullCursor"
+      `,
+      [userId, deviceId],
+    );
+    const row = result.rows[0] ?? {
+      latestChangeCursor: '0',
+      clientPullCursor: '0',
+    };
+    const latest = Number.parseInt(row.latestChangeCursor, 10);
+    const cursor = Number.parseInt(row.clientPullCursor, 10);
+    return {
+      latestChangeCursor: row.latestChangeCursor,
+      clientPullCursor: row.clientPullCursor,
+      hasServerChanges:
+        Number.isFinite(latest) && Number.isFinite(cursor) && latest > cursor,
+    };
   }
 
   private asRecord(value: unknown) {

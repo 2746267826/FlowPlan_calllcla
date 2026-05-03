@@ -37,8 +37,8 @@ class ServerConnectionIndicator extends ConsumerWidget {
           return _IndicatorShell(
             compact: compact,
             color: view.color,
-            label: compact ? '' : view.label,
-            tooltip: view.tooltip,
+            label: compact ? '' : _indicatorLabel(service.state, view),
+            tooltip: _indicatorTooltip(service.state, view),
             onTap: () => _showConnectionDialog(context, service),
           );
         },
@@ -104,6 +104,69 @@ class ServerConnectionIndicator extends ConsumerWidget {
           tooltip: '服务端连接状态未知',
         );
     }
+  }
+
+  String _indicatorLabel(
+    ServerConnectionState state,
+    _ConnectionIndicatorView fallback,
+  ) {
+    if (state.level != ServerConnectionLevel.syncing) {
+      return fallback.label;
+    }
+    return _phaseLabel(state.syncPhase);
+  }
+
+  String _indicatorTooltip(
+    ServerConnectionState state,
+    _ConnectionIndicatorView fallback,
+  ) {
+    if (state.level != ServerConnectionLevel.syncing) {
+      return fallback.tooltip;
+    }
+    final parts = <String>[_phaseLabel(state.syncPhase)];
+    if (state.syncReason != null && state.syncReason!.isNotEmpty) {
+      parts.add(state.syncReason!);
+    }
+    final progress = _progressText(state);
+    if (progress.isNotEmpty) {
+      parts.add(progress);
+    }
+    return parts.join(' · ');
+  }
+
+  String _phaseLabel(String? phase) {
+    switch (phase) {
+      case 'queued':
+        return '已排队';
+      case 'preparing':
+        return '准备同步';
+      case 'pushing':
+        return '推送本地';
+      case 'tracking_upload':
+        return '上传追踪';
+      case 'pulling':
+        return '拉取远端';
+      case 'applying':
+        return '应用变更';
+      case 'completed':
+        return '同步完成';
+      case 'failed':
+        return '同步失败';
+      default:
+        return '同步中';
+    }
+  }
+
+  String _progressText(ServerConnectionState state) {
+    final current = state.progressCurrent;
+    final total = state.progressTotal;
+    if (current == null && total == null) {
+      return '';
+    }
+    if (total == null || total <= 0) {
+      return '${current ?? 0}';
+    }
+    return '${current ?? 0}/$total';
   }
 
   Future<void> _showConnectionDialog(
