@@ -68,6 +68,46 @@ export class AdminApiClient {
     });
   }
 
+  driveRoots(query?: string) {
+    const search = new URLSearchParams();
+    if (query?.trim()) search.set('q', query.trim());
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return this.request<ApiRecord>(`/api/files/drive/roots${suffix}`);
+  }
+
+  upsertDriveRoot(body: {
+    name: string;
+    rootUri: string;
+    rootDisplayPath?: string;
+    syncPolicy?: string;
+    maxNodes?: number;
+  }) {
+    return this.request<ApiRecord>('/api/files/roots', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: body.name,
+        rootUri: body.rootUri,
+        rootDisplayPath: body.rootDisplayPath,
+        providerType: 'server_storage',
+        isManaged: true,
+        syncPolicy: body.syncPolicy ?? 'metadata_only',
+        metadata: {
+          source: 'web_admin_drive_root',
+          maxNodes: body.maxNodes,
+        },
+      }),
+    });
+  }
+
+  scanDriveRoot(rootId: string, body: { maxNodes?: number } = {}) {
+    return this.request<ApiRecord>(`/api/files/drive/roots/${encodeURIComponent(rootId)}/scan`, {
+      method: 'POST',
+      body: JSON.stringify({
+        maxNodes: body.maxNodes,
+      }),
+    });
+  }
+
   settings() {
     return this.request<ApiRecord>('/api/admin/settings');
   }

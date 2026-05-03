@@ -45,6 +45,14 @@ export class FileTreeService {
         serverRootPath: rootPath,
       });
     }
+    await this.database.query(
+      `
+      UPDATE file_roots
+      SET scan_status = 'scanning', last_error = NULL, updated_at = now()
+      WHERE user_id = $1 AND id = $2
+      `,
+      [userId, rootId],
+    );
     const maxNodes = this.readNumber(body.maxNodes, 5000);
     const nodes: Record<string, unknown>[] = [];
     try {

@@ -22,6 +22,7 @@ import { AuditPage } from '../pages/AuditPage';
 import { BusinessListPage, type BusinessPanel } from '../pages/BusinessListPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { DevicesPage } from '../pages/DevicesPage';
+import { DriveFilesPage } from '../pages/DriveFilesPage';
 import { OperationsPage } from '../pages/OperationsPage';
 import { OutlookPage } from '../pages/OutlookPage';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -54,31 +55,6 @@ const actualPanels: BusinessPanel[] = [
       { key: 'startAt', label: '开始时间', width: 180, type: 'date' },
       { key: 'endAt', label: '结束时间', width: 180, type: 'date' },
       { key: 'confidence', label: '置信度', width: 100 },
-      { key: 'status', label: '状态', width: 110, type: 'status' },
-    ],
-  },
-];
-
-const filePanels: BusinessPanel[] = [
-  {
-    dataset: datasets.files,
-    endpoint: '/api/admin/data/files',
-    columns: [
-      { key: 'name', label: '名称', width: 260 },
-      { key: 'folderName', label: '文件夹', width: 160 },
-      { key: 'mimeType', label: '类型', width: 160 },
-      { key: 'size', label: '大小', width: 100 },
-      { key: 'updatedAt', label: '更新时间', width: 180, type: 'date' },
-    ],
-  },
-  {
-    dataset: datasets.fileOperationLogs,
-    endpoint: '/api/admin/data/file-operation-logs',
-    columns: [
-      { key: 'action', label: '操作', width: 150 },
-      { key: 'fileName', label: '文件', width: 240 },
-      { key: 'actor', label: '操作者', width: 140 },
-      { key: 'createdAt', label: '时间', width: 180, type: 'date' },
       { key: 'status', label: '状态', width: 110, type: 'status' },
     ],
   },
@@ -227,7 +203,7 @@ export function AdminApp() {
       case 'actuals':
         return <BusinessListPage title="实际记录" description={currentModule.description} panels={actualPanels} api={api} onDataRefresh={onDataRefresh} onOpenDetail={openDetail} />;
       case 'files':
-        return <BusinessListPage title="文件资料" description={currentModule.description} panels={filePanels} api={api} onDataRefresh={onDataRefresh} onOpenDetail={openDetail} />;
+        return <DriveFilesPage api={api} onDataRefresh={onDataRefresh} />;
       case 'reports':
         return <BusinessListPage title="报告推送" description={currentModule.description} panels={reportPanels} api={api} onDataRefresh={onDataRefresh} onOpenDetail={openDetail} />;
       case 'sync':

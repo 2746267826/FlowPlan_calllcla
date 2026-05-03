@@ -536,6 +536,10 @@ class _NodeBrowserPane extends ConsumerWidget {
     }
     final trimmedQuery = query.trim();
     if (trimmedQuery.isNotEmpty) {
+      await repo.refreshDriveNodes(
+        rootFolderId: root.id,
+        query: trimmedQuery,
+      );
       final nodes = await repo.searchNodes(
         rootFolderId: root.id,
         query: trimmedQuery,
@@ -545,6 +549,10 @@ class _NodeBrowserPane extends ConsumerWidget {
     final current = currentFolderNodeId == null
         ? rootNode
         : await repo.getNodeById(currentFolderNodeId!);
+    await repo.refreshDriveNodes(
+      rootFolderId: root.id,
+      parentNodeId: current?.id ?? rootNode.id,
+    );
     final nodes = await repo.listChildNodes(
       rootFolderId: root.id,
       parentNodeId: current?.id ?? rootNode.id,
@@ -733,7 +741,8 @@ class _NodeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final exists = _localPathExists(node.localPath);
-    final remoteOnly = !exists && node.availability == FileAvailability.remoteOnly;
+    final remoteOnly =
+        !exists && (node.availability == FileAvailability.remoteOnly || node.remoteId != null);
     final canAskServerOpenPlan = node.isFile && node.remoteId != null;
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -755,7 +764,11 @@ class _NodeTile extends StatelessWidget {
         ),
         title: Text(node.displayName),
         subtitle: Text(
-          !exists ? '路径失效：${node.localPath}' : node.relativePath,
+          remoteOnly
+              ? 'Server Drive · ${node.relativePath.isEmpty ? node.displayName : node.relativePath}'
+              : !exists
+                  ? 'Local path unavailable: ${node.localPath}'
+                  : node.relativePath,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
@@ -771,7 +784,7 @@ class _NodeTile extends StatelessWidget {
               onPressed: onSelect,
             ),
             IconButton(
-              tooltip: node.isFolder ? '打开文件夹' : '系统默认打开',
+              tooltip: node.isFolder ? '打开文件夹' : remoteOnly ? '下载到本机' : '系统默认打开',
               icon: const Icon(Icons.open_in_new),
               onPressed: exists || canAskServerOpenPlan ? onOpen : null,
             ),
@@ -877,13 +890,25 @@ class _NodePreviewPane extends ConsumerWidget {
             ),
           ],
         ),
-        Text(node.localPath, style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          node.localPath.trim().isEmpty
+              ? 'Server Drive · ${node.relativePath.isEmpty ? node.displayName : node.relativePath}'
+              : node.localPath,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         if (node.isFile) ...[
           const SizedBox(height: 12),
           _ServerStorageAndVersionPane(node: node),
         ],
         const SizedBox(height: 12),
-        if (!exists)
+        if (!exists && node.isFile && node.remoteId != null)
+          _WarningBox(
+            message:
+                'This file is stored on the server. Download it to this device before previewing or opening it locally.',
+            actionLabel: 'Download',
+            onAction: () => _openOrDownloadNode(context, ref, node),
+          )
+        else if (!exists)
           _WarningBox(
             message: '该节点路径失效。请重新定位 Root「${root.displayName}」后重新扫描。',
             actionLabel: '重新定位 Root',

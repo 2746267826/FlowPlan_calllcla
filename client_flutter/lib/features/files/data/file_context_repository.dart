@@ -618,10 +618,18 @@ class FileContextRepository {
       '''
       SELECT *
       FROM file_folders
-      ORDER BY pinned DESC, last_used_at DESC, use_count DESC, display_name ASC
+      ORDER BY
+        CASE WHEN provider = ? THEN 0 ELSE 1 END,
+        pinned DESC,
+        last_used_at DESC,
+        use_count DESC,
+        display_name ASC
       LIMIT ?
       ''',
-      variables: [Variable<int>(limit)],
+      variables: [
+        Variable<String>(FileProviderKind.serverStorage),
+        Variable<int>(limit),
+      ],
     ).get();
     return rows.map(FileFolder.fromRow).toList();
   }
@@ -1794,15 +1802,18 @@ class FileContextRepository {
     }
     final storage = node['storage'];
     final currentDevice = node['currentDevice'];
-    final localPath = (currentDevice is Map
-            ? currentDevice['localPath']?.toString()
-            : null) ??
-        node['localPath']?.toString() ??
-        '';
-    final availability = node['availability']?.toString() ??
-        (localPath.trim().isEmpty
-            ? FileAvailability.remoteOnly
-            : FileAvailability.local);
+    final currentDevicePath = currentDevice is Map
+        ? currentDevice['localPath']?.toString()
+        : null;
+    final currentDeviceAvailability = currentDevice is Map
+        ? currentDevice['availability']?.toString()
+        : null;
+    final localPath = currentDevicePath?.trim().isNotEmpty == true
+        ? currentDevicePath!
+        : '';
+    final availability = localPath.trim().isEmpty
+        ? FileAvailability.remoteOnly
+        : currentDeviceAvailability ?? FileAvailability.local;
     final now = DateTime.now().toIso8601String();
     final existing = await _db.customSelect(
       '''

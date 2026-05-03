@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { readdir, stat } from 'node:fs/promises';
-import { extname, join, relative } from 'node:path';
+import { extname, join, posix, relative, win32 } from 'node:path';
 import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
@@ -1302,7 +1302,6 @@ export class FilesService {
   async upsertRoot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const rootUid = this.clean(body.rootUid) ?? `root:${randomUUID()}`;
     const providerType = this.clean(body.providerType) ?? 'server_storage';
     const providerTypeKey = providerType.toLowerCase();
     if (providerTypeKey === 'local' || providerTypeKey === 'client_local') {
@@ -1313,6 +1312,18 @@ export class FilesService {
           'file_roots are server-accessible cloud roots. Client local folders must be registered as device locations/bindings.',
       };
     }
+    const requestedRootUri =
+      this.clean(body.rootUri) ?? this.clean(body.localPath);
+    const normalizedRootUri = this.normalizeServerRootUri(requestedRootUri);
+    if (!normalizedRootUri) {
+      return {
+        ok: false,
+        reason: 'absolute_server_root_required',
+        message: 'Drive roots must use an absolute server filesystem path.',
+      };
+    }
+    const rootUid =
+      this.clean(body.rootUid) ?? `server-root:${normalizedRootUri}`;
     const result = await this.database.transaction(async (client) => {
       const row = await client.query<QueryResultRow>(
         `
@@ -1345,8 +1356,8 @@ export class FilesService {
           rootUid,
           this.clean(body.name) ?? this.basename(String(body.rootUri ?? rootUid)),
           providerType,
-          this.clean(body.rootUri) ?? this.clean(body.localPath) ?? rootUid,
-          this.clean(body.rootDisplayPath) ?? this.clean(body.localPath),
+          normalizedRootUri,
+          this.clean(body.rootDisplayPath) ?? normalizedRootUri,
           deviceId,
           Boolean(body.isManaged),
           this.clean(body.syncPolicy) ?? 'metadata_only',
@@ -1490,7 +1501,21 @@ export class FilesService {
         AND ($2::uuid IS NULL OR n.root_id = $2)
         AND (
           ($4::text IS NOT NULL AND $3::uuid IS NULL)
-          OR ($3::uuid IS NULL AND n.parent_id IS NULL)
+          OR (
+            $2::uuid IS NOT NULL
+            AND $3::uuid IS NULL
+            AND n.parent_id = (
+              SELECT root_node.id
+              FROM file_nodes root_node
+              WHERE root_node.user_id = $1
+                AND root_node.root_id = $2
+                AND root_node.parent_id IS NULL
+                AND root_node.relative_path = ''
+                AND root_node.is_deleted = false
+              LIMIT 1
+            )
+          )
+          OR ($2::uuid IS NULL AND $3::uuid IS NULL AND n.parent_id IS NULL)
           OR n.parent_id IS NOT DISTINCT FROM $3
         )
         AND ($4::text IS NULL OR n.name ILIKE $4 OR n.relative_path ILIKE $4 OR n.display_path ILIKE $4)
@@ -2531,6 +2556,19 @@ export class FilesService {
   private basename(path: string) {
     const normalized = path.replace(/\\/g, '/');
     return normalized.split('/').filter(Boolean).pop() ?? path;
+  }
+
+  private normalizeServerRootUri(path: string | null) {
+    if (!path) {
+      return null;
+    }
+    if (win32.isAbsolute(path)) {
+      return win32.normalize(path);
+    }
+    if (posix.isAbsolute(path)) {
+      return posix.normalize(path);
+    }
+    return null;
   }
 
   private sha256(buffer: Buffer) {
