@@ -6,7 +6,9 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { KopiaService } from './kopia.service';
+import { FileTreeService } from './file-tree.service';
+import { FileTransferService } from './file-transfer.service';
+import { FileVersionService } from './file-version.service';
 import { LocalObjectStorageService } from './local-object-storage.service';
 
 export interface FilesQuery {
@@ -51,7 +53,9 @@ export class FilesService {
     private readonly database: DatabaseService,
     private readonly devicesService: DevicesService,
     private readonly objectStorage: LocalObjectStorageService,
-    private readonly kopiaService: KopiaService,
+    private readonly fileTreeService: FileTreeService,
+    private readonly fileTransferService: FileTransferService,
+    private readonly fileVersionService: FileVersionService,
   ) {}
 
   async providers(context: FlowPlanV2RequestContext) {
@@ -1179,31 +1183,7 @@ export class FilesService {
   }
 
   async versions(fileId: string, context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const result = await this.database.query(
-      `
-      SELECT
-        id::text AS id,
-        version_uid AS "versionUid",
-        file_id AS "fileId",
-        provider,
-        version_ref AS "versionRef",
-        display_name AS "displayName",
-        size_bytes AS "sizeBytes",
-        modified_at AS "modifiedAt",
-        checksum,
-        source_device AS "sourceDevice",
-        source_backend AS "sourceBackend",
-        note,
-        metadata,
-        created_at AS "createdAt"
-      FROM file_version_records
-      WHERE user_id = $1 AND file_id = $2
-      ORDER BY modified_at DESC NULLS LAST, created_at DESC
-      `,
-      [userId, fileId],
-    );
-    return { versions: result.rows };
+    return this.fileVersionService.versions(fileId, context);
   }
 
   async createVersionDownloadRequest(
@@ -1211,380 +1191,40 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const result = await this.database.transaction(async (client) => {
-      const version = await client.query<QueryResultRow>(
-        `
-        SELECT id, file_id, provider, version_ref
-        FROM file_version_records
-        WHERE user_id = $1 AND id = $2
-        LIMIT 1
-        `,
-        [userId, versionId],
-      );
-      const row = version.rows[0];
-      if (!row) {
-        return null;
-      }
-      const request = await client.query(
-        `
-        INSERT INTO file_version_download_requests (
-          user_id,
-          version_record_id,
-          file_id,
-          provider,
-          version_ref,
-          target_mode,
-          target_path,
-          audit_note
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id::text AS id, status, target_mode AS "targetMode", target_path AS "targetPath"
-        `,
-        [
-          userId,
-          versionId,
-          row.file_id,
-          row.provider,
-          row.version_ref,
-          this.clean(body.targetMode) ?? 'download_copy',
-          this.clean(body.targetPath),
-          this.clean(body.auditNote),
-        ],
-      );
-      await this.recordAudit(client, userId, deviceId, 'files.version.download_request', {
-        versionId,
-        targetMode: this.clean(body.targetMode) ?? 'download_copy',
-      });
-      return request.rows[0];
-    });
-    return { ok: !!result, request: result };
+    return this.fileVersionService.createVersionDownloadRequest(
+      versionId,
+      body,
+      context,
+    );
   }
 
   async storageStatus() {
-    return this.objectStorage.status();
+    return this.fileTransferService.storageStatus();
   }
 
   async storageObjects(query: FilesQuery, context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const localPath = this.clean(query.localPath);
-    const nodeId = this.clean(query.nodeId);
-    const result = await this.database.query(
-      `
-      SELECT
-        id::text AS "storageObjectId",
-        provider_key AS "providerKey",
-        object_key AS "objectKey",
-        display_name AS "displayName",
-        size_bytes AS "sizeBytes",
-        checksum,
-        status,
-        metadata,
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM file_storage_objects
-      WHERE user_id = $1
-        AND (
-          $2::text IS NULL
-          OR metadata->>'sourcePath' = $2
-          OR metadata->>'localPath' = $2
-        )
-        AND (
-          $3::text IS NULL
-          OR metadata->>'fileNodeId' = $3
-          OR id::text IN (
-            SELECT storage_object_id::text
-            FROM file_identity_mappings
-            WHERE user_id = $1 AND node_id::text = $3 AND storage_object_id IS NOT NULL
-          )
-        )
-      ORDER BY updated_at DESC
-      LIMIT $4 OFFSET $5
-      `,
-      [userId, localPath, nodeId, limit, offset],
-    );
-    return { limit, offset, hasMore: result.rows.length >= limit, storageObjects: result.rows };
+    return this.fileTransferService.storageObjects(query, context);
   }
 
   async registerStorageObject(
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const sourcePath = this.clean(body.localPath);
-    const fileNodeId = this.clean(body.fileNodeId) ?? this.clean(this.asRecord(body.metadata).fileNodeId);
-    if (!sourcePath) {
-      return { ok: false, reason: 'localPath_required' };
-    }
-    const fileName = this.clean(body.fileName) ?? this.basename(sourcePath);
-    const objectKey = this.clean(body.objectKey) ?? randomUUID();
-    const copied = await this.objectStorage.copyLocalFile(userId, sourcePath, objectKey);
-    const result = await this.database.transaction(async (client) => {
-      const storage = await client.query(
-        `
-        INSERT INTO file_storage_objects (
-          user_id,
-          provider_key,
-          object_key,
-          display_name,
-          size_bytes,
-          checksum,
-          chunk_size,
-          chunk_count,
-          status,
-          metadata
-        ) VALUES ($1, 'server_storage', $2, $3, $4, $5, $6, 1, 'available', $7::jsonb)
-        ON CONFLICT (user_id, provider_key, object_key) DO UPDATE SET
-          display_name = EXCLUDED.display_name,
-          size_bytes = EXCLUDED.size_bytes,
-          checksum = EXCLUDED.checksum,
-          chunk_size = EXCLUDED.chunk_size,
-          chunk_count = EXCLUDED.chunk_count,
-          status = 'available',
-          metadata = EXCLUDED.metadata,
-          updated_at = now()
-        RETURNING id::text AS "storageObjectId", object_key AS "objectKey", display_name AS "displayName", size_bytes AS "sizeBytes", checksum
-        `,
-        [
-          userId,
-          objectKey,
-          fileName,
-          copied.sizeBytes,
-          copied.checksum,
-          copied.sizeBytes,
-          JSON.stringify({
-            sourcePath,
-            storageType: 'local_filesystem',
-            storageRoot: this.objectStorage.root(),
-            storagePath: copied.relativePath,
-            absoluteStoragePath: copied.storagePath,
-            ...this.asRecord(body.metadata),
-          }),
-        ],
-      );
-      await this.recordAudit(client, userId, deviceId, 'files.storage.register', {
-        storageObjectId: storage.rows[0]?.storageObjectId,
-        objectKey,
-        sourcePath,
-        storagePath: copied.relativePath,
-      });
-      if (fileNodeId) {
-        await client.query(
-          `
-          UPDATE file_nodes
-          SET
-            hash_sha256 = COALESCE(hash_sha256, $3),
-            size_bytes = COALESCE(size_bytes, $4),
-            metadata = metadata || $5::jsonb,
-            updated_at = now()
-          WHERE user_id = $1 AND id = $2
-          `,
-          [
-            userId,
-            fileNodeId,
-            copied.checksum,
-            copied.sizeBytes,
-            JSON.stringify({
-              storageObjectId: storage.rows[0]?.storageObjectId,
-              storageProviderKey: 'server_storage',
-              storageRegisteredAt: new Date().toISOString(),
-            }),
-          ],
-        );
-        await client.query(
-          `
-          INSERT INTO file_node_device_locations (
-            user_id, node_id, device_id, local_path, availability, metadata, last_seen_at
-          ) VALUES ($1, $2, $3, $4, 'available', $5::jsonb, now())
-          ON CONFLICT (user_id, node_id, device_id) DO UPDATE SET
-            local_path = EXCLUDED.local_path,
-            availability = 'available',
-            metadata = file_node_device_locations.metadata || EXCLUDED.metadata,
-            last_seen_at = now()
-          `,
-          [
-            userId,
-            fileNodeId,
-            deviceId,
-            sourcePath,
-            JSON.stringify({ hashSha256: copied.checksum, source: 'storage_register' }),
-          ],
-        );
-        await client.query(
-          `
-          INSERT INTO file_identity_mappings (
-            user_id,
-            node_id,
-            provider_key,
-            storage_object_id,
-            device_id,
-            local_path,
-            hash_sha256,
-            size_bytes,
-            confidence,
-            metadata
-          ) VALUES ($1, $2, 'server_storage', $3, $4, $5, $6, $7, 'hash', $8::jsonb)
-          ON CONFLICT (user_id, node_id, provider_key, device_id, local_path) DO UPDATE SET
-            storage_object_id = EXCLUDED.storage_object_id,
-            hash_sha256 = EXCLUDED.hash_sha256,
-            size_bytes = EXCLUDED.size_bytes,
-            confidence = 'hash',
-            status = 'active',
-            metadata = file_identity_mappings.metadata || EXCLUDED.metadata,
-            updated_at = now()
-          `,
-          [
-            userId,
-            fileNodeId,
-            storage.rows[0]?.storageObjectId,
-            deviceId,
-            sourcePath,
-            copied.checksum,
-            copied.sizeBytes,
-            JSON.stringify({ objectKey, storagePath: copied.relativePath }),
-          ],
-        );
-      }
-      return storage.rows[0];
-    });
-    return { ok: true, storageObject: result };
+    return this.fileTransferService.registerStorageObject(body, context);
   }
 
   async createKopiaSnapshot(
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const rootPath = this.clean(body.rootPath);
-    if (!rootPath) {
-      return { ok: false, reason: 'rootPath_required' };
-    }
-    try {
-      const snapshot = await this.kopiaService.createSnapshot(rootPath);
-      await this.database.transaction(async (client) => {
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.snapshot.create', {
-          rootPath,
-          rootId: this.clean(body.rootId),
-          snapshotCount: snapshot.snapshots.length,
-        });
-      });
-      return { ok: true, ...snapshot };
-    } catch (error) {
-      await this.database.transaction(async (client) => {
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.snapshot.failed', {
-          rootPath,
-          error: this.errorMessage(error),
-        });
-      });
-      return { ok: false, reason: this.errorMessage(error) };
-    }
+    return this.fileVersionService.createKopiaSnapshot(body, context);
   }
 
   async refreshKopiaVersions(
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const fileId = this.clean(body.fileId);
-    const filePath = this.clean(body.filePath);
-    if (!fileId || !filePath) {
-      return { ok: false, reason: 'fileId_and_filePath_required' };
-    }
-    try {
-      const listed = await this.kopiaService.listSnapshots(filePath);
-      const displayName = this.clean(body.displayName) ?? this.basename(filePath);
-      const versions = await this.database.transaction(async (client) => {
-        const saved: QueryResultRow[] = [];
-        for (const snapshot of listed.snapshots) {
-          const metadata = {
-            ...snapshot.metadata,
-            sourcePath: filePath,
-            displayName,
-          };
-          const versionUid = [
-            'kopia',
-            fileId,
-            snapshot.snapshotId,
-            this.sha256(Buffer.from(filePath)).slice(0, 12),
-          ].join(':');
-          const result = await client.query(
-            `
-            INSERT INTO file_version_records (
-              user_id,
-              version_uid,
-              file_id,
-              provider,
-              version_ref,
-              display_name,
-              size_bytes,
-              modified_at,
-              checksum,
-              source_backend,
-              note,
-              metadata
-            ) VALUES ($1, $2, $3, 'kopia', $4, $5, $6, $7, $8, 'kopia', $9, $10::jsonb)
-            ON CONFLICT (user_id, version_uid) DO UPDATE SET
-              version_ref = EXCLUDED.version_ref,
-              display_name = EXCLUDED.display_name,
-              size_bytes = EXCLUDED.size_bytes,
-              modified_at = EXCLUDED.modified_at,
-              checksum = EXCLUDED.checksum,
-              source_backend = EXCLUDED.source_backend,
-              note = EXCLUDED.note,
-              metadata = EXCLUDED.metadata
-            RETURNING
-              id::text AS id,
-              version_uid AS "versionUid",
-              file_id AS "fileId",
-              provider,
-              version_ref AS "versionRef",
-              display_name AS "displayName",
-              size_bytes AS "sizeBytes",
-              modified_at AS "modifiedAt",
-              checksum,
-              source_backend AS "sourceBackend",
-              note,
-              metadata,
-              created_at AS "createdAt"
-            `,
-            [
-              userId,
-              versionUid,
-              fileId,
-              snapshot.versionRef,
-              snapshot.displayName,
-              snapshot.sizeBytes,
-              this.readDate(snapshot.modifiedAt),
-              snapshot.checksum,
-              `Kopia snapshot ${snapshot.snapshotId}`,
-              JSON.stringify(metadata),
-            ],
-          );
-          saved.push(result.rows[0]);
-        }
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.versions.refresh', {
-          fileId,
-          filePath,
-          versionCount: saved.length,
-        });
-        return saved;
-      });
-      return { ok: true, versions };
-    } catch (error) {
-      await this.database.transaction(async (client) => {
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.versions.failed', {
-          fileId,
-          filePath,
-          error: this.errorMessage(error),
-        });
-      });
-      return { ok: false, reason: this.errorMessage(error), versions: [] };
-    }
+    return this.fileVersionService.refreshKopiaVersions(body, context);
   }
 
   async downloadVersionCopy(
@@ -1592,94 +1232,7 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const targetPath = this.clean(body.targetPath);
-    if (!targetPath) {
-      return { ok: false, reason: 'targetPath_required' };
-    }
-    const result = await this.database.transaction(async (client) => {
-      const version = await client.query<QueryResultRow>(
-        `
-        SELECT id, file_id, provider, version_ref, display_name, metadata
-        FROM file_version_records
-        WHERE user_id = $1 AND id = $2
-        LIMIT 1
-        `,
-        [userId, versionId],
-      );
-      const row = version.rows[0];
-      if (!row) {
-        return { ok: false, reason: 'version_not_found' };
-      }
-      const metadata = this.asRecord(row.metadata);
-      const objectPath = this.clean(metadata.objectPath) ?? this.clean(metadata.targetPath);
-      const request = await client.query(
-        `
-        INSERT INTO file_version_download_requests (
-          user_id,
-          version_record_id,
-          file_id,
-          provider,
-          version_ref,
-          target_mode,
-          target_path,
-          status,
-          audit_note,
-          confirmed_at
-        ) VALUES ($1, $2, $3, $4, $5, 'download_copy', $6, 'running', $7, now())
-        RETURNING id::text AS id
-        `,
-        [
-          userId,
-          versionId,
-          row.file_id,
-          row.provider,
-          row.version_ref,
-          targetPath,
-          this.clean(body.auditNote),
-        ],
-      );
-      try {
-        const download = await this.kopiaService.downloadVersionCopy(
-          String(row.version_ref),
-          objectPath,
-          targetPath,
-        );
-        await client.query(
-          `
-          UPDATE file_version_download_requests
-          SET status = 'completed', updated_at = now()
-          WHERE user_id = $1 AND id = $2
-          `,
-          [userId, request.rows[0].id],
-        );
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.version.download_copy', {
-          versionId,
-          requestId: request.rows[0].id,
-          targetPath,
-          sourceRef: download.sourceRef,
-        });
-        return { ok: true, request: request.rows[0], download };
-      } catch (error) {
-        await client.query(
-          `
-          UPDATE file_version_download_requests
-          SET status = 'failed', updated_at = now()
-          WHERE user_id = $1 AND id = $2
-          `,
-          [userId, request.rows[0].id],
-        );
-        await this.recordAudit(client, userId, deviceId, 'files.kopia.version.download_failed', {
-          versionId,
-          requestId: request.rows[0].id,
-          targetPath,
-          error: this.errorMessage(error),
-        });
-        return { ok: false, reason: this.errorMessage(error), request: request.rows[0] };
-      }
-    });
-    return result;
+    return this.fileVersionService.downloadVersionCopy(versionId, body, context);
   }
 
   async prepareVersionRestore(
@@ -1687,95 +1240,22 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const version = await this.database.query<QueryResultRow>(
-      `
-      SELECT id, version_ref, metadata
-      FROM file_version_records
-      WHERE user_id = $1 AND id = $2
-      LIMIT 1
-      `,
-      [userId, versionId],
+    return this.fileVersionService.prepareVersionRestore(
+      versionId,
+      body,
+      context,
     );
-    const row = version.rows[0];
-    if (!row) {
-      return { ok: false, reason: 'version_not_found' };
-    }
-    const metadata = this.asRecord(row.metadata);
-    const prepare = await this.kopiaService.prepareRestore(
-      String(row.version_ref),
-      this.clean(metadata.objectPath) ?? this.clean(metadata.targetPath),
-      this.clean(body.targetPath),
-    );
-    await this.database.transaction(async (client) => {
-      await this.recordAudit(client, userId, deviceId, 'files.kopia.restore.prepare', {
-        versionId,
-        targetPath: this.clean(body.targetPath),
-      });
-    });
-    return { ok: true, prepare };
   }
 
   async conflicts(context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const result = await this.database.query(
-      `
-      SELECT
-        id::text AS id,
-        file_uid AS "fileUid",
-        path,
-        provider_a AS "providerA",
-        provider_b AS "providerB",
-        version_a AS "versionA",
-        version_b AS "versionB",
-        reason,
-        status,
-        resolution,
-        resolved_at AS "resolvedAt",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM file_conflict_candidates
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 200
-      `,
-      [userId],
-    );
-    return { conflicts: result.rows };
+    return this.fileVersionService.conflicts(context);
   }
 
   async createConflict(
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const result = await this.database.query(
-      `
-      INSERT INTO file_conflict_candidates (
-        user_id,
-        file_uid,
-        path,
-        provider_a,
-        provider_b,
-        version_a,
-        version_b,
-        reason
-      ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
-      RETURNING id::text AS id, status, created_at AS "createdAt"
-      `,
-      [
-        userId,
-        this.clean(body.fileUid),
-        this.clean(body.path) ?? '/',
-        this.clean(body.providerA) ?? 'server_storage',
-        this.clean(body.providerB) ?? 'onedrive',
-        JSON.stringify(this.asRecord(body.versionA)),
-        JSON.stringify(this.asRecord(body.versionB)),
-        this.clean(body.reason) ?? 'provider_version_mismatch',
-      ],
-    );
-    return { ok: true, conflict: result.rows[0] };
+    return this.fileVersionService.createConflict(body, context);
   }
 
   async resolveConflict(
@@ -1783,28 +1263,7 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const result = await this.database.transaction(async (client) => {
-      const resolved = await client.query(
-        `
-        UPDATE file_conflict_candidates
-        SET status = 'resolved',
-            resolution = $3::jsonb,
-            resolved_at = now(),
-            updated_at = now()
-        WHERE user_id = $1 AND id = $2 AND status = 'open'
-        RETURNING id::text AS id, status, resolution
-        `,
-        [userId, conflictId, JSON.stringify(this.asRecord(body.resolution ?? body))],
-      );
-      await this.recordAudit(client, userId, deviceId, 'files.conflict.resolve', {
-        conflictId,
-        resolution: this.asRecord(body.resolution ?? body),
-      });
-      return resolved.rows[0] ?? null;
-    });
-    return { ok: !!result, conflict: result };
+    return this.fileVersionService.resolveConflict(conflictId, body, context);
   }
 
   async roots(query: FilesQuery, context: FlowPlanV2RequestContext) {
@@ -2244,55 +1703,7 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const rootResult = await this.database.query<QueryResultRow>(
-      `
-      SELECT id::text AS id, root_uri AS "rootUri", root_display_path AS "rootDisplayPath", name
-      FROM file_roots
-      WHERE user_id = $1 AND id = $2
-      LIMIT 1
-      `,
-      [userId, rootId],
-    );
-    const root = rootResult.rows[0];
-    const requestedRootPath = this.clean(body.rootPath);
-    const rootPath = this.clean(root?.rootUri);
-    if (!root || !rootPath) {
-      return { ok: false, reason: 'root_not_found_or_path_missing', applied: 0 };
-    }
-    if (requestedRootPath && requestedRootPath !== rootPath) {
-      await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan_path_override_ignored', null, {
-        rootId,
-        requestedRootPath,
-        serverRootPath: rootPath,
-      });
-    }
-    const maxNodes = this.readNumber(body.maxNodes, 5000);
-    const nodes: Record<string, unknown>[] = [];
-    try {
-      await this.collectLocalNodesForRoot(userId, rootId, rootPath, maxNodes, nodes);
-    } catch (error) {
-      await this.database.query(
-        `
-        UPDATE file_roots
-        SET scan_status = 'failed', last_error = $3, updated_at = now()
-        WHERE user_id = $1 AND id = $2
-        `,
-        [userId, rootId, this.errorMessage(error)],
-      );
-      return { ok: false, reason: 'scan_failed', error: this.errorMessage(error), applied: 0 };
-    }
-    const applied = await this.applyNodeSnapshot(
-      { rootId, nodes, scanStatus: 'completed' },
-      context,
-    );
-    await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan', null, {
-      rootId,
-      rootPath,
-      scanned: nodes.length,
-    });
-    return { ...applied, ok: true, rootId, scanned: nodes.length };
+    return this.fileTreeService.scanDriveRoot(rootId, body, context);
   }
 
   async relinkDriveNode(
@@ -2357,196 +1768,7 @@ export class FilesService {
   }
 
   async applyNodeSnapshot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const rootId = this.clean(body.rootId);
-    const nodes = Array.isArray(body.nodes) ? body.nodes : [];
-    if (!rootId) {
-      return { ok: false, error: 'rootId is required', applied: 0 };
-    }
-    const result = await this.database.transaction(async (client) => {
-      let applied = 0;
-      for (const item of nodes) {
-        const node = this.asRecord(item);
-        const nodeUid =
-          this.clean(node.nodeUid) ??
-          `node:${rootId}:${this.clean(node.relativePath) ?? randomUUID()}`;
-        const parentUid = this.clean(node.parentNodeUid) ?? this.clean(node.parentUid);
-        await client.query(
-          `
-          INSERT INTO file_nodes (
-            user_id,
-            node_uid,
-            root_id,
-            parent_id,
-            node_type,
-            name,
-            relative_path,
-            display_path,
-            provider_file_id,
-            local_path,
-            mime_type,
-            extension,
-            size_bytes,
-            mtime,
-            ctime,
-            hash_sha256,
-            thumbnail_status,
-            preview_status,
-            index_status,
-            is_deleted,
-            is_missing,
-            metadata
-          ) VALUES (
-            $1, $2, $3,
-            (SELECT id FROM file_nodes WHERE user_id = $1 AND node_uid = $4 LIMIT 1),
-            $5, $6, $7, $8, $9, $10, $11, $12, $13,
-            $14::timestamptz, $15::timestamptz, $16, $17, $18, $19, $20, $21, $22::jsonb
-          )
-          ON CONFLICT (user_id, node_uid) DO UPDATE SET
-            root_id = EXCLUDED.root_id,
-            parent_id = EXCLUDED.parent_id,
-            node_type = EXCLUDED.node_type,
-            name = EXCLUDED.name,
-            relative_path = EXCLUDED.relative_path,
-            display_path = EXCLUDED.display_path,
-            provider_file_id = EXCLUDED.provider_file_id,
-            local_path = EXCLUDED.local_path,
-            mime_type = EXCLUDED.mime_type,
-            extension = EXCLUDED.extension,
-            size_bytes = EXCLUDED.size_bytes,
-            mtime = EXCLUDED.mtime,
-            ctime = EXCLUDED.ctime,
-            hash_sha256 = EXCLUDED.hash_sha256,
-            thumbnail_status = EXCLUDED.thumbnail_status,
-            preview_status = EXCLUDED.preview_status,
-            index_status = EXCLUDED.index_status,
-            is_deleted = EXCLUDED.is_deleted,
-            is_missing = EXCLUDED.is_missing,
-            metadata = file_nodes.metadata || EXCLUDED.metadata,
-            updated_at = now()
-          `,
-          [
-            userId,
-            nodeUid,
-            rootId,
-            parentUid,
-            this.clean(node.nodeType) ?? this.clean(node.type) ?? 'file',
-            this.clean(node.name) ?? this.basename(String(node.localPath ?? node.relativePath ?? nodeUid)),
-            this.clean(node.relativePath) ?? '',
-            this.clean(node.displayPath),
-            this.clean(node.providerFileId),
-            this.clean(node.localPath),
-            this.clean(node.mimeType),
-            this.clean(node.extension),
-            this.readNullableNumber(node.sizeBytes),
-            this.readDate(node.mtime),
-            this.readDate(node.ctime),
-            this.clean(node.hashSha256),
-            this.clean(node.thumbnailStatus) ?? 'none',
-            this.clean(node.previewStatus) ?? 'none',
-            this.clean(node.indexStatus) ?? 'none',
-            Boolean(node.isDeleted),
-            Boolean(node.isMissing),
-            JSON.stringify(this.asRecord(node.metadata)),
-          ],
-        );
-        const savedNode = await client.query<QueryResultRow>(
-          `
-          SELECT id::text AS id
-          FROM file_nodes
-          WHERE user_id = $1 AND node_uid = $2
-          LIMIT 1
-          `,
-          [userId, nodeUid],
-        );
-        const savedNodeId = savedNode.rows[0]?.id as string | undefined;
-        const localPath = this.clean(node.localPath);
-        const hashSha256 = this.clean(node.hashSha256);
-        if (savedNodeId && localPath) {
-          await client.query(
-            `
-            INSERT INTO file_node_device_locations (
-              user_id, node_id, device_id, local_path, availability, metadata, last_seen_at
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
-            ON CONFLICT (user_id, node_id, device_id) DO UPDATE SET
-              local_path = EXCLUDED.local_path,
-              availability = EXCLUDED.availability,
-              metadata = file_node_device_locations.metadata || EXCLUDED.metadata,
-              last_seen_at = now()
-            `,
-            [
-              userId,
-              savedNodeId,
-              deviceId,
-              localPath,
-              this.clean(node.availability) ?? 'available',
-              JSON.stringify({
-                source: 'node_snapshot',
-                hashSha256,
-                sizeBytes: this.readNullableNumber(node.sizeBytes),
-              }),
-            ],
-          );
-        }
-        if (savedNodeId && (hashSha256 || this.clean(node.providerFileId) || localPath)) {
-          await client.query(
-            `
-            INSERT INTO file_identity_mappings (
-              user_id,
-              node_id,
-              provider_key,
-              provider_file_id,
-              device_id,
-              local_path,
-              hash_sha256,
-              size_bytes,
-              modified_at,
-              confidence,
-              metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10, $11::jsonb)
-            ON CONFLICT (user_id, node_id, provider_key, device_id, local_path) DO UPDATE SET
-              provider_file_id = EXCLUDED.provider_file_id,
-              hash_sha256 = EXCLUDED.hash_sha256,
-              size_bytes = EXCLUDED.size_bytes,
-              modified_at = EXCLUDED.modified_at,
-              confidence = EXCLUDED.confidence,
-              status = 'active',
-              metadata = file_identity_mappings.metadata || EXCLUDED.metadata,
-              updated_at = now()
-            `,
-            [
-              userId,
-              savedNodeId,
-              this.clean(node.providerKey) ?? 'local',
-              this.clean(node.providerFileId),
-              deviceId,
-              localPath,
-              hashSha256,
-              this.readNullableNumber(node.sizeBytes),
-              this.readDate(node.mtime),
-              hashSha256 ? 'hash' : this.clean(node.providerFileId) ? 'provider_id' : 'path_size_mtime',
-              JSON.stringify({ source: 'node_snapshot' }),
-            ],
-          );
-        }
-        applied += 1;
-      }
-      await client.query(
-        `
-        UPDATE file_roots
-        SET scan_status = $3, last_scan_at = now(), last_error = NULL, updated_at = now()
-        WHERE user_id = $1 AND id = $2
-        `,
-        [userId, rootId, this.clean(body.scanStatus) ?? 'completed'],
-      );
-      await this.recordFileOperation(client, userId, deviceId, 'file.nodes.snapshot', null, {
-        rootId,
-        applied,
-      });
-      return applied;
-    });
-    return { ok: true, rootId, applied: result };
+    return this.fileTreeService.applyNodeSnapshot(body, context);
   }
 
   async logNodeOperation(
@@ -2729,104 +1951,15 @@ export class FilesService {
   }
 
   async upsertNetworkPresence(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const result = await this.database.query<QueryResultRow>(
-      `
-      INSERT INTO device_network_presence (
-        user_id,
-        device_id,
-        network_type,
-        wifi_ssid_hash,
-        local_ip,
-        local_port,
-        public_ip_hash,
-        nat_type,
-        capabilities,
-        last_seen_at,
-        expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now(), now() + ($10::text || ' minutes')::interval)
-      ON CONFLICT (user_id, device_id) DO UPDATE SET
-        network_type = EXCLUDED.network_type,
-        wifi_ssid_hash = EXCLUDED.wifi_ssid_hash,
-        local_ip = EXCLUDED.local_ip,
-        local_port = EXCLUDED.local_port,
-        public_ip_hash = EXCLUDED.public_ip_hash,
-        nat_type = EXCLUDED.nat_type,
-        capabilities = EXCLUDED.capabilities,
-        last_seen_at = now(),
-        expires_at = EXCLUDED.expires_at
-      RETURNING id::text AS id, device_id::text AS "deviceId", network_type AS "networkType", local_ip AS "localIp", local_port AS "localPort", expires_at AS "expiresAt"
-      `,
-      [
-        userId,
-        deviceId,
-        this.clean(body.networkType) ?? 'unknown',
-        this.clean(body.wifiSsidHash),
-        this.clean(body.localIp),
-        this.readNullableNumber(body.localPort),
-        this.clean(body.publicIpHash),
-        this.clean(body.natType) ?? 'unknown',
-        JSON.stringify(this.asRecord(body.capabilities)),
-        String(this.readNumber(body.ttlMinutes, 10)),
-      ],
-    );
-    return { ok: true, presence: result.rows[0] };
+    return this.fileTransferService.upsertNetworkPresence(body, context);
   }
 
   async networkPresence(context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const result = await this.database.query<QueryResultRow>(
-      `
-      SELECT
-        p.id::text AS id,
-        p.device_id::text AS "deviceId",
-        d.device_name AS "deviceName",
-        p.network_type AS "networkType",
-        p.local_ip AS "localIp",
-        p.local_port AS "localPort",
-        p.nat_type AS "natType",
-        p.capabilities,
-        p.last_seen_at AS "lastSeenAt",
-        p.expires_at AS "expiresAt",
-        CASE WHEN p.expires_at > now() THEN 'available' ELSE 'expired' END AS status
-      FROM device_network_presence p
-      LEFT JOIN devices d ON d.user_id = p.user_id AND d.id = p.device_id
-      WHERE p.user_id = $1
-      ORDER BY p.last_seen_at DESC
-      `,
-      [userId],
-    );
-    return { devices: result.rows };
+    return this.fileTransferService.networkPresence(context);
   }
 
   async transferCandidates(sessionId: string, context: FlowPlanV2RequestContext) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    await this.ensureServerRelayCandidate(userId, sessionId);
-    const result = await this.database.query<QueryResultRow>(
-      `
-      SELECT
-        id::text AS id,
-        session_id::text AS "sessionId",
-        candidate_type AS "candidateType",
-        source_address AS "sourceAddress",
-        source_port AS "sourcePort",
-        target_address AS "targetAddress",
-        target_port AS "targetPort",
-        protocol,
-        priority,
-        status,
-        latency_ms AS "latencyMs",
-        bandwidth_estimate AS "bandwidthEstimate",
-        failure_reason AS "failureReason",
-        updated_at AS "updatedAt"
-      FROM file_transfer_candidates
-      WHERE user_id = $1 AND session_id = $2
-      ORDER BY priority ASC, updated_at DESC
-      `,
-      [userId, sessionId],
-    );
-    return { candidates: result.rows };
+    return this.fileTransferService.transferCandidates(sessionId, context);
   }
 
   async upsertTransferCandidate(
@@ -2834,51 +1967,7 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const deviceId = await this.devicesService.ensureDevice(context);
-    const result = await this.database.transaction(async (client) => {
-      const row = await client.query<QueryResultRow>(
-        `
-        INSERT INTO file_transfer_candidates (
-          user_id,
-          session_id,
-          candidate_type,
-          source_address,
-          source_port,
-          target_address,
-          target_port,
-          protocol,
-          priority,
-          status,
-          latency_ms,
-          bandwidth_estimate,
-          failure_reason
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        RETURNING id::text AS id, candidate_type AS "candidateType", protocol, status
-        `,
-        [
-          userId,
-          sessionId,
-          this.clean(body.candidateType) ?? 'lan_hint',
-          this.clean(body.sourceAddress),
-          this.readNullableNumber(body.sourcePort),
-          this.clean(body.targetAddress),
-          this.readNullableNumber(body.targetPort),
-          this.clean(body.protocol) ?? 'server_api',
-          this.readNumber(body.priority, 100),
-          this.clean(body.status) ?? 'pending',
-          this.readNullableNumber(body.latencyMs),
-          this.readNullableNumber(body.bandwidthEstimate),
-          this.clean(body.failureReason),
-        ],
-      );
-      await this.appendTransferEventWithClient(client, userId, sessionId, 'candidate.added', {
-        candidateId: row.rows[0]?.id,
-        deviceId,
-      });
-      return row.rows[0];
-    });
-    return { ok: true, candidate: result };
+    return this.fileTransferService.upsertTransferCandidate(sessionId, body, context);
   }
 
   async appendTransferEvent(
@@ -2886,19 +1975,7 @@ export class FilesService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    await this.devicesService.ensureDevice(context);
-    await this.appendTransferEventWithClient(
-      this.database,
-      userId,
-      sessionId,
-      this.clean(body.eventType) ?? 'transfer.note',
-      {
-        message: this.clean(body.message),
-        ...this.asRecord(body.payload),
-      },
-    );
-    return { ok: true };
+    return this.fileTransferService.appendTransferEvent(sessionId, body, context);
   }
 
   private driveNodeDto(row: QueryResultRow) {
@@ -3026,16 +2103,7 @@ export class FilesService {
     nodes: Record<string, unknown>[],
   ) {
     const rootStat = await stat(rootPath);
-    nodes.push({
-      nodeUid: `root:${rootPath}`,
-      nodeType: 'folder',
-      name: this.basename(rootPath),
-      relativePath: '',
-      displayPath: rootPath,
-      localPath: rootPath,
-      mtime: rootStat.mtime.toISOString(),
-      metadata: { source: 'server_scan' },
-    });
+    nodes.push(this.createScannedRootNode(rootPath, rootStat.mtime.toISOString()));
     const queue: Array<{ path: string; parentUid: string }> = [
       { path: rootPath, parentUid: `root:${rootPath}` },
     ];
@@ -3056,37 +2124,103 @@ export class FilesService {
         const fullPath = join(current.path, entry.name);
         const entryStat = await stat(fullPath);
         const relativePath = relative(rootPath, fullPath).replace(/\\/g, '/');
-        const nodeUid = `node:${rootPath}:${relativePath}`;
         const isFolder = entry.isDirectory();
-        const storedObject = isFolder
-          ? null
-          : await this.storeScannedFileObject(userId, rootId, fullPath, relativePath, entry.name, entryStat.size);
-        nodes.push({
-          nodeUid,
-          parentNodeUid: current.parentUid,
-          nodeType: isFolder ? 'folder' : 'file',
-          name: entry.name,
+        const node = await this.createScannedNode({
+          userId,
+          rootId,
+          rootPath,
+          parentUid: current.parentUid,
+          fullPath,
           relativePath,
-          displayPath: fullPath,
-          localPath: fullPath,
-          mimeType: isFolder ? null : this.guessMimeType(entry.name),
-          extension: isFolder ? null : extname(entry.name).replace(/^\./, ''),
-          sizeBytes: isFolder ? null : entryStat.size,
+          name: entry.name,
+          isFolder,
+          sizeBytes: entryStat.size,
           mtime: entryStat.mtime.toISOString(),
           ctime: entryStat.ctime.toISOString(),
-          hashSha256: storedObject?.checksum,
-          providerKey: 'server_storage',
-          metadata: {
-            source: 'server_scan',
-            storageObjectId: storedObject?.storageObjectId,
-            storagePath: storedObject?.storagePath,
-          },
         });
+        nodes.push(node);
         if (isFolder) {
-          queue.push({ path: fullPath, parentUid: nodeUid });
+          queue.push({ path: fullPath, parentUid: node.nodeUid });
         }
       }
     }
+  }
+
+  private createScannedRootNode(rootPath: string, mtime: string) {
+    return {
+      nodeUid: `root:${rootPath}`,
+      nodeType: 'folder',
+      name: this.basename(rootPath),
+      relativePath: '',
+      displayPath: rootPath,
+      localPath: rootPath,
+      mtime,
+      metadata: { source: 'server_scan' },
+    };
+  }
+
+  private async createScannedNode(input: {
+    userId: string;
+    rootId: string;
+    rootPath: string;
+    parentUid: string;
+    fullPath: string;
+    relativePath: string;
+    name: string;
+    isFolder: boolean;
+    sizeBytes: number;
+    mtime: string;
+    ctime: string;
+  }) {
+    const nodeUid = `node:${input.rootPath}:${input.relativePath}`;
+    if (input.isFolder) {
+      return {
+        nodeUid,
+        parentNodeUid: input.parentUid,
+        nodeType: 'folder',
+        name: input.name,
+        relativePath: input.relativePath,
+        displayPath: input.fullPath,
+        localPath: input.fullPath,
+        mimeType: null,
+        extension: null,
+        sizeBytes: null,
+        mtime: input.mtime,
+        ctime: input.ctime,
+        hashSha256: null,
+        providerKey: 'server_storage',
+        metadata: { source: 'server_scan' },
+      };
+    }
+    const storedObject = await this.storeScannedFileObject(
+      input.userId,
+      input.rootId,
+      input.fullPath,
+      input.relativePath,
+      input.name,
+      input.sizeBytes,
+    );
+    return {
+      nodeUid,
+      parentNodeUid: input.parentUid,
+      nodeType: 'file',
+      name: input.name,
+      relativePath: input.relativePath,
+      displayPath: input.fullPath,
+      localPath: input.fullPath,
+      mimeType: this.guessMimeType(input.name),
+      extension: extname(input.name).replace(/^\./, ''),
+      sizeBytes: input.sizeBytes,
+      mtime: input.mtime,
+      ctime: input.ctime,
+      hashSha256: storedObject?.checksum,
+      providerKey: 'server_storage',
+      metadata: {
+        source: 'server_scan',
+        storageObjectId: storedObject?.storageObjectId,
+        storagePath: storedObject?.storagePath,
+      },
+    };
   }
 
   private async storeScannedFileObject(

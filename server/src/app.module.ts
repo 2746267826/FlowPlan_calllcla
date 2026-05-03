@@ -12,7 +12,10 @@ import { AnalyticsService } from './analytics/analytics.service';
 import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
 import { FilesController } from './files/files.controller';
+import { FileTreeService } from './files/file-tree.service';
+import { FileTransferService } from './files/file-transfer.service';
 import { FilesService } from './files/files.service';
+import { FileVersionService } from './files/file-version.service';
 import { KopiaService } from './files/kopia.service';
 import { LocalObjectStorageService } from './files/local-object-storage.service';
 import { AiController } from './ai/ai.controller';
@@ -61,6 +64,9 @@ import { OutlookService } from './outlook/outlook.service';
     AnalyticsService,
     AdminService,
     FilesService,
+    FileTreeService,
+    FileTransferService,
+    FileVersionService,
     LocalObjectStorageService,
     KopiaService,
     AiService,

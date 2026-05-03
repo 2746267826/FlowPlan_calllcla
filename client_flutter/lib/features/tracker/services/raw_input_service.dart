@@ -343,12 +343,12 @@ class RawInputService {
     if (!Platform.isWindows || _started) return;
     try {
       await _channel.invokeMethod('start');
-      await _channel.invokeMethod('setSequenceRecording', {'enabled': true});
       _started = true;
       _lastError = null;
     } catch (error) {
       _started = false;
       _lastError = error.toString();
+      rethrow;
     }
   }
 

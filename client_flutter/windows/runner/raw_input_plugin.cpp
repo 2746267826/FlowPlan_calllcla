@@ -311,6 +311,8 @@ void RawInputPlugin::HandleMethodCall(
       stats[flutter::EncodableValue("pendingInputEventCount")] =
           flutter::EncodableValue(static_cast<int64_t>(input_events_.size()));
     }
+    stats[flutter::EncodableValue("inputEvents")] =
+        flutter::EncodableValue(ReadInputEvents(1000));
     const std::string last_error = GetLastErrorMessage();
     if (!last_error.empty()) {
       stats[flutter::EncodableValue("lastError")] =

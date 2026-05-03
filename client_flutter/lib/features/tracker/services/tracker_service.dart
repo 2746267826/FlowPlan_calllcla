@@ -167,7 +167,24 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     }
 
     state = state.copyWith(isRunning: true);
-    unawaited(rawInputService.start());
+    unawaited(_startWindowsTracking());
+  }
+
+  Future<void> _startWindowsTracking() async {
+    try {
+      await rawInputService.start();
+    } catch (error) {
+      state = state.copyWith(
+        isRunning: false,
+        lastError: 'RawInput 启动失败：$error',
+      );
+      return;
+    }
+
+    if (!state.isRunning) {
+      return;
+    }
+
     unawaited(_sample());
     unawaited(_pollInputEvents());
     _timer = Timer.periodic(_sampleInterval, (_) {
@@ -287,7 +304,9 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> _pollInputEvents() async {
-    if (!_platform.supportsInputAnalytics || _inputEventPollInFlight) {
+    if (!_platform.supportsInputAnalytics ||
+        !rawInputService.isRunning ||
+        _inputEventPollInFlight) {
       return;
     }
     _inputEventPollInFlight = true;

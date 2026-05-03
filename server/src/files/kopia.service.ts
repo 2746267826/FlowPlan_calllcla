@@ -55,9 +55,7 @@ export class KopiaService {
         throw error;
       }
     }
-    const sourceRef = objectPath
-      ? `${versionRef}/${this.normalizeSnapshotPath(objectPath)}`
-      : versionRef;
+    const sourceRef = this.buildSnapshotSourceRef(versionRef, objectPath);
     const result = await this.run(['snapshot', 'restore', sourceRef, targetPath]);
     return {
       sourceRef,
@@ -68,13 +66,14 @@ export class KopiaService {
   }
 
   async prepareRestore(versionRef: string, objectPath: string | null, targetPath: string | null) {
+    const sourceRef = this.buildSnapshotSourceRef(versionRef, objectPath);
     return {
       executable: this.executable,
       command: [
         this.executable,
         'snapshot',
         'restore',
-        objectPath ? `${versionRef}/${this.normalizeSnapshotPath(objectPath)}` : versionRef,
+        sourceRef,
         targetPath ?? '<target-path>',
       ],
       executableStep: false,
@@ -230,5 +229,11 @@ export class KopiaService {
 
   private normalizeSnapshotPath(value: string) {
     return value.replace(/^[a-zA-Z]:/, '').replace(/\\/g, '/').replace(/^\/+/, '');
+  }
+
+  private buildSnapshotSourceRef(versionRef: string, objectPath: string | null) {
+    return objectPath
+      ? `${versionRef}/${this.normalizeSnapshotPath(objectPath)}`
+      : versionRef;
   }
 }
