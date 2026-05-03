@@ -363,9 +363,14 @@ class ServerSyncChangeApplier {
       id: id == null ? const Value.absent() : Value(id),
       uid: Value(change.uid ?? _string(payload, 'uid') ?? change.serverId),
       dtstamp: Value(_date(payload, 'dtstamp') ?? DateTime.now()),
-      summary: Value(_string(payload, 'summary', 'title', 'name') ?? '未命名日程'),
-      description: Value(_string(payload, 'description', 'notes', 'note')),
-      location: Value(_string(payload, 'location')),
+      summary: Value(
+        _string(payload, 'summary', 'title', 'subject') ??
+            _string(payload, 'bodyPreview', 'name') ??
+            '未命名日程',
+      ),
+      description:
+          Value(_string(payload, 'description', 'bodyPreview', 'notes') ?? _string(payload, 'note')),
+      location: Value(_locationString(payload)),
       dtstart: Value(_date(payload, 'dtstart', 'startAt', 'start_at', 'startTime') ?? DateTime.now()),
       dtend: Value(_date(payload, 'dtend', 'endAt', 'end_at', 'endTime')),
       rrule: Value(_string(payload, 'rrule')),
@@ -1446,7 +1451,37 @@ class ServerSyncChangeApplier {
     if (value == null) {
       return null;
     }
-    return value.toString();
+    final text = value.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
+  String? _locationString(Map<String, dynamic> payload) {
+    final direct = payload['location'];
+    if (direct is String) {
+      final text = direct.trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    if (direct is Map) {
+      final displayName = direct['displayName']?.toString().trim();
+      if (displayName != null && displayName.isNotEmpty) {
+        return displayName;
+      }
+    }
+    final locations = payload['locations'];
+    if (locations is List) {
+      final names = locations
+          .whereType<Map>()
+          .map((item) => item['displayName']?.toString().trim())
+          .whereType<String>()
+          .where((name) => name.isNotEmpty)
+          .toList(growable: false);
+      if (names.isNotEmpty) {
+        return names.join(', ');
+      }
+    }
+    return null;
   }
 
   int? _int(Map<String, dynamic> payload, String key, [String? alt]) {

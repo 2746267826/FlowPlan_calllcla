@@ -666,7 +666,9 @@ class _ActivityEvidenceSource {
         .where((event) => event.kind == TrackedInputEventKind.keyDown)
         .fold<int>(0, (sum, event) => sum + event.eventCount);
     final clicks = ordered
-        .where((event) => event.kind == TrackedInputEventKind.mouseButton)
+        .where((event) =>
+            event.kind == TrackedInputEventKind.mouseButton ||
+            event.kind == TrackedInputEventKind.mouseButtonDown)
         .fold<int>(0, (sum, event) => sum + event.eventCount);
     final movePx = ordered
         .where((event) => event.kind == TrackedInputEventKind.mouseMove)

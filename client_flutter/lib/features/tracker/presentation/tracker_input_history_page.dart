@@ -779,6 +779,12 @@ Color _kindColor(TrackedInputEvent event) {
   switch (event.kind) {
     case TrackedInputEventKind.keyDown:
       return const Color(0xFF6B5EE4);
+    case TrackedInputEventKind.keyUp:
+      return const Color(0xFF8579EE);
+    case TrackedInputEventKind.mouseButtonDown:
+      return const Color(0xFF0EA8A0);
+    case TrackedInputEventKind.mouseButtonUp:
+      return const Color(0xFF44BFB8);
     case TrackedInputEventKind.mouseButton:
       return const Color(0xFF0EA8A0);
     case TrackedInputEventKind.mouseWheel:
@@ -792,6 +798,12 @@ String _kindLabel(TrackedInputEventKind kind) {
   switch (kind) {
     case TrackedInputEventKind.keyDown:
       return '按键';
+    case TrackedInputEventKind.keyUp:
+      return '按键抬起';
+    case TrackedInputEventKind.mouseButtonDown:
+      return '鼠标按下';
+    case TrackedInputEventKind.mouseButtonUp:
+      return '鼠标抬起';
     case TrackedInputEventKind.mouseButton:
       return '鼠标按钮';
     case TrackedInputEventKind.mouseWheel:
@@ -815,6 +827,28 @@ String _eventTitle(TrackedInputEvent event) {
         return '按键 VK_${event.keyCode}';
       }
       return '按键事件';
+    case TrackedInputEventKind.keyUp:
+      final token = describeInputToken(event.tokenText);
+      if (token.isNotEmpty) {
+        return '按键抬起 $token';
+      }
+      if (event.keyLabel != null && event.keyLabel!.trim().isNotEmpty) {
+        return '按键抬起 ${event.keyLabel!.trim()}';
+      }
+      if (event.keyCode != null) {
+        return '按键抬起 VK_${event.keyCode}';
+      }
+      return '按键抬起事件';
+    case TrackedInputEventKind.mouseButtonDown:
+      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
+        return '鼠标按下${inputMouseButtonLabel(event.mouseButton!.trim())}';
+      }
+      return '鼠标按下事件';
+    case TrackedInputEventKind.mouseButtonUp:
+      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
+        return '鼠标抬起${inputMouseButtonLabel(event.mouseButton!.trim())}';
+      }
+      return '鼠标抬起事件';
     case TrackedInputEventKind.mouseButton:
       if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
         return '鼠标${inputMouseButtonLabel(event.mouseButton!.trim())}';

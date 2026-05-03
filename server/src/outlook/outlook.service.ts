@@ -55,11 +55,17 @@ type OutlookEvent = {
   bodyPreview?: string;
   body?: { content?: string };
   location?: { displayName?: string };
+  locations?: Array<{ displayName?: string }>;
+  organizer?: { emailAddress?: { name?: string; address?: string } };
+  attendees?: Array<{ emailAddress?: { name?: string; address?: string }; type?: string }>;
   start?: { dateTime?: string; timeZone?: string };
   end?: { dateTime?: string; timeZone?: string };
   showAs?: string;
   isCancelled?: boolean;
   isAllDay?: boolean;
+  sensitivity?: string;
+  type?: string;
+  seriesMasterId?: string;
   lastModifiedDateTime?: string;
   createdDateTime?: string;
   webLink?: string;
@@ -721,6 +727,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         `odata.maxpagesize=${GRAPH_CALENDAR_VIEW_PAGE_SIZE}`,
       ]);
       for (const event of page.value ?? []) {
+        this.logGraphEventSnapshot(calendar, event);
         if (event['@removed']) {
           const deleted = await this.deleteSyncObject(
             userId,
@@ -798,18 +805,30 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     event: OutlookEvent,
   ) {
     const uid = this.eventUid(calendar.id, event.id);
+    const subject = this.eventSubject(event);
+    const description = this.eventDescription(event);
+    const location = this.eventLocation(event);
     const payload = {
       uid,
-      title: event.subject ?? '(No title)',
-      summary: event.subject ?? '(No title)',
-      description: event.bodyPreview ?? event.body?.content ?? '',
-      location: event.location?.displayName ?? '',
+      subject,
+      title: subject,
+      summary: subject,
+      description,
+      bodyPreview: this.cleanString(event.bodyPreview),
+      location,
       dtstart: this.outlookDateTime(event.start),
       dtend: this.outlookDateTime(event.end),
       status: event.isCancelled ? 'CANCELLED' : 'CONFIRMED',
       transp: event.showAs === 'free' ? 'TRANSPARENT' : 'OPAQUE',
       isBlock: event.showAs !== 'free',
       isAllDay: Boolean(event.isAllDay),
+      sensitivity: event.sensitivity ?? null,
+      showAs: event.showAs ?? null,
+      type: event.type ?? null,
+      seriesMasterId: event.seriesMasterId ?? null,
+      organizerName: this.cleanString(event.organizer?.emailAddress?.name),
+      organizerEmail: this.cleanString(event.organizer?.emailAddress?.address),
+      attendeeCount: event.attendees?.length ?? 0,
       source: 'outlook',
       readOnly: true,
       remoteCalendarId: calendar.id,
@@ -832,6 +851,59 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return object?.changed ?? false;
+  }
+
+  private eventSubject(event: OutlookEvent) {
+    return (
+      this.cleanString(event.subject) ??
+      this.cleanString(event.bodyPreview) ??
+      '(No title)'
+    );
+  }
+
+  private eventDescription(event: OutlookEvent) {
+    return (
+      this.cleanString(event.bodyPreview) ??
+      this.cleanString(event.body?.content) ??
+      ''
+    );
+  }
+
+  private eventLocation(event: OutlookEvent) {
+    const primary = this.cleanString(event.location?.displayName);
+    if (primary) {
+      return primary;
+    }
+    const names = (event.locations ?? [])
+      .map((location) => this.cleanString(location.displayName))
+      .filter((name): name is string => Boolean(name));
+    return names.join(', ');
+  }
+
+  private logGraphEventSnapshot(calendar: OutlookCalendar, event: OutlookEvent) {
+    if (process.env.FLOWPLANV2_OUTLOOK_DEBUG_EVENTS !== '1') {
+      return;
+    }
+    console.log(
+      '[outlook.graph.event]',
+      JSON.stringify({
+        calendarId: calendar.id,
+        id: event.id,
+        subject: event.subject ?? null,
+        start: event.start ?? null,
+        end: event.end ?? null,
+        location: event.location ?? null,
+        hasBodyPreview: this.cleanString(event.bodyPreview) != null,
+        hasOrganizer: Boolean(event.organizer?.emailAddress),
+        attendeeCount: event.attendees?.length ?? 0,
+        isAllDay: event.isAllDay ?? null,
+        sensitivity: event.sensitivity ?? null,
+        showAs: event.showAs ?? null,
+        type: event.type ?? null,
+        seriesMasterId: event.seriesMasterId ?? null,
+        removed: Boolean(event['@removed']),
+      }),
+    );
   }
 
   private async upsertSyncObject(

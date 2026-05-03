@@ -811,6 +811,16 @@ String _eventTitle(TrackedInputEvent event) {
         return '\u6309\u952e $label';
       }
       return '\u6309\u952e\u8f93\u5165';
+    case TrackedInputEventKind.keyUp:
+      final label = event.keyLabel?.trim();
+      if (label != null && label.isNotEmpty) {
+        return '\u6309\u952e\u62ac\u8d77 $label';
+      }
+      return '\u6309\u952e\u62ac\u8d77';
+    case TrackedInputEventKind.mouseButtonDown:
+      return '\u9f20\u6807\u6309\u4e0b${event.mouseButton ?? '\u6309\u952e'}';
+    case TrackedInputEventKind.mouseButtonUp:
+      return '\u9f20\u6807\u62ac\u8d77${event.mouseButton ?? '\u6309\u952e'}';
     case TrackedInputEventKind.mouseButton:
       return '\u9f20\u6807${event.mouseButton ?? '\u6309\u952e'}';
     case TrackedInputEventKind.mouseWheel:
