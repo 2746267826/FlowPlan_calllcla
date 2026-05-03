@@ -148,7 +148,20 @@ export class SyncService {
         AND c.id > $2
         AND (c.device_id IS NULL OR c.device_id <> $3)
         AND ($4::text IS NULL OR c.object_type = $4)
-      ORDER BY c.id ASC
+      ORDER BY
+        CASE c.object_type
+          WHEN 'calendar_book' THEN 0
+          WHEN 'task_list' THEN 0
+          WHEN 'calendar_event' THEN 1
+          WHEN 'task_item' THEN 1
+          WHEN 'task_schedule_segment' THEN 2
+          WHEN 'actual_activity_log' THEN 2
+          WHEN 'activity_segment' THEN 2
+          WHEN 'activity_interpretation' THEN 2
+          WHEN 'task_work_log' THEN 2
+          ELSE 3
+        END,
+        c.id ASC
       LIMIT $5
       `,
       [userId, cursorValue, deviceId, objectType, limit],

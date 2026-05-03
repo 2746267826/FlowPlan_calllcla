@@ -146,6 +146,7 @@ class ServerSyncChangeApplier {
         errors.add('${change.objectType}:${change.changeId}: $error');
       }
     }
+    await _refreshPlaceholderCalendarNames(changes);
     final repairedOrphans = await repairOutlookOrphanEvents();
     return ServerSyncApplyResult(
       received: rawChanges.length,
@@ -519,16 +520,18 @@ class ServerSyncChangeApplier {
     return _createOutlookPlaceholderCalendar(
       remoteCalendarId,
       colorHex: _string(payload, 'colorHex', 'color_hex'),
+      calendarName: _string(payload, 'calendarName', 'calendar_name'),
     );
   }
 
   Future<int> _createOutlookPlaceholderCalendar(
     String remoteCalendarId, {
     String? colorHex,
+    String? calendarName,
   }) {
     return _database.into(_database.eventCalendars).insert(
           EventCalendarsCompanion.insert(
-            name: 'Outlook',
+            name: calendarName ?? 'Outlook',
             colorHex: Value(colorHex ?? '#2563eb'),
             description:
                 const Value('Outlook calendar restored from server sync'),
@@ -541,15 +544,53 @@ class ServerSyncChangeApplier {
         );
   }
 
+  Future<void> _refreshPlaceholderCalendarNames(
+    List<ServerSyncChange> appliedChanges,
+  ) async {
+    final bookChanges = appliedChanges
+        .where((c) => c.objectType == 'calendar_book')
+        .toList();
+    if (bookChanges.isEmpty) return;
+
+    for (final bookChange in bookChanges) {
+      final payload = bookChange.payload;
+      final remoteCalendarId = _calendarRemoteId(payload);
+      if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
+        continue;
+      }
+
+      final existingId = await _findCalendarIdByRemoteId(remoteCalendarId);
+      if (existingId == null) continue;
+
+      final name = _string(payload, 'name') ?? 'Outlook';
+      final colorHex = _string(payload, 'colorHex', 'color_hex') ?? '#2563eb';
+      final description = _string(payload, 'description');
+      final isVisible = _bool(payload, 'isVisible', 'is_visible') ?? true;
+      final isDefault = _bool(payload, 'isDefault', 'is_default') ?? false;
+
+      await _database.update(_database.eventCalendars)
+        ..where((row) => row.id.equals(existingId))
+        ..write(EventCalendarsCompanion(
+          name: Value(name),
+          colorHex: Value(colorHex),
+          description: Value(description),
+          isVisible: Value(isVisible),
+          isDefault: Value(isDefault),
+        ));
+    }
+  }
+
   Future<int> repairOutlookOrphanEvents() async {
-    final query = _database.select(_database.calendarEvents)
+    var repaired = 0;
+
+    // 修复1：eventCalendarId 为 NULL 的 Outlook 事件
+    final nullCalendarQuery = _database.select(_database.calendarEvents)
       ..where(
         (event) =>
             event.source.equals('outlook') & event.eventCalendarId.isNull(),
       );
-    final events = await query.get();
-    var repaired = 0;
-    for (final event in events) {
+    final nullCalendarEvents = await nullCalendarQuery.get();
+    for (final event in nullCalendarEvents) {
       final remoteCalendarId = _calendarIdFromOutlookEventUid(event.uid);
       if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
         continue;
@@ -564,6 +605,37 @@ class ServerSyncChangeApplier {
           .write(CalendarEventsCompanion(eventCalendarId: Value(calendarId)));
       repaired++;
     }
+
+    // 修复2：eventCalendarId 指向不存在的日历本的 Outlook 事件（悬挂引用）
+    final orphanEvents = await _database.customSelect('''
+      SELECT ce.id, ce.uid, ce.color_hex
+      FROM calendar_events ce
+      LEFT JOIN event_calendars ec ON ec.id = ce.event_calendar_id
+      WHERE ce.source = 'outlook'
+        AND ce.event_calendar_id IS NOT NULL
+        AND ec.id IS NULL
+    ''').get();
+
+    for (final row in orphanEvents) {
+      final eventId = row.read<int>('id');
+      final uid = row.read<String>('uid');
+      final colorHex = row.read<String>('color_hex');
+
+      final remoteCalendarId = _calendarIdFromOutlookEventUid(uid);
+      if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
+        continue;
+      }
+      final calendarId = await _findCalendarIdByRemoteId(remoteCalendarId) ??
+          await _createOutlookPlaceholderCalendar(
+            remoteCalendarId,
+            colorHex: colorHex,
+          );
+      await (_database.update(_database.calendarEvents)
+            ..where((row) => row.id.equals(eventId)))
+          .write(CalendarEventsCompanion(eventCalendarId: Value(calendarId)));
+      repaired++;
+    }
+
     return repaired;
   }
 

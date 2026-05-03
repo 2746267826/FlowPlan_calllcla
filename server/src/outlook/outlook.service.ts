@@ -1347,6 +1347,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       remoteCalendarId: calendar.id,
       remoteEventId: event.id,
       eventCalendarRemoteId: calendar.id,
+      calendarName: calendar.name ?? 'Outlook',
       colorHex: this.calendarColor(calendar),
       webLink: event.webLink ?? null,
       updatedAt: event.lastModifiedDateTime ?? event.createdDateTime ?? new Date().toISOString(),
