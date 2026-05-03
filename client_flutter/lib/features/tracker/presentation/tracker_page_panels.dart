@@ -190,7 +190,7 @@ class _TrackerDetailHubPanel extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onOpenLogHistory,
               icon: const Icon(Icons.receipt_long_outlined, size: 18),
-              label: const Text('查看历史日志文件'),
+              label: const Text('查看历史活动记录'),
             ),
           ],
         ),

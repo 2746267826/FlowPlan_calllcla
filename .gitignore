@@ -68,3 +68,5 @@ app.*.map.json
 *.db
 *.opendb
 *.VC.db
+
+oldtracker/

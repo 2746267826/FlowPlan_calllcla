@@ -53,15 +53,11 @@ class TrackerDayDetailsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    const logPreviewLimit = 80;
     final supportsInputAnalytics =
         TrackerPlatformSource.current().supportsInputAnalytics;
     final selectedDate = ref.watch(selectedDateProvider);
     final recordsAsync = ref.watch(activityRecordsForDateProvider);
-    final logEntriesAsync = ref.watch(activityLogEntriesForDateProvider);
-    final logStoragePathAsync = ref.watch(activityLogStoragePathProvider);
-    final logArchivePathAsync =
-        ref.watch(activityLogArchiveDirectoryPathProvider);
+    final uploadDiagnosticsAsync = ref.watch(trackingUploadDiagnosticsProvider);
     final filterOptions = ref.watch(trackerHistoryFilterOptionsProvider);
     final allTasksAsync = ref.watch(allTasksProvider);
     final searchQuery = ref.watch(trackerHistorySearchQueryProvider);
@@ -74,7 +70,6 @@ class TrackerDayDetailsPage extends ConsumerWidget {
 
     final records = recordsAsync.valueOrNull ?? const <ActivityRecord>[];
     final workSessions = ref.watch(workSessionsForDateProvider);
-    final logEntries = logEntriesAsync.valueOrNull ?? const <ActivityLogEntry>[];
     final allTasks = allTasksAsync.valueOrNull ?? const <TaskItem>[];
     final taskById = <int, TaskItem>{
       for (final task in allTasks) task.id: task,
@@ -96,12 +91,6 @@ class TrackerDayDetailsPage extends ConsumerWidget {
             filterOptions.categoryOptions.contains(selectedCategory)
         ? selectedCategory
         : null;
-    final selectedRecordIds = selectedTaskId == null
-        ? null
-        : records
-            .where((record) => record.linkedTaskId == selectedTaskId)
-            .map((record) => record.id)
-            .toSet();
     final filteredWorkSessions = workSessions
         .where(
           (session) => _matchesWorkSession(
@@ -114,22 +103,6 @@ class TrackerDayDetailsPage extends ConsumerWidget {
             selectedHeatmapBucket: selectedHeatmapBucket,
           ),
         )
-        .toList(growable: false);
-    final filteredLogEntries = logEntries
-        .where(
-          (entry) => _matchesLogEntry(
-            entry,
-            searchQuery: searchQuery,
-            selectedProcess: selectedProcess,
-            selectedCategory: selectedCategory,
-            selectedRecordIds: selectedRecordIds,
-            onlyWithInput: onlyWithInput,
-            selectedHeatmapBucket: selectedHeatmapBucket,
-          ),
-        )
-        .toList(growable: false);
-    final filteredLogEntriesPreview = filteredLogEntries
-        .take(logPreviewLimit)
         .toList(growable: false);
     final taskOptions = _buildTaskFilterOptions(
       records: records,
@@ -151,8 +124,6 @@ class TrackerDayDetailsPage extends ConsumerWidget {
         selectedTaskId != null ||
         onlyWithInput ||
         selectedTimeBucketLabel != null;
-    final logStoragePath = logStoragePathAsync.valueOrNull;
-    final logArchivePath = logArchivePathAsync.valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -166,7 +137,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
             },
           ),
           IconButton(
-            tooltip: '查看历史日志文件',
+            tooltip: '查看历史活动记录',
             icon: const Icon(Icons.article_outlined),
             onPressed: () {
               context.push(AppRoutes.trackerLogHistory);
@@ -230,7 +201,6 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                     children: [
                       _tag('日期：${_formatDate(selectedDate)}'),
                       _tag('${filteredWorkSessions.length}/${workSessions.length} 段会话'),
-                      _tag('${filteredLogEntries.length}/${logEntries.length} 条本机诊断日志'),
                       if (selectedProcess != null) _tag('联动应用：$selectedProcess'),
                       if (selectedTimeBucketLabel != null)
                         _tag('联动时段：$selectedTimeBucketLabel'),
@@ -263,7 +233,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                           context.push(AppRoutes.trackerLogHistory);
                         },
                         icon: const Icon(Icons.article_outlined, size: 18),
-                        label: const Text('查看历史日志文件'),
+                        label: const Text('查看历史活动记录'),
                       ),
                     ],
                   ),
@@ -278,23 +248,23 @@ class TrackerDayDetailsPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            _card(
-              context,
-              _HistoryFilterPanel(
-                options: filterOptions,
-                searchQuery: searchQuery,
-                selectedProcess: selectedProcessForDropdown,
-                selectedCategory: selectedCategoryForDropdown,
-                taskOptions: taskOptions,
-                selectedTaskId: selectedTaskIdForDropdown,
-                onlyWithInput: onlyWithInput,
-                selectedTimeBucketLabel: selectedTimeBucketLabel,
-                filteredSessionCount: filteredWorkSessions.length,
-                totalSessionCount: workSessions.length,
-                filteredLogCount: filteredLogEntries.length,
-                totalLogCount: logEntries.length,
+              _card(
+                context,
+                _HistoryFilterPanel(
+                  options: filterOptions,
+                  searchQuery: searchQuery,
+                  selectedProcess: selectedProcessForDropdown,
+                  selectedCategory: selectedCategoryForDropdown,
+                  taskOptions: taskOptions,
+                  selectedTaskId: selectedTaskIdForDropdown,
+                  onlyWithInput: onlyWithInput,
+                  selectedTimeBucketLabel: selectedTimeBucketLabel,
+                  filteredSessionCount: filteredWorkSessions.length,
+                  totalSessionCount: workSessions.length,
+                  filteredLogCount: 0,
+                  totalLogCount: 0,
+                ),
               ),
-            ),
             const SizedBox(height: 16),
             _card(
               context,
@@ -417,97 +387,104 @@ class TrackerDayDetailsPage extends ConsumerWidget {
             const SizedBox(height: 16),
             _card(
               context,
-              logEntriesAsync.when(
+              uploadDiagnosticsAsync.when(
                 loading: () => const SizedBox(
-                  height: 220,
+                  height: 120,
                   child: Center(child: CircularProgressIndicator()),
                 ),
                 error: (error, _) => SizedBox(
-                  height: 180,
+                  height: 120,
                   child: Center(
-                    child: Text('加载本机诊断日志失败：$error'),
+                    child: Text('加载上传缓冲状态失败：$error'),
                   ),
                 ),
-                data: (_) {
-                  if (filteredLogEntries.isEmpty) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _TrackerSectionHeader(
-                          icon: Icons.receipt_long_outlined,
-                          title: '本机上传缓冲诊断预览',
-                          subtitle: '这里只用于排查本机采集和上传状态，不参与追踪统计。',
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          logStoragePath == null
-                              ? '当前筛选下没有可显示的本机诊断日志。'
-                              : '当前筛选下没有可显示的本机诊断日志。日志文件位置：$logStoragePath',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                    );
-                  }
+                data: (diagnostics) {
+                  final lastActivityRecordId =
+                      _intValue(diagnostics['lastActivityRecordId']);
+                  final lastInputEventId =
+                      _intValue(diagnostics['lastInputEventId']);
+                  final lastRawLogId =
+                      _intValue(diagnostics['lastRawLogId']);
+                  final pendingRecords =
+                      _intValue(diagnostics['pendingActivityRecords']);
+                  final pendingEvents =
+                      _intValue(diagnostics['pendingInputEvents']);
+                  final pendingLogs =
+                      _intValue(diagnostics['pendingRawLogs']);
+                  final lastCompletedAt =
+                      _stringValue(diagnostics['lastCompletedAt']);
+                  final lastError =
+                      _stringValue(diagnostics['lastError']);
+
+                  final totalPending = pendingRecords + pendingEvents + pendingLogs;
+                  final hasPending = totalPending > 0;
+                  final hasError = lastError != null && lastError.isNotEmpty;
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _TrackerSectionHeader(
-                        icon: Icons.receipt_long_outlined,
-                        title: '本机上传缓冲诊断预览',
-                        subtitle:
-                            '为保证本页流畅度，这里只渲染前 $logPreviewLimit 条；它们仅用于诊断本机采集缓冲。',
-                        trailing: TextButton.icon(
-                          onPressed: () {
-                            context.push(AppRoutes.trackerLogHistory);
-                          },
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: const Text('打开日志页'),
-                        ),
+                        icon: Icons.cloud_upload_outlined,
+                        title: '上传缓冲状态',
+                        subtitle: '显示本机待上传的追踪数据缓冲，数据会定期自动上传到服务端。',
                       ),
-                      const SizedBox(height: 8),
-                      if (logStoragePath != null || logArchivePath != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (logStoragePath != null)
-                                Text(
-                                  '当日本机诊断日志：$logStoragePath',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              if (logArchivePath != null)
-                                Text(
-                                  '归档目录：$logArchivePath',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                            ],
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _summaryCard(
+                            '待上传活动记录',
+                            '$pendingRecords',
+                            '游标 ID: $lastActivityRecordId',
                           ),
-                        ),
-                      ...filteredLogEntriesPreview.map(
-                        (entry) => _LogEntryTile(
-                          entry: entry,
-                          showDetails: true,
-                        ),
+                          _summaryCard(
+                            '待上传输入事件',
+                            '$pendingEvents',
+                            '游标 ID: $lastInputEventId',
+                          ),
+                          _summaryCard(
+                            '待上传原始日志',
+                            '$pendingLogs',
+                            '游标 ID: $lastRawLogId',
+                          ),
+                        ],
                       ),
-                      if (filteredLogEntries.length > filteredLogEntriesPreview.length)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _tag(hasPending
+                              ? '总计 $totalPending 条待上传'
+                              : '缓冲区已清空'),
+                          if (lastCompletedAt != null)
+                            _tag('上次上传：$lastCompletedAt'),
+                        ],
+                      ),
+                      if (hasError) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .errorContainer
+                                .withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                           child: Text(
-                            '还有 ${filteredLogEntries.length - filteredLogEntriesPreview.length} 条本机诊断日志未在本页渲染，可进入“历史日志文件”查看完整内容。',
-                            style: const TextStyle(
+                            '上次上传错误：$lastError',
+                            style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onErrorContainer,
                             ),
                           ),
                         ),
+                      ],
                     ],
                   );
                 },
@@ -519,4 +496,5 @@ class TrackerDayDetailsPage extends ConsumerWidget {
     );
   }
 }
+
 

@@ -112,7 +112,7 @@ class TrackingUploadService {
       }
     }
 
-    final diagnostics = await _buildUploadDiagnostics();
+    final diagnostics = await buildUploadDiagnostics();
 
     if (uploadedBatches > 0) {
       await _operationLogs.record(
@@ -226,7 +226,7 @@ class TrackingUploadService {
 
   Future<void> _recordUploadError(String dataKind, Object error) async {
     await _database.setSetting(lastErrorKey, error.toString());
-    final diagnostics = await _buildUploadDiagnostics();
+    final diagnostics = await buildUploadDiagnostics();
     await _operationLogs.record(
       actor: 'system',
       action: 'tracking_upload_failed',
@@ -308,7 +308,7 @@ class TrackingUploadService {
     return int.tryParse(value ?? '') ?? 0;
   }
 
-  Future<Map<String, Object?>> _buildUploadDiagnostics() async {
+  Future<Map<String, Object?>> buildUploadDiagnostics() async {
     final lastActivityRecordId = await _readLastId(_lastActivityRecordIdKey);
     final lastInputEventId = await _readLastId(_lastInputEventIdKey);
     final lastRawLogId = await _readLastId(_lastRawLogIdKey);

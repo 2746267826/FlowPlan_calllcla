@@ -419,79 +419,6 @@ class TrackerPage extends ConsumerStatefulWidget {
     }
   }
 
-  Future<void> _openLogArchiveFolder(BuildContext context, WidgetRef ref) async {
-    try {
-      final service = ref.read(activityLogServiceProvider);
-      final folderPath = await service.getArchiveDirectoryPath();
-
-      if (Platform.isWindows) {
-        await Process.start('explorer.exe', [folderPath]);
-      }
-
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('已打开日志目录：$folderPath'),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('打开日志目录失败：$error'),
-        ),
-      );
-    }
-  }
-
-  Future<void> _exportInputEvents(BuildContext context, WidgetRef ref) async {
-    try {
-      final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '\u5bfc\u51fa\u5b8c\u6574\u952e\u9f20\u8bb0\u5f55',
-        fileName:
-            'flowplanv2-$appStorageFlavorLabel-input-events-${_formatDate(DateTime.now())}.jsonl',
-        type: FileType.custom,
-        allowedExtensions: const ['jsonl'],
-      );
-
-      if (outputPath == null || outputPath.trim().isEmpty) {
-        if (!context.mounted) {
-          return;
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('\u5df2\u53d6\u6d88\u5bfc\u51fa\u952e\u9f20\u8bb0\u5f55'),
-          ),
-        );
-        return;
-      }
-
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('完整键鼠记录导出已迁移为服务端诊断包流程，本地导出不再作为追踪主路径。'),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '\u5bfc\u51fa\u952e\u9f20\u8bb0\u5f55\u5931\u8d25\uff1a$error',
-          ),
-        ),
-      );
-    }
-  }
-
 }
 
 class _TrackerPageState extends ConsumerState<TrackerPage> {
@@ -500,6 +427,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
   _TrackerPageLoadKey? _scheduledKey;
   var _requestSerial = 0;
   var _isRefreshing = false;
+  var _isUploading = false;
 
   @override
   void initState() {
@@ -705,6 +633,37 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     }
   }
 
+  Future<void> _uploadTrackingBuffer() async {
+    setState(() => _isUploading = true);
+    try {
+      final service = await ref.read(trackingUploadServiceProvider.future);
+      final result = await service.uploadPending();
+      if (mounted) {
+        final uploadedRecords = result.uploadedRecords;
+        final uploadedBatches = result.uploadedBatches;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              uploadedBatches > 0
+                  ? '上传完成：$uploadedRecords 条记录，$uploadedBatches 个批次'
+                  : '没有待上传的追踪数据',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('上传失败：$error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedDate = ref.watch(selectedDateProvider);
@@ -766,10 +725,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         androidUsagePermission ?? trackerState.hasUsageStatsPermission;
     final lastRefreshedAt = snapshot?.refreshedAt;
     final freezeNotice = !hasFreshSnapshot && _isRefreshing
-        ? '该页面已暂停自动刷新。正在按当前条件加载新的手动快照，后台记录不会中断。'
+        ? '该页面已暂停自动刷新。正在按当前条件加载新的手动快照，后台记录不会中断。数据每3分钟自动上传到服务端。'
         : (lastRefreshedAt == null
-            ? '该页面已暂停自动刷新。进入页面后会固定当前快照，后台仍继续记录；点击右上角刷新后才会更新显示。'
-            : '该页面已暂停自动刷新。当前显示固定在 ${_formatDateTimeShort(lastRefreshedAt)} 的快照；后台仍继续记录，点击右上角刷新后才会更新显示。');
+            ? '该页面已暂停自动刷新。进入页面后会固定当前快照，后台仍继续记录；点击右上角刷新后才会更新显示。展示数据来自服务端汇总。'
+            : '该页面已暂停自动刷新。当前显示固定在 ${_formatDateTimeShort(lastRefreshedAt)} 的快照；后台仍继续记录，点击右上角刷新后才会更新显示。展示数据来自服务端汇总。');
 
     return Scaffold(
       appBar: AppBar(
@@ -815,6 +774,17 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                     );
                   },
           ),
+          IconButton(
+            tooltip: _isUploading ? '正在上传到服务端' : '手动上传追踪数据到服务端',
+            icon: _isUploading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.cloud_upload_outlined),
+            onPressed: _isUploading ? null : _uploadTrackingBuffer,
+          ),
           if (supportsInputAnalytics)
             IconButton(
               tooltip: '键鼠热力图',
@@ -839,17 +809,11 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                 case _TrackerMenuAction.viewInputHistory:
                   context.push(AppRoutes.trackerInputHistory);
                   break;
-                case _TrackerMenuAction.exportInputEvents:
-                  widget._exportInputEvents(context, ref);
-                  break;
                 case _TrackerMenuAction.exportDatabase:
                   widget._exportDatabase(context, ref);
                   break;
                 case _TrackerMenuAction.openDatabaseFolder:
                   widget._openDatabaseFolder(context, ref);
-                  break;
-                case _TrackerMenuAction.openLogArchiveFolder:
-                  widget._openLogArchiveFolder(context, ref);
                   break;
               }
             },
@@ -864,17 +828,12 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               ),
               const PopupMenuItem(
                 value: _TrackerMenuAction.viewLogHistory,
-                child: Text('查看历史日志文件'),
+                child: Text('查看历史活动记录'),
               ),
               if (supportsInputAnalytics)
                 const PopupMenuItem(
                   value: _TrackerMenuAction.viewInputHistory,
                   child: Text('查看完整输入历史'),
-                ),
-              if (supportsInputAnalytics)
-                const PopupMenuItem(
-                  value: _TrackerMenuAction.exportInputEvents,
-                  child: Text('导出完整键鼠记录'),
                 ),
               const PopupMenuItem(
                 value: _TrackerMenuAction.exportDatabase,
@@ -883,10 +842,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               const PopupMenuItem(
                 value: _TrackerMenuAction.openDatabaseFolder,
                 child: Text('打开数据库目录'),
-              ),
-              const PopupMenuItem(
-                value: _TrackerMenuAction.openLogArchiveFolder,
-                child: Text('打开日志归档目录'),
               ),
             ],
           ),

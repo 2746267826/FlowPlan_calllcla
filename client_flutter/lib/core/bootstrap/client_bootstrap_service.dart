@@ -43,7 +43,7 @@ class ClientBootstrapService extends ChangeNotifier {
   ClientRuntimeState get state => _state;
 
   void start() {
-    _timer ??= Timer.periodic(const Duration(minutes: 5), (_) {
+    _timer ??= Timer.periodic(const Duration(minutes: 3), (_) {
       unawaited(syncNow(source: 'timer'));
     });
     unawaited(bootstrapAndSync(source: 'startup'));

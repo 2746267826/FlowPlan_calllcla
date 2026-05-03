@@ -824,3 +824,19 @@ String _taskStatusLabel(String status) {
       return '待处理';
   }
 }
+
+int _intValue(Object? value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) {
+    final parsed = num.tryParse(value);
+    if (parsed != null) return parsed.round();
+  }
+  return fallback;
+}
+
+String? _stringValue(Object? value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}

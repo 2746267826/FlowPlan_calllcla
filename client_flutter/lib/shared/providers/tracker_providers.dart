@@ -1112,3 +1112,111 @@ class _InputHourCounter {
     );
   }
 }
+
+// 鈹€鈹€ 服务端分页查询 Providers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+class ServerRecordQuery {
+  final DateTime? start;
+  final DateTime? end;
+  final String? processName;
+  final String? category;
+  final int? taskId;
+  final int limit;
+  final int offset;
+
+  const ServerRecordQuery({
+    this.start,
+    this.end,
+    this.processName,
+    this.category,
+    this.taskId,
+    this.limit = 100,
+    this.offset = 0,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ServerRecordQuery &&
+        other.start == start &&
+        other.end == end &&
+        other.processName == processName &&
+        other.category == category &&
+        other.taskId == taskId &&
+        other.limit == limit &&
+        other.offset == offset;
+  }
+
+  @override
+  int get hashCode => Object.hash(start, end, processName, category, taskId, limit, offset);
+}
+
+class ServerInputEventQuery {
+  final DateTime? start;
+  final DateTime? end;
+  final String? processName;
+  final String? category;
+  final String? eventKind;
+  final int limit;
+  final int offset;
+
+  const ServerInputEventQuery({
+    this.start,
+    this.end,
+    this.processName,
+    this.category,
+    this.eventKind,
+    this.limit = 100,
+    this.offset = 0,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ServerInputEventQuery &&
+        other.start == start &&
+        other.end == end &&
+        other.processName == processName &&
+        other.category == category &&
+        other.eventKind == eventKind &&
+        other.limit == limit &&
+        other.offset == offset;
+  }
+
+  @override
+  int get hashCode => Object.hash(start, end, processName, category, eventKind, limit, offset);
+}
+
+final serverActivityRecordsPageProvider =
+    FutureProvider.family<Map<String, dynamic>, ServerRecordQuery>((ref, query) async {
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  return store.activityRecords(
+    start: query.start,
+    end: query.end,
+    processName: query.processName,
+    category: query.category,
+    taskId: query.taskId,
+    limit: query.limit,
+    offset: query.offset,
+  );
+});
+
+final serverInputEventsPageProvider =
+    FutureProvider.family<Map<String, dynamic>, ServerInputEventQuery>((ref, query) async {
+  final store = await ref.watch(trackingServerFirstStoreProvider.future);
+  return store.inputEvents(
+    start: query.start,
+    end: query.end,
+    processName: query.processName,
+    category: query.category,
+    eventKind: query.eventKind,
+    limit: query.limit,
+    offset: query.offset,
+  );
+});
+
+final trackingUploadDiagnosticsProvider =
+    FutureProvider<Map<String, Object?>>((ref) async {
+  final service = await ref.watch(trackingUploadServiceProvider.future);
+  return service.buildUploadDiagnostics();
+});

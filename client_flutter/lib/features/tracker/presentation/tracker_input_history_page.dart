@@ -1,13 +1,8 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
-import '../models/activity_log_archive_day.dart';
 import '../models/tracked_input_event.dart';
 
 class TrackerInputHistoryPage extends ConsumerStatefulWidget {
@@ -22,10 +17,20 @@ class _TrackerInputHistoryPageState
     extends ConsumerState<TrackerInputHistoryPage> {
   late final TextEditingController _searchController;
 
-  DateTime? _selectedDate;
+  DateTime _selectedDate = DateTime.now();
   String _searchQuery = '';
-  TrackedInputEventKind? _selectedKind;
-  bool _includeIgnored = true;
+  String? _selectedEventKind;
+  int _currentOffset = 0;
+  static const int _pageSize = 80;
+
+  static const _eventKindOptions = <_EventKindOption>[
+    _EventKindOption(value: null, label: '全部类型'),
+    _EventKindOption(value: 'key_down', label: '按键按下'),
+    _EventKindOption(value: 'key_up', label: '按键抬起'),
+    _EventKindOption(value: 'mouse_button', label: '鼠标按键'),
+    _EventKindOption(value: 'mouse_wheel', label: '滚轮'),
+    _EventKindOption(value: 'mouse_move', label: '鼠标移动'),
+  ];
 
   @override
   void initState() {
@@ -39,207 +44,114 @@ class _TrackerInputHistoryPageState
     super.dispose();
   }
 
-  Future<void> _openFolder(BuildContext context, String folderPath) async {
-    try {
-      if (Platform.isWindows) {
-        await Process.start('explorer.exe', [folderPath]);
-      }
-
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('已打开输入日志目录：$folderPath'),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('打开输入日志目录失败：$error'),
-        ),
-      );
-    }
+  void _goToPreviousDay() {
+    setState(() {
+      _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+      _currentOffset = 0;
+    });
   }
 
-  Future<void> _pickArchiveDay(
-    BuildContext context,
-    List<ActivityLogArchiveDay> days,
-  ) async {
-    if (days.isEmpty) {
-      return;
-    }
+  void _goToNextDay() {
+    setState(() {
+      _selectedDate = _selectedDate.add(const Duration(days: 1));
+      _currentOffset = 0;
+    });
+  }
 
+  void _goToToday() {
+    setState(() {
+      _selectedDate = DateTime.now();
+      _currentOffset = 0;
+    });
+  }
+
+  Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _resolveSelectedDate(days) ?? days.first.date,
-      firstDate: days.last.date,
-      lastDate: days.first.date,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (picked == null || !context.mounted) {
       return;
     }
-
-    final matchedDay = _findArchiveDay(days, picked);
-    if (matchedDay == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('没有找到 ${_formatDate(picked)} 的输入历史文件'),
-        ),
-      );
-      return;
-    }
-
     setState(() {
-      _selectedDate = matchedDay.date;
+      _selectedDate = picked;
+      _currentOffset = 0;
     });
-  }
-
-  Future<void> _exportFilteredEvents(
-    BuildContext context, {
-    required ActivityLogArchiveDay selectedDay,
-    required List<TrackedInputEvent> filteredEvents,
-  }) async {
-    if (filteredEvents.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('当前没有可导出的输入事件'),
-        ),
-      );
-      return;
-    }
-
-    try {
-      final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '导出当前筛选后的输入历史',
-        fileName: '${_formatDate(selectedDay.date)}.input-events.filtered.jsonl',
-        type: FileType.custom,
-        allowedExtensions: const ['jsonl'],
-      );
-
-      if (outputPath == null || outputPath.trim().isEmpty) {
-        return;
-      }
-
-      final file = File(outputPath);
-      await file.parent.create(recursive: true);
-      final contents = filteredEvents
-          .map((event) => jsonEncode(event.toJson()))
-          .join('\n');
-      await file.writeAsString('$contents\n', flush: true);
-
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '已导出 ${filteredEvents.length} 条输入事件到：$outputPath',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('导出输入历史失败：$error'),
-        ),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final archivePathAsync = ref.watch(inputEventArchiveDirectoryPathProvider);
-    final archiveDaysAsync = ref.watch(inputEventArchiveDaysProvider);
+    final dayStart = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    final query = ServerInputEventQuery(
+      start: dayStart,
+      end: dayEnd,
+      eventKind: _selectedEventKind,
+      limit: _pageSize,
+      offset: _currentOffset,
+    );
+    final eventsAsync = ref.watch(serverInputEventsPageProvider(query));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('完整输入历史'),
-      ),
-      body: archiveDaysAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('读取输入历史失败：$error'),
+        actions: [
+          IconButton(
+            tooltip: '跳转到今天',
+            onPressed: _goToToday,
+            icon: const Icon(Icons.today_outlined),
           ),
-        ),
-        data: (days) {
-          final selectedDate = _resolveSelectedDate(days);
-          final selectedDay = selectedDate == null
-              ? null
-              : _findArchiveDay(days, selectedDate);
-          final eventsAsync = selectedDate == null
-              ? const AsyncData<List<TrackedInputEvent>>(<TrackedInputEvent>[])
-              : ref.watch(inputEventArchiveEntriesForDateProvider(selectedDate));
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final wideLayout = constraints.maxWidth >= 1024;
-              if (wideLayout) {
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: 320,
-                      child: _buildDayPanel(
-                        context,
-                        days: days,
-                        selectedDate: selectedDate,
-                        archivePathAsync: archivePathAsync,
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: _buildDetailPanel(
-                        context,
-                        selectedDay: selectedDay,
-                        eventsAsync: eventsAsync,
-                      ),
-                    ),
-                  ],
-                );
-              }
-
-              return Column(
-                children: [
-                  SizedBox(
-                    height: 280,
-                    child: _buildDayPanel(
-                      context,
-                      days: days,
-                      selectedDate: selectedDate,
-                      archivePathAsync: archivePathAsync,
-                    ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final wideLayout = constraints.maxWidth >= 1024;
+          if (wideLayout) {
+            return Row(
+              children: [
+                SizedBox(
+                  width: 320,
+                  child: _buildFilterPanel(context),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: _buildDetailPanel(
+                    context,
+                    eventsAsync: eventsAsync,
                   ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: _buildDetailPanel(
-                      context,
-                      selectedDay: selectedDay,
-                      eventsAsync: eventsAsync,
-                    ),
-                  ),
-                ],
-              );
-            },
+                ),
+              ],
+            );
+          }
+
+          return Column(
+            children: [
+              SizedBox(
+                height: 260,
+                child: _buildFilterPanel(context),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: _buildDetailPanel(
+                  context,
+                  eventsAsync: eventsAsync,
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildDayPanel(
-    BuildContext context, {
-    required List<ActivityLogArchiveDay> days,
-    required DateTime? selectedDate,
-    required AsyncValue<String> archivePathAsync,
-  }) {
+  Widget _buildFilterPanel(BuildContext context) {
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       child: Column(
@@ -249,114 +161,62 @@ class _TrackerInputHistoryPageState
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
+                IconButton(
+                  tooltip: '前一天',
+                  onPressed: _goToPreviousDay,
+                  icon: const Icon(Icons.chevron_left),
+                ),
                 Expanded(
-                  child: Text(
-                    '按天分割的输入日志',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                  child: GestureDetector(
+                    onTap: _pickDate,
+                    child: Text(
+                      _formatDate(_selectedDate),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                   ),
                 ),
-                if (days.isNotEmpty)
-                  IconButton(
-                    tooltip: '跳转日期',
-                    onPressed: () => _pickArchiveDay(context, days),
-                    icon: const Icon(Icons.event_outlined),
-                  ),
-                archivePathAsync.maybeWhen(
-                  data: (path) => IconButton(
-                    tooltip: '打开日志目录',
-                    onPressed: () => _openFolder(context, path),
-                    icon: const Icon(Icons.folder_open_outlined),
-                  ),
-                  orElse: () => const SizedBox.shrink(),
+                IconButton(
+                  tooltip: '后一天',
+                  onPressed: _goToNextDay,
+                  icon: const Icon(Icons.chevron_right),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              days.isEmpty
-                  ? '还没有可浏览的输入历史文件。'
-                  : '共 ${days.length} 天，完整保留键盘与鼠标事件的原始顺序。',
+              '从服务端查询指定日期的输入事件，数据来源于客户端定期上传的追踪缓冲。',
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: archivePathAsync.when(
-              loading: () => const Text(
-                '正在定位输入日志目录…',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              error: (error, _) => Text(
-                '输入日志目录读取失败：$error',
-                style: const TextStyle(fontSize: 12, color: Colors.red),
-              ),
-              data: (path) => Text(
-                '目录：$path',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+            child: Text(
+              '事件类型',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
-          const SizedBox(height: 12),
-          if (days.isEmpty)
-            const Expanded(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    '追踪开始写入后，这里会按天出现输入历史文件，可用于回看完整输入顺序。',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                itemCount: days.length,
-                itemBuilder: (context, index) {
-                  final day = days[index];
-                  final selected = _isSameDay(selectedDate, day.date);
-                  return Card(
-                    elevation: 0,
-                    color: selected
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).cardColor,
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      onTap: () {
-                        setState(() {
-                          _selectedDate = day.date;
-                        });
-                      },
-                      leading: Icon(
-                        selected
-                            ? Icons.keyboard_alt
-                            : Icons.keyboard_alt_outlined,
-                        color: selected ? AppColors.primary : null,
-                      ),
-                      title: Text(
-                        _formatDate(day.date),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(
-                        '文件大小：${_formatFileSize(day.fileSizeBytes)}',
-                      ),
-                      trailing:
-                          selected ? const Icon(Icons.chevron_right) : null,
-                    ),
-                  );
-                },
-              ),
+          const SizedBox(height: 4),
+          ..._eventKindOptions.map(
+            (option) => _FilterChipTile(
+              label: option.label,
+              selected: _selectedEventKind == option.value,
+              onTap: () {
+                setState(() {
+                  _selectedEventKind = option.value;
+                  _currentOffset = 0;
+                });
+              },
             ),
+          ),
         ],
       ),
     );
@@ -364,44 +224,54 @@ class _TrackerInputHistoryPageState
 
   Widget _buildDetailPanel(
     BuildContext context, {
-    required ActivityLogArchiveDay? selectedDay,
-    required AsyncValue<List<TrackedInputEvent>> eventsAsync,
+    required AsyncValue<Map<String, dynamic>> eventsAsync,
   }) {
-    if (selectedDay == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            '请选择一天的输入历史文件开始查看。',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ),
-      );
-    }
-
     return eventsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('读取输入历史失败：$error'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 40, color: Colors.grey),
+              const SizedBox(height: 12),
+              Text(
+                '读取服务端输入事件失败',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(serverInputEventsPageProvider),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
         ),
       ),
-      data: (events) {
-        final filteredEvents = events
-            .where(
-              (event) => _matchesEvent(
-                event,
-                searchQuery: _searchQuery,
-                selectedKind: _selectedKind,
-                includeIgnored: _includeIgnored,
-              ),
-            )
-            .toList(growable: false);
-        final hasActiveFilters =
-            _searchQuery.trim().isNotEmpty ||
-            _selectedKind != null ||
-            !_includeIgnored;
+      data: (response) {
+        final items = _serverItems(response);
+        final totalEstimate = _intValue(response['total']);
+
+        final events = items
+            .map(_eventFromServerItem)
+            .whereType<_ServerInputEvent>()
+            .toList(growable: false)
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+        final hasMore = events.length >= _pageSize;
+        final hasPrevious = _currentOffset > 0;
+
+        final filteredEvents = _searchQuery.trim().isEmpty
+            ? events
+            : events.where((e) => _matchesEvent(e, _searchQuery)).toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -412,48 +282,25 @@ class _TrackerInputHistoryPageState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_formatDate(selectedDay.date)} 输入历史',
+                    '${_formatDate(_selectedDate)} 输入事件',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '文件：${selectedDay.filePath}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    totalEstimate > 0
+                        ? '服务端共 $totalEstimate 条事件，当前显示第 ${_currentOffset + 1}-${_currentOffset + events.length} 条'
+                        : events.isNotEmpty
+                            ? '当前显示 ${events.length} 条事件'
+                            : '该日期暂无输入事件',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hasActiveFilters
-                        ? '当前命中 ${filteredEvents.length}/${events.length} 条输入事件。'
-                        : '当前文件共有 ${events.length} 条输入事件，列表保持原始顺序。',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: filteredEvents.isEmpty
-                            ? null
-                            : () => _exportFilteredEvents(
-                                  context,
-                                  selectedDay: selectedDay,
-                                  filteredEvents: filteredEvents,
-                                ),
-                        icon: const Icon(Icons.download_outlined, size: 16),
-                        label: const Text('导出当前结果'),
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: TextField(
                 controller: _searchController,
                 onChanged: (value) {
@@ -462,7 +309,7 @@ class _TrackerInputHistoryPageState
                   });
                 },
                 decoration: InputDecoration(
-                  hintText: '搜索按键、字符、应用、窗口、分类、序号',
+                  hintText: '搜索进程名、窗口标题、按键标签',
                   prefixIcon: const Icon(Icons.search_outlined),
                   suffixIcon: _searchQuery.trim().isEmpty
                       ? null
@@ -483,44 +330,6 @@ class _TrackerInputHistoryPageState
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('全部类型'),
-                    selected: _selectedKind == null,
-                    onSelected: (_) {
-                      setState(() {
-                        _selectedKind = null;
-                      });
-                    },
-                  ),
-                  ...TrackedInputEventKind.values.map(
-                    (kind) => ChoiceChip(
-                      label: Text(_kindLabel(kind)),
-                      selected: _selectedKind == kind,
-                      onSelected: (_) {
-                        setState(() {
-                          _selectedKind = kind;
-                        });
-                      },
-                    ),
-                  ),
-                  FilterChip(
-                    label: const Text('包含自排除记录'),
-                    selected: _includeIgnored,
-                    onSelected: (value) {
-                      setState(() {
-                        _includeIgnored = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 12),
             Expanded(
               child: filteredEvents.isEmpty
@@ -528,9 +337,9 @@ class _TrackerInputHistoryPageState
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          hasActiveFilters
-                              ? '没有找到匹配的输入事件，请尝试放宽搜索或恢复筛选。'
-                              : '这一天的输入历史文件里还没有内容。',
+                          _searchQuery.trim().isNotEmpty
+                              ? '没有找到匹配的输入事件，请尝试放宽搜索条件。'
+                              : '这一天暂无来自服务端的输入事件。',
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.grey),
                         ),
@@ -540,105 +349,213 @@ class _TrackerInputHistoryPageState
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                       itemCount: filteredEvents.length,
                       itemBuilder: (context, index) {
-                        return _TrackedInputEventTile(
-                          event: filteredEvents[index],
-                        );
+                        return _InputEventTile(event: filteredEvents[index]);
                       },
                     ),
             ),
+            if (hasPrevious || hasMore)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: hasPrevious
+                          ? () {
+                              setState(() {
+                                _currentOffset =
+                                    (_currentOffset - _pageSize).clamp(0, 1 << 31);
+                              });
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_left, size: 16),
+                      label: const Text('上一页'),
+                    ),
+                    const SizedBox(width: 16),
+                    Text(
+                      '第 ${(_currentOffset / _pageSize).floor() + 1} 页',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(width: 16),
+                    OutlinedButton.icon(
+                      onPressed: hasMore
+                          ? () {
+                              setState(() {
+                                _currentOffset += _pageSize;
+                              });
+                            }
+                          : null,
+                      icon: const Icon(Icons.chevron_right, size: 16),
+                      label: const Text('下一页'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         );
       },
     );
   }
 
-  DateTime? _resolveSelectedDate(List<ActivityLogArchiveDay> days) {
-    if (days.isEmpty) {
-      return null;
-    }
+  bool _matchesEvent(_ServerInputEvent event, String searchQuery) {
+    final normalizedQuery = searchQuery.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return true;
 
-    if (_selectedDate == null) {
-      return days.first.date;
-    }
+    final target = <String>[
+      if (event.processName != null) event.processName!,
+      if (event.windowTitle != null) event.windowTitle!,
+      if (event.category != null) event.category!,
+      if (event.keyLabel != null) event.keyLabel!,
+      if (event.activityLabel != null) event.activityLabel!,
+      event.kind.value,
+    ].join(' ').toLowerCase();
 
-    for (final day in days) {
-      if (_isSameDay(day.date, _selectedDate)) {
-        return day.date;
-      }
-    }
+    final tokens = normalizedQuery
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList(growable: false);
 
-    return days.first.date;
-  }
-
-  ActivityLogArchiveDay? _findArchiveDay(
-    List<ActivityLogArchiveDay> days,
-    DateTime date,
-  ) {
-    for (final day in days) {
-      if (_isSameDay(day.date, date)) {
-        return day;
-      }
-    }
-    return null;
-  }
-
-  bool _isSameDay(DateTime? left, DateTime? right) {
-    if (left == null || right == null) {
-      return false;
-    }
-
-    return left.year == right.year &&
-        left.month == right.month &&
-        left.day == right.day;
+    return tokens.every(target.contains);
   }
 }
 
-class _TrackedInputEventTile extends StatelessWidget {
-  const _TrackedInputEventTile({
-    required this.event,
-  });
+class _EventKindOption {
+  final String? value;
+  final String label;
 
-  final TrackedInputEvent event;
+  const _EventKindOption({required this.value, required this.label});
+}
+
+class _FilterChipTile extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChipTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final title = _eventTitle(event);
-    final subtitleParts = <String>[
-      if (event.activityLabel != null && event.activityLabel!.trim().isNotEmpty)
-        event.activityLabel!.trim(),
+    return Card(
+      elevation: 0,
+      color: selected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Theme.of(context).cardColor,
+      margin: const EdgeInsets.only(bottom: 4),
+      child: ListTile(
+        dense: true,
+        onTap: onTap,
+        leading: Icon(
+          selected ? Icons.filter_alt : Icons.filter_alt_outlined,
+          color: selected ? AppColors.primary : null,
+          size: 20,
+        ),
+        title: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ServerInputEvent {
+  final String uid;
+  final int sequenceId;
+  final DateTime timestamp;
+  final TrackedInputEventKind kind;
+  final int eventCount;
+  final bool isIgnored;
+  final String? processName;
+  final String? className;
+  final String? windowTitle;
+  final String? category;
+  final String? activityLabel;
+  final int? keyCode;
+  final String? keyLabel;
+  final String? mouseButton;
+  final int wheelDelta;
+  final int deltaX;
+  final int deltaY;
+  final int moveDistance;
+  final String? tokenText;
+
+  const _ServerInputEvent({
+    required this.uid,
+    required this.sequenceId,
+    required this.timestamp,
+    required this.kind,
+    required this.eventCount,
+    required this.isIgnored,
+    this.processName,
+    this.className,
+    this.windowTitle,
+    this.category,
+    this.activityLabel,
+    this.keyCode,
+    this.keyLabel,
+    this.mouseButton,
+    required this.wheelDelta,
+    required this.deltaX,
+    required this.deltaY,
+    required this.moveDistance,
+    this.tokenText,
+  });
+}
+
+class _InputEventTile extends StatelessWidget {
+  final _ServerInputEvent event;
+
+  const _InputEventTile({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = event.activityLabel?.trim().isNotEmpty == true
+        ? event.activityLabel!.trim()
+        : (event.windowTitle?.trim().isNotEmpty == true
+            ? event.windowTitle!.trim()
+            : (event.processName?.trim().isNotEmpty == true
+                ? event.processName!.trim()
+                : '未命名事件'));
+
+    final subtitle = <String>[
       if (event.category != null && event.category!.trim().isNotEmpty)
         event.category!.trim(),
       if (event.processName != null && event.processName!.trim().isNotEmpty)
         event.processName!.trim(),
       if (event.isIgnored) '自排除',
-    ];
-    final detailLines = <String>[
-      if (event.windowTitle != null && event.windowTitle!.trim().isNotEmpty)
-        '窗口标题：${event.windowTitle!.trim()}',
-      if (event.className != null && event.className!.trim().isNotEmpty)
-        '窗口类名：${event.className!.trim()}',
-      if (event.recordId != null) '关联记录：#${event.recordId}',
-      if (event.keyCode != null) '键值代码：${event.keyCode}',
+    ].join(' · ');
+
+    final details = <String>[
+      if (event.keyCode != null) '键码：${event.keyCode}',
       if (event.keyLabel != null && event.keyLabel!.trim().isNotEmpty)
-        '按键名称：${event.keyLabel!.trim()}',
+        '按键：${event.keyLabel!.trim()}',
       if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty)
-        '鼠标按钮：${inputMouseButtonLabel(event.mouseButton!.trim())}',
+        '鼠标按钮：${event.mouseButton!.trim()}',
       if (event.wheelDelta != 0) '滚轮增量：${event.wheelDelta}',
       if (event.deltaX != 0 || event.deltaY != 0)
-        '位移向量：(${event.deltaX}, ${event.deltaY})',
+        '位移：(${event.deltaX}, ${event.deltaY})',
       if (event.moveDistance > 0) '移动距离：${event.moveDistance}px',
-      if (event.tokenText != null && event.tokenText!.isNotEmpty)
-        '输入字符：${describeInputToken(event.tokenText)}',
-      '事件标识：${event.eventUid}',
+      if (event.tokenText != null && event.tokenText!.trim().isNotEmpty)
+        '输入字符：${event.tokenText!.trim()}',
+      '序号：${event.sequenceId}',
     ];
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
         ),
@@ -647,40 +564,39 @@ class _TrackedInputEventTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 110,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _formatTime(event.timestamp),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '#${event.sequenceId}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
+                width: 80,
+                child: Text(
+                  _formatTime(event.timestamp),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              _InputKindBadge(
-                label: _kindLabel(event.kind),
-                color: _kindColor(event),
-              ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
+              _KindBadge(kind: event.kind),
+              const SizedBox(width: 6),
+              if (event.eventCount > 1) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '×${event.eventCount}',
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               Expanded(
                 child: Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -689,115 +605,149 @@ class _TrackedInputEventTile extends StatelessWidget {
               ),
             ],
           ),
-          if (subtitleParts.isNotEmpty) ...[
-            const SizedBox(height: 6),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
             Text(
-              subtitleParts.join(' · '),
+              subtitle,
               style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (event.windowTitle != null && event.windowTitle!.trim().isNotEmpty)
-                _buildTag('窗口已记录'),
-              if (event.tokenText != null && event.tokenText!.isNotEmpty)
-                _buildTag('字符输入'),
-              if (event.recordId != null) _buildTag('已关联活动记录'),
-              if (event.moveDistance > 0) _buildTag('${event.moveDistance}px'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: const EdgeInsets.only(bottom: 4),
-              title: const Text(
-                '查看事件详情',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              children: [
-                for (final line in detailLines)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: SelectableText(
-                        line,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: details
+                  .map(
+                    (label) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        label,
+                        style: const TextStyle(fontSize: 11),
                       ),
                     ),
-                  ),
-              ],
+                  )
+                  .toList(),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _InputKindBadge extends StatelessWidget {
-  const _InputKindBadge({
-    required this.label,
-    required this.color,
-  });
+class _KindBadge extends StatelessWidget {
+  final TrackedInputEventKind kind;
 
-  final String label;
-  final Color color;
+  const _KindBadge({required this.kind});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: _color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        label,
+        _kindLabel(kind),
         style: TextStyle(
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.w700,
-          color: color,
+          color: _color,
         ),
       ),
     );
   }
+
+  Color get _color {
+    switch (kind) {
+      case TrackedInputEventKind.keyDown:
+      case TrackedInputEventKind.keyUp:
+        return const Color(0xFF6B5EE4);
+      case TrackedInputEventKind.mouseButtonDown:
+      case TrackedInputEventKind.mouseButtonUp:
+      case TrackedInputEventKind.mouseButton:
+        return const Color(0xFF0EA8A0);
+      case TrackedInputEventKind.mouseWheel:
+        return const Color(0xFFF5935A);
+      case TrackedInputEventKind.mouseMove:
+        return const Color(0xFFE05A7A);
+    }
+  }
 }
 
-Color _kindColor(TrackedInputEvent event) {
-  if (event.isIgnored) {
-    return const Color(0xFFF5935A);
-  }
-  switch (event.kind) {
-    case TrackedInputEventKind.keyDown:
-      return const Color(0xFF6B5EE4);
-    case TrackedInputEventKind.keyUp:
-      return const Color(0xFF8579EE);
-    case TrackedInputEventKind.mouseButtonDown:
-      return const Color(0xFF0EA8A0);
-    case TrackedInputEventKind.mouseButtonUp:
-      return const Color(0xFF44BFB8);
-    case TrackedInputEventKind.mouseButton:
-      return const Color(0xFF0EA8A0);
-    case TrackedInputEventKind.mouseWheel:
-      return const Color(0xFFE05A7A);
-    case TrackedInputEventKind.mouseMove:
-      return const Color(0xFF4C8BF5);
+_ServerInputEvent? _eventFromServerItem(Map<String, Object?> item) {
+  final payload = _asMap(item['payload']);
+  final timestamp = _dateValue(
+    payload['timestamp'] ?? payload['occurredAt'] ?? item['occurredAt'],
+  );
+  if (timestamp == null) return null;
+
+  final uid = _stringValue(
+        payload['eventUid'] ?? payload['event_uid'] ?? item['serverId'],
+      ) ??
+      timestamp.toIso8601String();
+
+  final kindStr =
+      _stringValue(payload['eventKind'] ?? payload['kind']) ?? 'key_down';
+
+  return _ServerInputEvent(
+    uid: uid,
+    sequenceId: _intValue(payload['sequenceId'] ?? payload['sequence_id'],
+        fallback: _stablePositiveId(uid)),
+    timestamp: timestamp,
+    kind: _parseKind(kindStr),
+    eventCount: _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
+    isIgnored: payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
+    processName: _stringValue(payload['processName'] ?? payload['process_name']),
+    className: _stringValue(payload['className']),
+    windowTitle: _stringValue(payload['windowTitle'] ?? payload['window_title']),
+    category: _stringValue(payload['category']),
+    activityLabel: _stringValue(payload['activityLabel']),
+    keyCode: _intOrNull(payload['keyCode']),
+    keyLabel: _stringValue(payload['keyLabel']),
+    mouseButton: _stringValue(payload['mouseButton']),
+    wheelDelta: _intValue(payload['wheelDelta']),
+    deltaX: _intValue(payload['deltaX']),
+    deltaY: _intValue(payload['deltaY']),
+    moveDistance: _intValue(payload['moveDistance'] ?? payload['move_distance']),
+    tokenText: _stringValue(payload['tokenText']),
+  );
+}
+
+TrackedInputEventKind _parseKind(String value) {
+  switch (value) {
+    case 'key_down':
+      return TrackedInputEventKind.keyDown;
+    case 'key_up':
+      return TrackedInputEventKind.keyUp;
+    case 'mouse_button_down':
+      return TrackedInputEventKind.mouseButtonDown;
+    case 'mouse_button_up':
+      return TrackedInputEventKind.mouseButtonUp;
+    case 'mouse_button':
+      return TrackedInputEventKind.mouseButton;
+    case 'mouse_wheel':
+      return TrackedInputEventKind.mouseWheel;
+    case 'mouse_move':
+      return TrackedInputEventKind.mouseMove;
+    default:
+      return TrackedInputEventKind.keyDown;
   }
 }
 
 String _kindLabel(TrackedInputEventKind kind) {
   switch (kind) {
     case TrackedInputEventKind.keyDown:
-      return '按键';
+      return '按键按下';
     case TrackedInputEventKind.keyUp:
       return '按键抬起';
     case TrackedInputEventKind.mouseButtonDown:
@@ -805,7 +755,7 @@ String _kindLabel(TrackedInputEventKind kind) {
     case TrackedInputEventKind.mouseButtonUp:
       return '鼠标抬起';
     case TrackedInputEventKind.mouseButton:
-      return '鼠标按钮';
+      return '鼠标按键';
     case TrackedInputEventKind.mouseWheel:
       return '滚轮';
     case TrackedInputEventKind.mouseMove:
@@ -813,121 +763,57 @@ String _kindLabel(TrackedInputEventKind kind) {
   }
 }
 
-String _eventTitle(TrackedInputEvent event) {
-  switch (event.kind) {
-    case TrackedInputEventKind.keyDown:
-      final token = describeInputToken(event.tokenText);
-      if (token.isNotEmpty) {
-        return '按键 $token';
-      }
-      if (event.keyLabel != null && event.keyLabel!.trim().isNotEmpty) {
-        return '按键 ${event.keyLabel!.trim()}';
-      }
-      if (event.keyCode != null) {
-        return '按键 VK_${event.keyCode}';
-      }
-      return '按键事件';
-    case TrackedInputEventKind.keyUp:
-      final token = describeInputToken(event.tokenText);
-      if (token.isNotEmpty) {
-        return '按键抬起 $token';
-      }
-      if (event.keyLabel != null && event.keyLabel!.trim().isNotEmpty) {
-        return '按键抬起 ${event.keyLabel!.trim()}';
-      }
-      if (event.keyCode != null) {
-        return '按键抬起 VK_${event.keyCode}';
-      }
-      return '按键抬起事件';
-    case TrackedInputEventKind.mouseButtonDown:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '鼠标按下${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '鼠标按下事件';
-    case TrackedInputEventKind.mouseButtonUp:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '鼠标抬起${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '鼠标抬起事件';
-    case TrackedInputEventKind.mouseButton:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '鼠标${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '鼠标按钮事件';
-    case TrackedInputEventKind.mouseWheel:
-      if (event.mouseButton != null && event.mouseButton!.trim().isNotEmpty) {
-        return '滚轮 ${inputMouseButtonLabel(event.mouseButton!.trim())}';
-      }
-      return '滚轮 ${event.wheelDelta}';
-    case TrackedInputEventKind.mouseMove:
-      if (event.moveDistance > 0) {
-        return '鼠标移动 ${event.moveDistance}px';
-      }
-      return '鼠标移动';
-  }
-}
-
-bool _matchesEvent(
-  TrackedInputEvent event, {
-  required String searchQuery,
-  required TrackedInputEventKind? selectedKind,
-  required bool includeIgnored,
-}) {
-  if (!includeIgnored && event.isIgnored) {
-    return false;
-  }
-
-  if (selectedKind != null && event.kind != selectedKind) {
-    return false;
-  }
-
-  final target = <String>[
-    event.sequenceId.toString(),
-    _eventTitle(event),
-    if (event.keyLabel != null) event.keyLabel!,
-    if (event.tokenText != null) describeInputToken(event.tokenText),
-    if (event.processName != null) event.processName!,
-    if (event.windowTitle != null) event.windowTitle!,
-    if (event.className != null) event.className!,
-    if (event.category != null) event.category!,
-    if (event.activityLabel != null) event.activityLabel!,
-    if (event.mouseButton != null) inputMouseButtonLabel(event.mouseButton!),
-  ].join(' ');
-
-  return _matchesSearchText(target, searchQuery);
-}
-
-bool _matchesSearchText(String target, String query) {
-  final normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.isEmpty) {
-    return true;
-  }
-
-  final normalizedTarget = target.toLowerCase();
-  final tokens = normalizedQuery
-      .split(RegExp(r'\s+'))
-      .where((token) => token.isNotEmpty)
+List<Map<String, Object?>> _serverItems(Map<String, dynamic> response) {
+  final items = response['items'];
+  if (items is! List) return const <Map<String, Object?>>[];
+  return items
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
       .toList(growable: false);
-
-  if (tokens.isEmpty) {
-    return true;
-  }
-
-  return tokens.every(normalizedTarget.contains);
 }
 
-Widget _buildTag(String label) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: AppColors.primary.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      label,
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-    ),
-  );
+Map<String, Object?> _asMap(Object? value) {
+  if (value is Map<String, dynamic>) return Map<String, Object?>.from(value);
+  if (value is Map) return Map<String, Object?>.from(value);
+  return const <String, Object?>{};
+}
+
+DateTime? _dateValue(Object? value) {
+  if (value is DateTime) return value;
+  if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+  return null;
+}
+
+String? _stringValue(Object? value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+int _intValue(Object? value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) {
+    final parsed = num.tryParse(value);
+    if (parsed != null) return parsed.round();
+  }
+  return fallback;
+}
+
+int? _intOrNull(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) return num.tryParse(value)?.round();
+  return null;
+}
+
+int _stablePositiveId(String value) {
+  var hash = 0;
+  for (final unit in value.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
+  }
+  return hash == 0 ? 1 : hash;
 }
 
 String _formatDate(DateTime date) {
@@ -942,14 +828,4 @@ String _formatTime(DateTime dateTime) {
   final minute = dateTime.minute.toString().padLeft(2, '0');
   final second = dateTime.second.toString().padLeft(2, '0');
   return '$hour:$minute:$second';
-}
-
-String _formatFileSize(int bytes) {
-  if (bytes < 1024) {
-    return '$bytes B';
-  }
-  if (bytes < 1024 * 1024) {
-    return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  }
-  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }

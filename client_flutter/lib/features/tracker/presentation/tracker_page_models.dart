@@ -5,10 +5,8 @@ enum _TrackerMenuAction {
   viewDayDetails,
   viewLogHistory,
   viewInputHistory,
-  exportInputEvents,
   exportDatabase,
   openDatabaseFolder,
-  openLogArchiveFolder,
 }
 
 enum _TaskBindingSheetAction {
