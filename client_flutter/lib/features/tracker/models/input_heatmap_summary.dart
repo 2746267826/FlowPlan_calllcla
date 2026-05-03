@@ -107,7 +107,20 @@ class InputHeatmapSummary {
       mouseCounts: const <String, int>{},
       topKeys: const <InputKeyStat>[],
       processIntensities: const <InputProcessIntensity>[],
-      hourlyDistribution: const <InputHourDistributionBucket>[],
+      hourlyDistribution: List<InputHourDistributionBucket>.generate(
+        24,
+        (hour) => InputHourDistributionBucket(
+          hour: hour,
+          totalEvents: 0,
+          keyEvents: 0,
+          mouseButtonEvents: 0,
+          wheelEvents: 0,
+          mouseMoveEvents: 0,
+          moveDistance: 0,
+          activeMinutes: 0,
+          intensityScore: 0,
+        ),
+      ),
     );
   }
 

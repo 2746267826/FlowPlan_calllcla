@@ -110,6 +110,11 @@ class TrackingUploadService {
       if (rejectedRecords == 0) {
         await _database.deleteSetting(lastErrorKey);
       }
+    }
+
+    final diagnostics = await _buildUploadDiagnostics();
+
+    if (uploadedBatches > 0) {
       await _operationLogs.record(
         actor: 'system',
         action: 'tracking_upload_completed',
@@ -119,6 +124,7 @@ class TrackingUploadService {
           'uploadedBatches': uploadedBatches,
           'uploadedRecords': uploadedRecords,
           'rejectedRecords': rejectedRecords,
+          'diagnostics': diagnostics,
           'details': details,
         },
       );
@@ -128,6 +134,7 @@ class TrackingUploadService {
       uploadedBatches: uploadedBatches,
       uploadedRecords: uploadedRecords,
       details: <Map<String, Object?>>[
+        <String, Object?>{'summary': 'diagnostics', ...diagnostics},
         if (rejectedRecords > 0)
           <String, Object?>{'summary': 'rejectedRecords', 'count': rejectedRecords},
         ...details,
@@ -182,11 +189,27 @@ class TrackingUploadService {
       );
     }
     final rejected = _readInt(completed['rejected']) ?? 0;
+    final accepted = _readInt(completed['accepted']) ?? 0;
     if (rejected > 0) {
       await _database.setSetting(
         lastErrorKey,
         'Tracking ingest completed with $rejected rejected '
         '${export.dataKind} records.',
+      );
+      throw StateError(
+        'Tracking ingest rejected $rejected ${export.dataKind} records; '
+        'local upload cursor was preserved for retry.',
+      );
+    }
+    if (accepted < export.records.length) {
+      await _database.setSetting(
+        lastErrorKey,
+        'Tracking ingest accepted $accepted/${export.records.length} '
+        '${export.dataKind} records.',
+      );
+      throw StateError(
+        'Tracking ingest accepted only $accepted/${export.records.length} '
+        '${export.dataKind} records; local upload cursor was preserved.',
       );
     }
     await _database.setSetting(export.lastIdKey, export.maxId.toString());
@@ -203,6 +226,7 @@ class TrackingUploadService {
 
   Future<void> _recordUploadError(String dataKind, Object error) async {
     await _database.setSetting(lastErrorKey, error.toString());
+    final diagnostics = await _buildUploadDiagnostics();
     await _operationLogs.record(
       actor: 'system',
       action: 'tracking_upload_failed',
@@ -211,6 +235,7 @@ class TrackingUploadService {
       metadata: <String, Object?>{
         'dataKind': dataKind,
         'error': error.toString(),
+        'diagnostics': diagnostics,
       },
     );
   }
@@ -283,6 +308,32 @@ class TrackingUploadService {
     return int.tryParse(value ?? '') ?? 0;
   }
 
+  Future<Map<String, Object?>> _buildUploadDiagnostics() async {
+    final lastActivityRecordId = await _readLastId(_lastActivityRecordIdKey);
+    final lastInputEventId = await _readLastId(_lastInputEventIdKey);
+    final lastRawLogId = await _readLastId(_lastRawLogIdKey);
+    Future<int> pendingCount(String table, int lastId) async {
+      final row = await _database.customSelect(
+        'SELECT COUNT(*) AS count FROM $table WHERE id > ?',
+        variables: [Variable<int>(lastId)],
+      ).getSingleOrNull();
+      return row?.read<int?>('count') ?? 0;
+    }
+
+    return <String, Object?>{
+      'lastActivityRecordId': lastActivityRecordId,
+      'lastInputEventId': lastInputEventId,
+      'lastRawLogId': lastRawLogId,
+      'pendingActivityRecords':
+          await pendingCount('activity_records', lastActivityRecordId),
+      'pendingInputEvents':
+          await pendingCount('tracked_input_events', lastInputEventId),
+      'pendingRawLogs': await pendingCount('raw_activity_logs', lastRawLogId),
+      'lastCompletedAt': await _database.getSetting(lastCompletedAtKey),
+      'lastError': await _database.getSetting(lastErrorKey),
+    };
+  }
+
   Map<String, dynamic> _activityRecordToPayload(QueryRow row) {
     final data = row.data;
     final id = _readInt(data['id']) ?? 0;
@@ -331,15 +382,27 @@ class TrackingUploadService {
       'kind': 'tracked_input_event',
       'objectType': 'tracked_input_event',
       'localId': id.toString(),
+      'eventUid': sourceUid,
       if (occurredAt != null) 'timestamp': _utcIso(occurredAt),
       if (occurredAt != null) 'occurredAt': _utcIso(occurredAt),
       'eventKind': data['event_kind'],
+      'sequenceId': data['sequence_id'],
+      'recordId': data['record_id'],
       'processName': data['process_name'],
       'className': data['class_name'],
       'windowTitle': data['window_title'],
       'category': data['category'],
       'activityLabel': data['activity_label'],
       'isIgnored': _readBool(data['is_ignored']),
+      'keyCode': data['key_code'],
+      'keyLabel': data['key_label'],
+      'mouseButton': data['mouse_button'],
+      'wheelDelta': data['wheel_delta'],
+      'deltaX': data['delta_x'],
+      'deltaY': data['delta_y'],
+      'moveDistance': data['move_distance'],
+      'eventCount': data['event_count'],
+      'tokenText': data['token_text'],
       'metadata': <String, Object?>{
         'sequenceId': data['sequence_id'],
         'recordId': data['record_id'],

@@ -243,7 +243,7 @@ export class AnalyticsService {
         date_trunc($4, occurred_at) AS bucket_start,
         COALESCE(SUM(event_count), 0)::int AS event_count,
         COALESCE(SUM(CASE WHEN event_kind = 'key_down' THEN event_count ELSE 0 END), 0)::int AS keyboard_event_count,
-        COALESCE(SUM(CASE WHEN event_kind = 'mouse_button' THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
+        COALESCE(SUM(CASE WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
         COALESCE(SUM(CASE WHEN event_kind = 'mouse_wheel' THEN event_count ELSE 0 END), 0)::int AS wheel_event_count,
         COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0)::int AS mouse_move_event_count,
         COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance ELSE 0 END), 0)::int AS mouse_move_distance
@@ -285,7 +285,7 @@ export class AnalyticsService {
         mouse_events AS (
           SELECT
             CASE
-              WHEN event_kind = 'mouse_button' THEN COALESCE(NULLIF(mouse_button, ''), 'button')
+              WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN COALESCE(NULLIF(mouse_button, ''), 'button')
               WHEN event_kind = 'mouse_wheel' AND wheel_delta > 0 THEN 'wheel_up'
               WHEN event_kind = 'mouse_wheel' AND wheel_delta < 0 THEN 'wheel_down'
               WHEN event_kind = 'mouse_wheel' THEN 'wheel'
@@ -315,14 +315,14 @@ export class AnalyticsService {
           COALESCE(NULLIF(process_name, ''), 'unknown') AS process_name,
           COALESCE(SUM(event_count), 0)::int AS event_count,
           COALESCE(SUM(CASE WHEN event_kind = 'key_down' THEN event_count ELSE 0 END), 0)::int AS keyboard_event_count,
-          COALESCE(SUM(CASE WHEN event_kind = 'mouse_button' THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
+          COALESCE(SUM(CASE WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
           COALESCE(SUM(CASE WHEN event_kind = 'mouse_wheel' THEN event_count ELSE 0 END), 0)::int AS wheel_event_count,
           COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0)::int AS mouse_move_event_count,
           COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance ELSE 0 END), 0)::int AS mouse_move_distance,
           COUNT(DISTINCT date_trunc('minute', occurred_at))::int AS active_minutes,
           (
             COALESCE(SUM(CASE WHEN event_kind = 'key_down' THEN event_count ELSE 0 END), 0) +
-            COALESCE(SUM(CASE WHEN event_kind = 'mouse_button' THEN event_count * 4 ELSE 0 END), 0) +
+            COALESCE(SUM(CASE WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN event_count * 4 ELSE 0 END), 0) +
             COALESCE(SUM(CASE WHEN event_kind = 'mouse_wheel' THEN event_count * 2 ELSE 0 END), 0) +
             COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0) +
             COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance / 200 ELSE 0 END), 0)

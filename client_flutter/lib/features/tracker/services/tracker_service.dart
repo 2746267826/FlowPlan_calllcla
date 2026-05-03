@@ -117,18 +117,24 @@ class TrackerState {
 @Riverpod(keepAlive: true)
 class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   Timer? _timer;
+  Timer? _inputEventTimer;
   final WindowSensor _sensor = const WindowSensor();
   final ActivityClassifier _classifier = ActivityClassifier();
   final DeviceIdentityService _deviceIdentityService = DeviceIdentityService();
   final TrackerPlatformSource _platform = TrackerPlatformSource.current();
   final Duration _sampleInterval = const Duration(seconds: 5);
+  final Duration _inputEventPollInterval = const Duration(seconds: 1);
   InputTelemetry? _telemetryBaseline;
   InputTelemetry _activeTelemetry = InputTelemetry.empty();
   bool _sampleInFlight = false;
+  bool _inputEventPollInFlight = false;
 
   @override
   TrackerState build() {
-    ref.onDispose(() => _timer?.cancel());
+    ref.onDispose(() {
+      _timer?.cancel();
+      _inputEventTimer?.cancel();
+    });
     ref.listen<bool>(sequenceRecordingProvider, (previous, next) {
       if (_platform.supportsSequenceRecording) {
         unawaited(rawInputService.setSequenceRecording(next));
@@ -163,14 +169,20 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     state = state.copyWith(isRunning: true);
     unawaited(rawInputService.start());
     unawaited(_sample());
+    unawaited(_pollInputEvents());
     _timer = Timer.periodic(_sampleInterval, (_) {
       unawaited(_sample());
+    });
+    _inputEventTimer = Timer.periodic(_inputEventPollInterval, (_) {
+      unawaited(_pollInputEvents());
     });
   }
 
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _inputEventTimer?.cancel();
+    _inputEventTimer = null;
     if (_platform.supportsInputAnalytics) {
       unawaited(rawInputService.stop());
     }
@@ -271,6 +283,49 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       );
     } finally {
       _sampleInFlight = false;
+    }
+  }
+
+  Future<void> _pollInputEvents() async {
+    if (!_platform.supportsInputAnalytics || _inputEventPollInFlight) {
+      return;
+    }
+    _inputEventPollInFlight = true;
+    try {
+      final events = await rawInputService.getPendingInputEvents(
+        maxEvents: 1000,
+      );
+      if (events.isEmpty) {
+        return;
+      }
+      final currentSnapshot = state.currentSnapshot;
+      await ref.read(inputActivityEventServiceProvider).appendEvents(
+        events: events,
+        bindings: <InputEventContextBinding>[
+          _buildInputBinding(
+            snapshot: currentSnapshot,
+            classification: state.currentClassification,
+            recordId: state.activeRecordId,
+            isIgnored:
+                currentSnapshot == null ? false : _isSelfExcluded(currentSnapshot),
+          ),
+        ],
+      );
+      var maxSequenceId = 0;
+      for (final event in events) {
+        if (event.sequenceId > maxSequenceId) {
+          maxSequenceId = event.sequenceId;
+        }
+      }
+      await rawInputService.ackInputEvents(maxSequenceId);
+      _notifyLogChanged();
+    } catch (error) {
+      state = state.copyWith(
+        lastSampleAt: DateTime.now(),
+        lastError: error.toString(),
+      );
+    } finally {
+      _inputEventPollInFlight = false;
     }
   }
 

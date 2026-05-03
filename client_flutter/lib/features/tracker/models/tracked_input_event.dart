@@ -2,6 +2,9 @@ import '../services/raw_input_service.dart';
 
 enum TrackedInputEventKind {
   keyDown,
+  keyUp,
+  mouseButtonDown,
+  mouseButtonUp,
   mouseButton,
   mouseWheel,
   mouseMove,
@@ -12,6 +15,12 @@ extension TrackedInputEventKindValue on TrackedInputEventKind {
     switch (this) {
       case TrackedInputEventKind.keyDown:
         return 'key_down';
+      case TrackedInputEventKind.keyUp:
+        return 'key_up';
+      case TrackedInputEventKind.mouseButtonDown:
+        return 'mouse_button_down';
+      case TrackedInputEventKind.mouseButtonUp:
+        return 'mouse_button_up';
       case TrackedInputEventKind.mouseButton:
         return 'mouse_button';
       case TrackedInputEventKind.mouseWheel:
@@ -23,6 +32,12 @@ extension TrackedInputEventKindValue on TrackedInputEventKind {
 
   static TrackedInputEventKind fromValue(String value) {
     switch (value) {
+      case 'key_up':
+        return TrackedInputEventKind.keyUp;
+      case 'mouse_button_down':
+        return TrackedInputEventKind.mouseButtonDown;
+      case 'mouse_button_up':
+        return TrackedInputEventKind.mouseButtonUp;
       case 'mouse_button':
         return TrackedInputEventKind.mouseButton;
       case 'mouse_wheel':
@@ -272,6 +287,12 @@ TrackedInputEventKind trackedInputEventKindFromRaw(RawInputEventKind kind) {
   switch (kind) {
     case RawInputEventKind.keyDown:
       return TrackedInputEventKind.keyDown;
+    case RawInputEventKind.keyUp:
+      return TrackedInputEventKind.keyUp;
+    case RawInputEventKind.mouseButtonDown:
+      return TrackedInputEventKind.mouseButtonDown;
+    case RawInputEventKind.mouseButtonUp:
+      return TrackedInputEventKind.mouseButtonUp;
     case RawInputEventKind.mouseButton:
       return TrackedInputEventKind.mouseButton;
     case RawInputEventKind.mouseWheel:

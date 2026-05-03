@@ -579,29 +579,31 @@ ActivityHeatmapSeries _activityHeatmapSeriesFromServer(
   required DateTime anchorDate,
   required ActivityHistorySummary historySummary,
 }) {
-  final buckets = <ActivityHeatmapBucket>[];
+  final completedByBucket = <String, int>{};
+  final minutesByBucket = <String, int>{};
   for (final row in _serverBuckets(response)) {
     final start = _dateValue(row['bucketStart']);
     if (start == null) {
       continue;
     }
-    final end = switch (scale) {
-      ActivityHeatmapScale.hour => start.add(const Duration(hours: 1)),
-      ActivityHeatmapScale.day => start.add(const Duration(days: 1)),
-      ActivityHeatmapScale.month => DateTime(start.year, start.month + 1),
-      ActivityHeatmapScale.year => DateTime(start.year, start.month + 1),
-    };
-    buckets.add(
-      ActivityHeatmapBucket(
-        start: start,
-        end: end,
-        shortLabel: _bucketShortLabel(scale, start),
-        longLabel: _bucketLongLabel(scale, start),
-        completedCount: _intValue(row['recordCount']),
-        totalMinutes: _intValue(row['totalMinutes']),
-      ),
-    );
+    final key = _activityBucketKey(scale, start);
+    completedByBucket[key] =
+        (completedByBucket[key] ?? 0) + _intValue(row['recordCount']);
+    minutesByBucket[key] =
+        (minutesByBucket[key] ?? 0) + _intValue(row['totalMinutes']);
   }
+  final buckets = _activityHeatmapSkeletonBuckets(scale, anchorDate)
+      .map((bucket) {
+    final key = _activityBucketKey(scale, bucket.start);
+    return ActivityHeatmapBucket(
+      start: bucket.start,
+      end: bucket.end,
+      shortLabel: bucket.shortLabel,
+      longLabel: bucket.longLabel,
+      completedCount: completedByBucket[key] ?? 0,
+      totalMinutes: minutesByBucket[key] ?? 0,
+    );
+  }).toList(growable: false);
   return ActivityHeatmapSeries(
     scale: scale,
     anchorDate: anchorDate,
@@ -614,6 +616,77 @@ ActivityHeatmapSeries _activityHeatmapSeriesFromServer(
     ),
     historySummary: historySummary,
   );
+}
+
+List<ActivityHeatmapBucket> _activityHeatmapSkeletonBuckets(
+  ActivityHeatmapScale scale,
+  DateTime anchorDate,
+) {
+  final buckets = <ActivityHeatmapBucket>[];
+  switch (scale) {
+    case ActivityHeatmapScale.hour:
+      final start = DateTime(anchorDate.year, anchorDate.month, anchorDate.day);
+      for (var hour = 0; hour < 24; hour++) {
+        final bucketStart = DateTime(start.year, start.month, start.day, hour);
+        buckets.add(
+          ActivityHeatmapBucket(
+            start: bucketStart,
+            end: bucketStart.add(const Duration(hours: 1)),
+            shortLabel: _bucketShortLabel(scale, bucketStart),
+            longLabel: _bucketLongLabel(scale, bucketStart),
+            completedCount: 0,
+            totalMinutes: 0,
+          ),
+        );
+      }
+      break;
+    case ActivityHeatmapScale.day:
+      final monthStart = DateTime(anchorDate.year, anchorDate.month);
+      final daysInMonth =
+          DateTime(anchorDate.year, anchorDate.month + 1).difference(monthStart).inDays;
+      for (var day = 1; day <= daysInMonth; day++) {
+        final bucketStart = DateTime(anchorDate.year, anchorDate.month, day);
+        buckets.add(
+          ActivityHeatmapBucket(
+            start: bucketStart,
+            end: bucketStart.add(const Duration(days: 1)),
+            shortLabel: _bucketShortLabel(scale, bucketStart),
+            longLabel: _bucketLongLabel(scale, bucketStart),
+            completedCount: 0,
+            totalMinutes: 0,
+          ),
+        );
+      }
+      break;
+    case ActivityHeatmapScale.month:
+    case ActivityHeatmapScale.year:
+      for (var month = 1; month <= 12; month++) {
+        final bucketStart = DateTime(anchorDate.year, month);
+        buckets.add(
+          ActivityHeatmapBucket(
+            start: bucketStart,
+            end: DateTime(anchorDate.year, month + 1),
+            shortLabel: _bucketShortLabel(scale, bucketStart),
+            longLabel: _bucketLongLabel(scale, bucketStart),
+            completedCount: 0,
+            totalMinutes: 0,
+          ),
+        );
+      }
+      break;
+  }
+  return buckets;
+}
+
+String _activityBucketKey(ActivityHeatmapScale scale, DateTime start) {
+  final local = start.toLocal();
+  return switch (scale) {
+    ActivityHeatmapScale.hour =>
+      '${local.year}-${local.month}-${local.day}-${local.hour}',
+    ActivityHeatmapScale.day => '${local.year}-${local.month}-${local.day}',
+    ActivityHeatmapScale.month => '${local.year}-${local.month}',
+    ActivityHeatmapScale.year => '${local.year}-${local.month}',
+  };
 }
 
 List<ActivityRecord> _activityRecordsFromServer(Map<String, dynamic> response) {
@@ -681,20 +754,23 @@ InputHeatmapSummary _inputHeatmapSummaryFromServer(
   var mouseMove = 0;
   var distance = 0;
   final activeHours = <String>{};
-  final byHour = <int, _InputHourCounter>{};
+  final byHour = <int, _InputHourCounter>{
+    for (var hour = 0; hour < 24; hour++) hour: _InputHourCounter(hour),
+  };
   for (final row in _serverBuckets(response)) {
     final start = _dateValue(row['bucketStart']);
-    final hour = start?.toLocal().hour ?? 0;
-    final counter = byHour.putIfAbsent(hour, () => _InputHourCounter(hour));
+    if (start == null) {
+      continue;
+    }
+    final hour = start.toLocal().hour;
+    final counter = byHour[hour]!;
     counter.totalEvents += _intValue(row['eventCount']);
     counter.keyEvents += _intValue(row['keyboardEventCount']);
     counter.mouseButtonEvents += _intValue(row['mouseButtonEventCount']);
     counter.wheelEvents += _intValue(row['wheelEventCount']);
     counter.mouseMoveEvents += _intValue(row['mouseMoveEventCount']);
     counter.moveDistance += _intValue(row['mouseMoveDistance']);
-    if (start != null) {
-      activeHours.add(start.toIso8601String());
-    }
+    activeHours.add(start.toIso8601String());
     total += _intValue(row['eventCount']);
     keyboard += _intValue(row['keyboardEventCount']);
     mouseButton += _intValue(row['mouseButtonEventCount']);
@@ -819,14 +895,20 @@ List<TrackedInputEvent> _trackedInputEventsFromServer(
           payload['timestamp'] ?? payload['occurredAt'] ?? item['occurredAt'],
         ) ??
         DateTime.fromMillisecondsSinceEpoch(0);
-    final uid = _stringValue(item['serverId']) ?? timestamp.toIso8601String();
+    final uid = _stringValue(
+          payload['eventUid'] ?? payload['event_uid'] ?? item['serverId'],
+        ) ??
+        timestamp.toIso8601String();
     events.add(
       TrackedInputEvent(
         eventUid: uid,
-        sequenceId: _stablePositiveId(uid),
+        sequenceId: _intValue(
+          payload['sequenceId'] ?? payload['sequence_id'],
+          fallback: _stablePositiveId(uid),
+        ),
         timestamp: timestamp,
         kind: TrackedInputEventKindValue.fromValue(
-          _stringValue(payload['kind'] ?? payload['eventKind']) ?? 'key_down',
+          _stringValue(payload['eventKind'] ?? payload['kind']) ?? 'key_down',
         ),
         eventCount: _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
         recordId: _intOrNull(payload['recordId']),

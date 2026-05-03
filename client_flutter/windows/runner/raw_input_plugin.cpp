@@ -1,5 +1,6 @@
 #include "raw_input_plugin.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -27,6 +28,40 @@ bool SameWindowContext(const InputWindowContext& left,
   return left.process_name == right.process_name &&
          left.class_name == right.class_name &&
          left.window_title == right.window_title;
+}
+
+int ReadIntArgument(const flutter::EncodableValue* arguments,
+                    const char* key,
+                    int fallback) {
+  if (const auto* args = std::get_if<flutter::EncodableMap>(arguments)) {
+    auto it = args->find(flutter::EncodableValue(key));
+    if (it != args->end()) {
+      if (const auto* value = std::get_if<int>(&it->second)) {
+        return *value;
+      }
+      if (const auto* value = std::get_if<int64_t>(&it->second)) {
+        return static_cast<int>(*value);
+      }
+    }
+  }
+  return fallback;
+}
+
+uint64_t ReadUint64Argument(const flutter::EncodableValue* arguments,
+                            const char* key,
+                            uint64_t fallback) {
+  if (const auto* args = std::get_if<flutter::EncodableMap>(arguments)) {
+    auto it = args->find(flutter::EncodableValue(key));
+    if (it != args->end()) {
+      if (const auto* value = std::get_if<int>(&it->second)) {
+        return *value < 0 ? fallback : static_cast<uint64_t>(*value);
+      }
+      if (const auto* value = std::get_if<int64_t>(&it->second)) {
+        return *value < 0 ? fallback : static_cast<uint64_t>(*value);
+      }
+    }
+  }
+  return fallback;
 }
 }  // namespace
 
@@ -92,13 +127,14 @@ void RawInputPlugin::AppendInputEvent(InputEventData event) {
   input_events_.push_back(std::move(event));
 }
 
-flutter::EncodableList RawInputPlugin::ConsumeInputEvents() {
-  FlushBufferedMouseMove();
-
+flutter::EncodableList RawInputPlugin::ReadInputEvents(int max_events) const {
   std::vector<InputEventData> snapshot;
   {
     std::lock_guard<std::mutex> lock(input_event_mutex_);
-    snapshot.swap(input_events_);
+    const int normalized_max = max_events <= 0 ? 1000 : max_events;
+    const auto count = std::min(static_cast<size_t>(normalized_max),
+                                input_events_.size());
+    snapshot.assign(input_events_.begin(), input_events_.begin() + count);
   }
 
   flutter::EncodableList events;
@@ -148,6 +184,19 @@ flutter::EncodableList RawInputPlugin::ConsumeInputEvents() {
   }
 
   return events;
+}
+
+void RawInputPlugin::AckInputEvents(uint64_t through_sequence_id) {
+  if (through_sequence_id == 0) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(input_event_mutex_);
+  input_events_.erase(
+      std::remove_if(input_events_.begin(), input_events_.end(),
+                     [through_sequence_id](const InputEventData& event) {
+                       return event.sequence_id <= through_sequence_id;
+                     }),
+      input_events_.end());
 }
 
 void RawInputPlugin::BufferMouseMove(int delta_x, int delta_y, int move_distance,
@@ -238,7 +287,6 @@ void RawInputPlugin::HandleMethodCall(
     StopBackgroundThread();
     result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "getStats") {
-    FlushBufferedMouseMove();
     flutter::EncodableMap stats;
     stats[flutter::EncodableValue("keyCount")] =
         flutter::EncodableValue(key_count_.load());
@@ -258,14 +306,26 @@ void RawInputPlugin::HandleMethodCall(
         flutter::EncodableValue(scroll_px_.load());
     stats[flutter::EncodableValue("keySequence")] =
         flutter::EncodableValue(ConsumeSequenceBuffer());
-    stats[flutter::EncodableValue("inputEvents")] =
-        flutter::EncodableValue(ConsumeInputEvents());
+    {
+      std::lock_guard<std::mutex> lock(input_event_mutex_);
+      stats[flutter::EncodableValue("pendingInputEventCount")] =
+          flutter::EncodableValue(static_cast<int64_t>(input_events_.size()));
+    }
     const std::string last_error = GetLastErrorMessage();
     if (!last_error.empty()) {
       stats[flutter::EncodableValue("lastError")] =
           flutter::EncodableValue(last_error);
     }
     result->Success(flutter::EncodableValue(stats));
+  } else if (method_call.method_name() == "getPendingInputEvents") {
+    const int max_events =
+        ReadIntArgument(method_call.arguments(), "maxEvents", 1000);
+    result->Success(flutter::EncodableValue(ReadInputEvents(max_events)));
+  } else if (method_call.method_name() == "ackInputEvents") {
+    const uint64_t through_sequence_id = ReadUint64Argument(
+        method_call.arguments(), "throughSequenceId", 0);
+    AckInputEvents(through_sequence_id);
+    result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "setSequenceRecording") {
     bool enabled = false;
     if (const auto* args =
@@ -293,17 +353,12 @@ void RawInputPlugin::HandleMethodCall(
     mouse_xbutton2_click_count_ = 0;
     scroll_px_ = 0;
     mouse_move_px_ = 0;
-    input_event_sequence_ = 0;
     for (auto& count : key_counts_) {
       count = 0;
     }
     {
       std::lock_guard<std::mutex> lock(sequence_mutex_);
       sequence_buffer_.clear();
-    }
-    {
-      std::lock_guard<std::mutex> lock(input_event_mutex_);
-      input_events_.clear();
     }
     ClearBufferedMouseMove();
     result->Success(flutter::EncodableValue(true));
@@ -529,18 +584,20 @@ std::string RawInputPlugin::WideToUtf8(const std::wstring& value) {
   return utf8;
 }
 
-void RawInputPlugin::RecordKeyStroke(const RAWKEYBOARD& keyboard) {
-  FlushBufferedMouseMove();
-
+void RawInputPlugin::RecordKeyEvent(const RAWKEYBOARD& keyboard,
+                                    bool is_key_down) {
   const int vkey = static_cast<int>(keyboard.VKey);
   if (vkey < 0 || vkey >= 256) {
     return;
   }
 
-  key_counts_[vkey]++;
-  key_count_++;
+  if (is_key_down) {
+    key_counts_[vkey]++;
+    key_count_++;
+  }
 
-  const std::string token = DescribeKeyStroke(keyboard);
+  const std::string token =
+      is_key_down ? DescribeKeyStroke(keyboard) : std::string();
   if (!token.empty()) {
     AppendSequenceToken(token);
   }
@@ -549,7 +606,7 @@ void RawInputPlugin::RecordKeyStroke(const RAWKEYBOARD& keyboard) {
   InputEventData event;
   event.sequence_id = ++input_event_sequence_;
   event.timestamp_micros = CurrentTimestampMicros();
-  event.kind = "key_down";
+  event.kind = is_key_down ? "key_down" : "key_up";
   event.key_code = vkey;
   event.has_key_code = true;
   event.token_text = token;
@@ -595,7 +652,10 @@ LRESULT CALLBACK RawInputPlugin::RawInputWndProc(HWND hwnd, UINT msg, WPARAM wp,
   if (raw->header.dwType == RIM_TYPEKEYBOARD) {
     if (raw->data.keyboard.Message == WM_KEYDOWN ||
         raw->data.keyboard.Message == WM_SYSKEYDOWN) {
-      instance_->RecordKeyStroke(raw->data.keyboard);
+      instance_->RecordKeyEvent(raw->data.keyboard, true);
+    } else if (raw->data.keyboard.Message == WM_KEYUP ||
+               raw->data.keyboard.Message == WM_SYSKEYUP) {
+      instance_->RecordKeyEvent(raw->data.keyboard, false);
     }
   } else if (raw->header.dwType == RIM_TYPEMOUSE) {
     auto& mouse = raw->data.mouse;
@@ -619,45 +679,56 @@ LRESULT CALLBACK RawInputPlugin::RawInputWndProc(HWND hwnd, UINT msg, WPARAM wp,
       instance_->AppendInputEvent(std::move(event));
     };
 
-    if (mouse.usFlags == MOUSE_MOVE_RELATIVE &&
-        (mouse.lLastX != 0 || mouse.lLastY != 0)) {
+    if (mouse.lLastX != 0 || mouse.lLastY != 0) {
       const int64_t dx = static_cast<int64_t>(mouse.lLastX);
       const int64_t dy = static_cast<int64_t>(mouse.lLastY);
-      const int64_t dist = static_cast<int64_t>(
-          std::sqrt(static_cast<double>(dx * dx + dy * dy)));
+      const bool is_relative = (mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0;
+      const int64_t dist =
+          is_relative
+              ? static_cast<int64_t>(
+                    std::sqrt(static_cast<double>(dx * dx + dy * dy)))
+              : 0;
       instance_->mouse_move_px_ += dist;
-      instance_->BufferMouseMove(static_cast<int>(dx), static_cast<int>(dy),
-                                 static_cast<int>(dist), context,
-                                 CurrentTimestampMicros());
+      append_mouse_event("mouse_move", "", 0, static_cast<int>(dx),
+                         static_cast<int>(dy), static_cast<int>(dist));
     }
 
     if (mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-      instance_->FlushBufferedMouseMove();
       instance_->mouse_left_click_count_++;
-      append_mouse_event("mouse_button", "left", 0, 0, 0, 0);
+      append_mouse_event("mouse_button_down", "left", 0, 0, 0, 0);
+    }
+    if (mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
+      append_mouse_event("mouse_button_up", "left", 0, 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
-      instance_->FlushBufferedMouseMove();
       instance_->mouse_right_click_count_++;
-      append_mouse_event("mouse_button", "right", 0, 0, 0, 0);
+      append_mouse_event("mouse_button_down", "right", 0, 0, 0, 0);
+    }
+    if (mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
+      append_mouse_event("mouse_button_up", "right", 0, 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
-      instance_->FlushBufferedMouseMove();
       instance_->mouse_middle_click_count_++;
-      append_mouse_event("mouse_button", "middle", 0, 0, 0, 0);
+      append_mouse_event("mouse_button_down", "middle", 0, 0, 0, 0);
+    }
+    if (mouse.usButtonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
+      append_mouse_event("mouse_button_up", "middle", 0, 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_BUTTON_4_DOWN) {
-      instance_->FlushBufferedMouseMove();
       instance_->mouse_xbutton1_click_count_++;
-      append_mouse_event("mouse_button", "x1", 0, 0, 0, 0);
+      append_mouse_event("mouse_button_down", "x1", 0, 0, 0, 0);
+    }
+    if (mouse.usButtonFlags & RI_MOUSE_BUTTON_4_UP) {
+      append_mouse_event("mouse_button_up", "x1", 0, 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_BUTTON_5_DOWN) {
-      instance_->FlushBufferedMouseMove();
       instance_->mouse_xbutton2_click_count_++;
-      append_mouse_event("mouse_button", "x2", 0, 0, 0, 0);
+      append_mouse_event("mouse_button_down", "x2", 0, 0, 0, 0);
+    }
+    if (mouse.usButtonFlags & RI_MOUSE_BUTTON_5_UP) {
+      append_mouse_event("mouse_button_up", "x2", 0, 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_WHEEL) {
-      instance_->FlushBufferedMouseMove();
       const SHORT wheel_delta = static_cast<SHORT>(mouse.usButtonData);
       instance_->scroll_px_ += std::abs(static_cast<int>(wheel_delta));
       append_mouse_event("mouse_wheel",
@@ -665,7 +736,6 @@ LRESULT CALLBACK RawInputPlugin::RawInputWndProc(HWND hwnd, UINT msg, WPARAM wp,
                          static_cast<int>(wheel_delta), 0, 0, 0);
     }
     if (mouse.usButtonFlags & RI_MOUSE_HWHEEL) {
-      instance_->FlushBufferedMouseMove();
       const SHORT wheel_delta = static_cast<SHORT>(mouse.usButtonData);
       instance_->scroll_px_ += std::abs(static_cast<int>(wheel_delta));
       append_mouse_event("mouse_wheel",

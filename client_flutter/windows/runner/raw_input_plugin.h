@@ -65,13 +65,14 @@ class RawInputPlugin : public flutter::Plugin {
   void StopBackgroundThread();
   static LRESULT CALLBACK RawInputWndProc(HWND hwnd, UINT msg, WPARAM wp,
                                           LPARAM lp);
-  void RecordKeyStroke(const RAWKEYBOARD& keyboard);
+  void RecordKeyEvent(const RAWKEYBOARD& keyboard, bool is_key_down);
   void AppendSequenceToken(const std::string& token);
   std::string ConsumeSequenceBuffer();
   flutter::EncodableMap BuildKeyDistribution() const;
   flutter::EncodableMap BuildMouseClicks() const;
   void AppendInputEvent(InputEventData event);
-  flutter::EncodableList ConsumeInputEvents();
+  flutter::EncodableList ReadInputEvents(int max_events) const;
+  void AckInputEvents(uint64_t through_sequence_id);
   void BufferMouseMove(int delta_x, int delta_y, int move_distance,
                        const InputWindowContext& context,
                        int64_t timestamp_micros);
@@ -98,7 +99,7 @@ class RawInputPlugin : public flutter::Plugin {
 
   std::thread bg_thread_;
   std::atomic<bool> running_{false};
-  std::atomic<bool> enable_sequence_record_{false};
+  std::atomic<bool> enable_sequence_record_{true};
   HWND bg_hwnd_{nullptr};
 
   mutable std::mutex sequence_mutex_;

@@ -83,6 +83,9 @@ class MouseClicks {
 
 enum RawInputEventKind {
   keyDown,
+  keyUp,
+  mouseButtonDown,
+  mouseButtonUp,
   mouseButton,
   mouseWheel,
   mouseMove,
@@ -93,6 +96,12 @@ extension RawInputEventKindValue on RawInputEventKind {
     switch (this) {
       case RawInputEventKind.keyDown:
         return 'key_down';
+      case RawInputEventKind.keyUp:
+        return 'key_up';
+      case RawInputEventKind.mouseButtonDown:
+        return 'mouse_button_down';
+      case RawInputEventKind.mouseButtonUp:
+        return 'mouse_button_up';
       case RawInputEventKind.mouseButton:
         return 'mouse_button';
       case RawInputEventKind.mouseWheel:
@@ -104,6 +113,12 @@ extension RawInputEventKindValue on RawInputEventKind {
 
   static RawInputEventKind fromValue(String value) {
     switch (value) {
+      case 'key_up':
+        return RawInputEventKind.keyUp;
+      case 'mouse_button_down':
+        return RawInputEventKind.mouseButtonDown;
+      case 'mouse_button_up':
+        return RawInputEventKind.mouseButtonUp;
       case 'mouse_button':
         return RawInputEventKind.mouseButton;
       case 'mouse_wheel':
@@ -328,6 +343,7 @@ class RawInputService {
     if (!Platform.isWindows || _started) return;
     try {
       await _channel.invokeMethod('start');
+      await _channel.invokeMethod('setSequenceRecording', {'enabled': true});
       _started = true;
       _lastError = null;
     } catch (error) {
@@ -347,10 +363,10 @@ class RawInputService {
     }
   }
 
-  Future<void> setSequenceRecording(bool enabled) async {
+  Future<void> setSequenceRecording(bool _) async {
     if (!Platform.isWindows) return;
     try {
-      await _channel.invokeMethod('setSequenceRecording', {'enabled': enabled});
+      await _channel.invokeMethod('setSequenceRecording', {'enabled': true});
       _lastError = null;
     } catch (error) {
       _lastError = error.toString();
@@ -395,6 +411,41 @@ class RawInputService {
     } catch (error) {
       _lastError = error.toString();
       return null;
+    }
+  }
+
+  Future<List<RawInputEvent>> getPendingInputEvents({
+    int maxEvents = 1000,
+  }) async {
+    if (!Platform.isWindows) return const <RawInputEvent>[];
+    try {
+      final result = await _channel.invokeMethod<List>(
+        'getPendingInputEvents',
+        {'maxEvents': maxEvents},
+      );
+      _lastError = null;
+      final rawEvents = result ?? const <dynamic>[];
+      return rawEvents
+          .whereType<Map>()
+          .map((item) => RawInputEvent.fromMap(item))
+          .toList(growable: false);
+    } catch (error) {
+      _lastError = error.toString();
+      rethrow;
+    }
+  }
+
+  Future<void> ackInputEvents(int throughSequenceId) async {
+    if (!Platform.isWindows || throughSequenceId <= 0) return;
+    try {
+      await _channel.invokeMethod(
+        'ackInputEvents',
+        {'throughSequenceId': throughSequenceId},
+      );
+      _lastError = null;
+    } catch (error) {
+      _lastError = error.toString();
+      rethrow;
     }
   }
 

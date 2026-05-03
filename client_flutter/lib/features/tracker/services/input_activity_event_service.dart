@@ -518,7 +518,7 @@ class InputActivityEventService {
         COALESCE(SUM($eventCount), 0) AS total_event_count,
         COUNT(DISTINCT substr($occurredAt, 1, 16)) AS active_minute_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'key_down' THEN $eventCount ELSE 0 END), 0) AS keyboard_event_count,
-        COALESCE(SUM(CASE WHEN $eventKind = 'mouse_button' THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
+        COALESCE(SUM(CASE WHEN $eventKind IN ('mouse_button', 'mouse_button_down') THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_wheel' THEN $eventCount ELSE 0 END), 0) AS wheel_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $eventCount ELSE 0 END), 0) AS mouse_move_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $moveDistance ELSE 0 END), 0) AS mouse_move_distance,
@@ -581,7 +581,7 @@ class InputActivityEventService {
       $fromAndWhereSql
       ${hasWhereClause ? 'AND' : 'WHERE'} $mouseButton IS NOT NULL
         AND TRIM($mouseButton) != ''
-        AND $eventKind IN ('mouse_button', 'mouse_wheel')
+        AND $eventKind IN ('mouse_button', 'mouse_button_down', 'mouse_wheel')
       GROUP BY $mouseButton
       ORDER BY button_event_count DESC, mouse_button ASC
       ''',
@@ -596,7 +596,7 @@ class InputActivityEventService {
         $normalizedProcessName AS process_name,
         COALESCE(SUM($eventCount), 0) AS total_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'key_down' THEN $eventCount ELSE 0 END), 0) AS key_event_count,
-        COALESCE(SUM(CASE WHEN $eventKind = 'mouse_button' THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
+        COALESCE(SUM(CASE WHEN $eventKind IN ('mouse_button', 'mouse_button_down') THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_wheel' THEN $eventCount ELSE 0 END), 0) AS wheel_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $eventCount ELSE 0 END), 0) AS mouse_move_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $moveDistance ELSE 0 END), 0) AS move_distance,
@@ -614,7 +614,7 @@ class InputActivityEventService {
         CAST(substr($occurredAt, 12, 2) AS INTEGER) AS hour_bucket,
         COALESCE(SUM($eventCount), 0) AS total_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'key_down' THEN $eventCount ELSE 0 END), 0) AS key_event_count,
-        COALESCE(SUM(CASE WHEN $eventKind = 'mouse_button' THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
+        COALESCE(SUM(CASE WHEN $eventKind IN ('mouse_button', 'mouse_button_down') THEN $eventCount ELSE 0 END), 0) AS mouse_button_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_wheel' THEN $eventCount ELSE 0 END), 0) AS wheel_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $eventCount ELSE 0 END), 0) AS mouse_move_event_count,
         COALESCE(SUM(CASE WHEN $eventKind = 'mouse_move' THEN $moveDistance ELSE 0 END), 0) AS move_distance,
