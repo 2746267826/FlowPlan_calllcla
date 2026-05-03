@@ -245,7 +245,23 @@ export class SyncService {
         d.client_device_id AS "clientDeviceId",
         d.last_seen_at AS "lastSeenAt",
         COALESCE(c.cursor_value, 0)::text AS "pullCursor",
-        c.updated_at AS "cursorUpdatedAt"
+        c.updated_at AS "cursorUpdatedAt",
+        COALESCE((
+          SELECT MAX(sc.id)
+          FROM sync_changes sc
+          WHERE sc.user_id = d.user_id
+            AND (sc.device_id IS NULL OR sc.device_id <> d.id)
+        ), 0)::text AS "latestChangeId",
+        COALESCE((
+          SELECT COUNT(*)
+          FROM sync_changes sc
+          INNER JOIN sync_objects so ON so.id = sc.server_object_id
+          WHERE sc.user_id = d.user_id
+            AND sc.id > COALESCE(c.cursor_value, 0)
+            AND (sc.device_id IS NULL OR sc.device_id <> d.id)
+            AND sc.object_type IN ('calendar_book', 'calendar_event')
+            AND so.payload->>'source' = 'outlook'
+        ), 0)::int AS "pendingOutlookChanges"
       FROM devices d
       LEFT JOIN sync_cursors c
         ON c.user_id = d.user_id AND c.device_id = d.id
@@ -254,8 +270,22 @@ export class SyncService {
       `,
       [userId],
     );
+    const outlookObjects = await this.database.query(
+      `
+      SELECT object_type AS "objectType", COUNT(*)::int AS count
+      FROM sync_objects
+      WHERE user_id = $1
+        AND object_type IN ('calendar_book', 'calendar_event')
+        AND deleted_at IS NULL
+        AND payload->>'source' = 'outlook'
+      GROUP BY object_type
+      ORDER BY object_type
+      `,
+      [userId],
+    );
     return {
       devices: result.rows,
+      outlookObjects: outlookObjects.rows,
     };
   }
 

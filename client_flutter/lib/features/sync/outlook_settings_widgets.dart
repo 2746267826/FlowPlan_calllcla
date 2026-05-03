@@ -433,6 +433,7 @@ class _OutlookRunLogTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final metadata = _map(run['metadata']);
     final fieldStats = _map(metadata['fieldStats']);
+    final replay = _map(metadata['replay']);
     final samples = _listOfMaps(metadata['graphEventSamples']);
     final fallbackSamples = _listOfMaps(metadata['recurrenceFallbackSamples']);
     final calendars = _listOfMaps(metadata['calendars']);
@@ -479,6 +480,13 @@ class _OutlookRunLogTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               '重复日程补全：已补 ${fieldStats['recurrenceFallbacks'] ?? 0}，master 查找失败 ${fieldStats['masterLookupFailures'] ?? 0}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '下发重放：日历本 ${replay['calendarBooks'] ?? 0}，日程 ${replay['calendarEvents'] ?? 0}，变更 ${replay['changes'] ?? 0}',
               style: const TextStyle(fontSize: 12),
             ),
           ),

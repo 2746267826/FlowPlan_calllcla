@@ -520,6 +520,9 @@ export class DevicesService {
     const result = await this.database.query<{
       latestChangeCursor: string;
       clientPullCursor: string;
+      pendingOutlookChanges: string;
+      outlookCalendarBooks: string;
+      outlookCalendarEvents: string;
     }>(
       `
       SELECT
@@ -534,19 +537,56 @@ export class DevicesService {
           FROM sync_cursors
           WHERE user_id = $1 AND device_id = $2
           LIMIT 1
-        ), 0)::text AS "clientPullCursor"
+        ), 0)::text AS "clientPullCursor",
+        COALESCE((
+          SELECT COUNT(*)
+          FROM sync_changes c
+          INNER JOIN sync_objects o ON o.id = c.server_object_id
+          WHERE c.user_id = $1
+            AND c.id > COALESCE((
+              SELECT cursor_value
+              FROM sync_cursors
+              WHERE user_id = $1 AND device_id = $2
+              LIMIT 1
+            ), 0)
+            AND (c.device_id IS NULL OR c.device_id <> $2)
+            AND c.object_type IN ('calendar_book', 'calendar_event')
+            AND o.payload->>'source' = 'outlook'
+        ), 0)::text AS "pendingOutlookChanges",
+        COALESCE((
+          SELECT COUNT(*)
+          FROM sync_objects
+          WHERE user_id = $1
+            AND object_type = 'calendar_book'
+            AND deleted_at IS NULL
+            AND payload->>'source' = 'outlook'
+        ), 0)::text AS "outlookCalendarBooks",
+        COALESCE((
+          SELECT COUNT(*)
+          FROM sync_objects
+          WHERE user_id = $1
+            AND object_type = 'calendar_event'
+            AND deleted_at IS NULL
+            AND payload->>'source' = 'outlook'
+        ), 0)::text AS "outlookCalendarEvents"
       `,
       [userId, deviceId],
     );
     const row = result.rows[0] ?? {
       latestChangeCursor: '0',
       clientPullCursor: '0',
+      pendingOutlookChanges: '0',
+      outlookCalendarBooks: '0',
+      outlookCalendarEvents: '0',
     };
     const latest = Number.parseInt(row.latestChangeCursor, 10);
     const cursor = Number.parseInt(row.clientPullCursor, 10);
     return {
       latestChangeCursor: row.latestChangeCursor,
       clientPullCursor: row.clientPullCursor,
+      pendingOutlookChanges: Number(row.pendingOutlookChanges ?? 0),
+      outlookCalendarBooks: Number(row.outlookCalendarBooks ?? 0),
+      outlookCalendarEvents: Number(row.outlookCalendarEvents ?? 0),
       hasServerChanges:
         Number.isFinite(latest) && Number.isFinite(cursor) && latest > cursor,
     };

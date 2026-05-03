@@ -98,6 +98,11 @@ class ClientBootstrapService extends ChangeNotifier {
           'source': source,
           'settingsVersion': remoteSettings.version,
           'pulledChanges': (pull['changes'] as List?)?.length ?? 0,
+          'appliedChanges': pull['appliedChanges'] ?? 0,
+          'skippedChanges': pull['skippedChanges'] ?? 0,
+          'failedChanges': pull['failedChanges'] ?? 0,
+          'perType': pull['perType'] ?? const <String, Object?>{},
+          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
           'accepted': push.acceptedCount,
           'conflicts': push.conflictCount,
           'rejected': push.rejectedCount,
@@ -126,6 +131,11 @@ class ClientBootstrapService extends ChangeNotifier {
           'pushed': push.processedCount,
           'pulledChanges':
               (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+          'appliedChanges': pull['appliedChanges'] ?? 0,
+          'skippedChanges': pull['skippedChanges'] ?? 0,
+          'failedChanges': pull['failedChanges'] ?? 0,
+          'perType': pull['perType'] ?? const <String, Object?>{},
+          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
           'trackingUpload': trackingUpload,
         },
       );
@@ -211,6 +221,11 @@ class ClientBootstrapService extends ChangeNotifier {
           'conflicts': push.conflictCount,
           'rejected': push.rejectedCount,
           'pulledChanges': (pull['changes'] as List?)?.length ?? 0,
+          'appliedChanges': pull['appliedChanges'] ?? 0,
+          'skippedChanges': pull['skippedChanges'] ?? 0,
+          'failedChanges': pull['failedChanges'] ?? 0,
+          'perType': pull['perType'] ?? const <String, Object?>{},
+          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
           'trackingUpload': trackingUpload,
         },
       );
@@ -233,6 +248,11 @@ class ClientBootstrapService extends ChangeNotifier {
           'pushed': push.processedCount,
           'pulledChanges':
               (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+          'appliedChanges': pull['appliedChanges'] ?? 0,
+          'skippedChanges': pull['skippedChanges'] ?? 0,
+          'failedChanges': pull['failedChanges'] ?? 0,
+          'perType': pull['perType'] ?? const <String, Object?>{},
+          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
           'trackingUpload': trackingUpload,
         },
       );

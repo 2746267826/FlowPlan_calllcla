@@ -29,6 +29,9 @@ class ServerSyncMvpSummary {
     required this.pendingObjects,
     required this.failedObjects,
     required this.conflictObjects,
+    required this.outlookCalendarBooks,
+    required this.outlookCalendarEvents,
+    required this.outlookOrphanEvents,
     required this.recentMutations,
     this.lastPushAt,
     this.lastPullAt,
@@ -42,6 +45,9 @@ class ServerSyncMvpSummary {
   final int pendingObjects;
   final int failedObjects;
   final int conflictObjects;
+  final int outlookCalendarBooks;
+  final int outlookCalendarEvents;
+  final int outlookOrphanEvents;
   final DateTime? lastPushAt;
   final DateTime? lastPullAt;
   final List<LocalMutationDiagnostic> recentMutations;
@@ -78,6 +84,14 @@ class ServerSyncMvpSummary {
       LIMIT 30
       ''',
     ).get();
+    final outlookCounts = await database.customSelect(
+      '''
+      SELECT
+        (SELECT COUNT(*) FROM event_calendars WHERE source = 'outlook') AS calendar_books,
+        (SELECT COUNT(*) FROM calendar_events WHERE source = 'outlook') AS calendar_events,
+        (SELECT COUNT(*) FROM calendar_events WHERE source = 'outlook' AND event_calendar_id IS NULL) AS orphan_events
+      ''',
+    ).getSingle();
 
     return ServerSyncMvpSummary(
       waitingMutations: _readInt(mutationCounts, 'waiting'),
@@ -88,6 +102,9 @@ class ServerSyncMvpSummary {
       pendingObjects: _readInt(stateCounts, 'pending'),
       failedObjects: _readInt(stateCounts, 'failed'),
       conflictObjects: _readInt(stateCounts, 'conflict'),
+      outlookCalendarBooks: _readInt(outlookCounts, 'calendar_books'),
+      outlookCalendarEvents: _readInt(outlookCounts, 'calendar_events'),
+      outlookOrphanEvents: _readInt(outlookCounts, 'orphan_events'),
       lastPushAt: await cursorStore.readLastPushAt(),
       lastPullAt: await cursorStore.readLastPullAt(),
       recentMutations: recentRows
@@ -666,6 +683,24 @@ class _SummaryGrid extends StatelessWidget {
           icon: Icons.download_outlined,
           color: Colors.blueGrey,
         ),
+        _MetricCard(
+          label: 'Outlook日历本',
+          value: summary.outlookCalendarBooks,
+          icon: Icons.calendar_month_outlined,
+          color: Colors.indigo,
+        ),
+        _MetricCard(
+          label: 'Outlook日程',
+          value: summary.outlookCalendarEvents,
+          icon: Icons.event_available_outlined,
+          color: Colors.teal,
+        ),
+        _MetricCard(
+          label: '未绑定日程',
+          value: summary.outlookOrphanEvents,
+          icon: Icons.link_off_outlined,
+          color: summary.outlookOrphanEvents > 0 ? Colors.redAccent : Colors.green,
+        ),
       ],
     );
   }
@@ -900,6 +935,10 @@ String _syncSummaryText(Map<String, Object?> summary) {
   add('rejected', summary['rejected']);
   add('pushed', summary['pushed']);
   add('pulled', summary['pulledChanges']);
+  add('applied', summary['appliedChanges']);
+  add('skipped', summary['skippedChanges']);
+  add('failed', summary['failedChanges']);
+  add('orphans', summary['orphanCalendarEvents']);
   final tracking = summary['trackingUpload'];
   if (tracking != null) {
     parts.add('tracking $tracking');

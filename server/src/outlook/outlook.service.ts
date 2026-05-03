@@ -81,6 +81,9 @@ type SyncResult = {
   calendarCount: number;
   eventUpserts: number;
   eventDeletes: number;
+  replayedCalendarBooks?: number;
+  replayedCalendarEvents?: number;
+  replayedChanges?: number;
   startedAt: string;
   finishedAt: string;
   errorMessage?: string | null;
@@ -98,6 +101,12 @@ type OutlookRunDiagnostics = {
     upserts: number;
     deletes: number;
   }>;
+  replay: {
+    calendarBooks: number;
+    calendarEvents: number;
+    changes: number;
+    reason?: string;
+  };
   fieldStats: {
     totalEvents: number;
     removedEvents: number;
@@ -608,6 +617,55 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async replayCurrentOutlookObjects(userId: string, reason = 'manual_replay') {
+    return this.database.transaction(async (client) => {
+      const objects = await client.query<{
+        id: string;
+        object_type: string;
+        server_version: number;
+        payload: Record<string, unknown>;
+      }>(
+        `
+        SELECT id::text, object_type, server_version, payload
+        FROM sync_objects
+        WHERE user_id = $1
+          AND object_type IN ('calendar_book', 'calendar_event')
+          AND deleted_at IS NULL
+          AND payload->>'source' = 'outlook'
+        ORDER BY
+          CASE object_type WHEN 'calendar_book' THEN 0 ELSE 1 END,
+          updated_at ASC,
+          id ASC
+        `,
+        [userId],
+      );
+      let calendarBooks = 0;
+      let calendarEvents = 0;
+      for (const row of objects.rows) {
+        if (row.object_type === 'calendar_book') {
+          calendarBooks++;
+        } else if (row.object_type === 'calendar_event') {
+          calendarEvents++;
+        }
+        await this.recordChange(
+          client,
+          userId,
+          row.id,
+          row.object_type,
+          'upsert',
+          row.server_version,
+          row.payload,
+        );
+      }
+      return {
+        calendarBooks,
+        calendarEvents,
+        changes: objects.rows.length,
+        reason,
+      };
+    });
+  }
+
   private async runDueSyncs() {
     const due = await this.database.query<OutlookConnectionRow>(
       `
@@ -665,6 +723,11 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     let calendarCount = 0;
     let eventUpserts = 0;
     let eventDeletes = 0;
+    let replay = {
+      calendarBooks: 0,
+      calendarEvents: 0,
+      changes: 0,
+    };
     const diagnostics = this.createRunDiagnostics(triggerSource);
 
     try {
@@ -687,6 +750,16 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
             eventDeletes += delta.deletes;
           },
         );
+      }
+      if (triggerSource !== 'automatic') {
+        replay = await this.replayCurrentOutlookObjects(
+          userId,
+          `${triggerSource}_refresh`,
+        );
+        diagnostics.replay = {
+          ...replay,
+          reason: `${triggerSource}_refresh`,
+        };
       }
 
       await this.database.query(
@@ -726,6 +799,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         calendarCount,
         eventUpserts,
         eventDeletes,
+        replayedCalendarBooks: replay.calendarBooks,
+        replayedCalendarEvents: replay.calendarEvents,
+        replayedChanges: replay.changes,
         startedAt: startedAt.toISOString(),
         finishedAt: new Date().toISOString(),
         errorMessage: null,
@@ -907,6 +983,11 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       graphHttpMethods: ['GET'],
       triggerSource,
       calendars: [],
+      replay: {
+        calendarBooks: 0,
+        calendarEvents: 0,
+        changes: 0,
+      },
       fieldStats: {
         totalEvents: 0,
         removedEvents: 0,

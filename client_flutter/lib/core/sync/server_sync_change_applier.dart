@@ -39,6 +39,42 @@ class ServerSyncChange {
   }
 }
 
+class ServerSyncApplyResult {
+  const ServerSyncApplyResult({
+    required this.received,
+    required this.applied,
+    required this.skipped,
+    required this.failed,
+    required this.perType,
+    required this.appliedChangeIds,
+    required this.errors,
+    this.orphanCalendarEvents = 0,
+  });
+
+  final int received;
+  final int applied;
+  final int skipped;
+  final int failed;
+  final Map<String, int> perType;
+  final List<String> appliedChangeIds;
+  final List<String> errors;
+  final int orphanCalendarEvents;
+
+  bool get hasFailures => failed > 0;
+
+  Map<String, Object?> toSummary() {
+    return <String, Object?>{
+      'received': received,
+      'applied': applied,
+      'skipped': skipped,
+      'failed': failed,
+      'perType': perType,
+      'orphanCalendarEvents': orphanCalendarEvents,
+      if (errors.isNotEmpty) 'errors': errors.take(5).toList(growable: false),
+    };
+  }
+}
+
 class ServerSyncChangeApplier {
   ServerSyncChangeApplier(
     this._database,
@@ -52,28 +88,86 @@ class ServerSyncChangeApplier {
   final SyncObjectStateStore _stateStore;
   final SyncObjectRegistry _registry;
 
-  Future<List<String>> applyPullResponse(Map<String, dynamic> response) async {
+  Future<ServerSyncApplyResult> applyPullResponse(
+    Map<String, dynamic> response,
+  ) async {
     final rawChanges = response['changes'];
     if (rawChanges is! List) {
-      return const <String>[];
+      return const ServerSyncApplyResult(
+        received: 0,
+        applied: 0,
+        skipped: 0,
+        failed: 0,
+        perType: <String, int>{},
+        appliedChangeIds: <String>[],
+        errors: <String>[],
+      );
     }
 
     final applied = <String>[];
+    final errors = <String>[];
+    final changes = <ServerSyncChange>[];
+    final perType = <String, int>{};
+    var skipped = 0;
+    var failed = 0;
     for (final raw in rawChanges) {
       if (raw is! Map) {
+        skipped++;
         continue;
       }
       final change = ServerSyncChange.fromJson(Map<String, dynamic>.from(raw));
+      perType.update(change.objectType, (value) => value + 1, ifAbsent: () => 1);
       if (change.changeId.isEmpty ||
           change.objectType.isEmpty ||
-          change.serverId.isEmpty ||
-          !_registry.contains(change.objectType)) {
+          change.serverId.isEmpty) {
+        skipped++;
         continue;
       }
-      await applyChange(change);
-      applied.add(change.changeId);
+      if (!_registry.contains(change.objectType)) {
+        skipped++;
+        continue;
+      }
+      changes.add(change);
     }
-    return applied;
+    changes.sort((left, right) {
+      final priority = _changePriority(left).compareTo(_changePriority(right));
+      if (priority != 0) {
+        return priority;
+      }
+      return left.changeId.compareTo(right.changeId);
+    });
+
+    for (final change in changes) {
+      try {
+        await applyChange(change);
+        applied.add(change.changeId);
+      } catch (error) {
+        failed++;
+        errors.add('${change.objectType}:${change.changeId}: $error');
+      }
+    }
+    final repairedOrphans = await repairOutlookOrphanEvents();
+    return ServerSyncApplyResult(
+      received: rawChanges.length,
+      applied: applied.length,
+      skipped: skipped,
+      failed: failed,
+      perType: perType,
+      appliedChangeIds: applied,
+      errors: errors,
+      orphanCalendarEvents: repairedOrphans,
+    );
+  }
+
+  int _changePriority(ServerSyncChange change) {
+    switch (change.objectType) {
+      case 'calendar_book':
+        return 0;
+      case 'calendar_event':
+        return 1;
+      default:
+        return 2;
+    }
   }
 
   Future<void> applyChange(ServerSyncChange change) async {
@@ -304,7 +398,11 @@ class ServerSyncChangeApplier {
     String? currentLocalId,
   ) async {
     final payload = change.payload;
-    final id = int.tryParse(currentLocalId ?? '');
+    var id = int.tryParse(currentLocalId ?? '');
+    final remoteCalendarId = _calendarRemoteId(payload);
+    if (id == null && remoteCalendarId != null) {
+      id = await _findCalendarIdByRemoteId(remoteCalendarId);
+    }
     final companion = EventCalendarsCompanion(
       id: id == null ? const Value.absent() : Value(id),
       name: Value(_string(payload, 'name') ?? '未命名日历本'),
@@ -313,7 +411,7 @@ class ServerSyncChangeApplier {
       isVisible: Value(_bool(payload, 'isVisible', 'is_visible') ?? true),
       isDefault: Value(_bool(payload, 'isDefault', 'is_default') ?? false),
       source: Value(_string(payload, 'source') ?? 'server'),
-      syncUrl: Value(_string(payload, 'syncUrl', 'sync_url')),
+      syncUrl: Value(_string(payload, 'syncUrl', 'sync_url') ?? remoteCalendarId),
       createdAt: Value(_date(payload, 'createdAt', 'created_at') ?? DateTime.now()),
     );
     if (id == null) {
@@ -354,14 +452,11 @@ class ServerSyncChangeApplier {
   ) async {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
-    final eventCalendarId =
-        _int(payload, 'eventCalendarId', 'event_calendar_id') ??
-            await _findCalendarIdByRemoteId(
-              _string(payload, 'eventCalendarRemoteId', 'remoteCalendarId'),
-            );
+    final uid = change.uid ?? _string(payload, 'uid') ?? change.serverId;
+    final eventCalendarId = await _resolveEventCalendarId(payload, uid);
     final companion = CalendarEventsCompanion(
       id: id == null ? const Value.absent() : Value(id),
-      uid: Value(change.uid ?? _string(payload, 'uid') ?? change.serverId),
+      uid: Value(uid),
       dtstamp: Value(_date(payload, 'dtstamp') ?? DateTime.now()),
       summary: Value(
         _string(payload, 'summary', 'title', 'subject') ??
@@ -402,6 +497,97 @@ class ServerSyncChangeApplier {
       ..limit(1);
     final calendar = await query.getSingleOrNull();
     return calendar?.id;
+  }
+
+  Future<int> _resolveEventCalendarId(
+    Map<String, dynamic> payload,
+    String uid,
+  ) async {
+    final direct = _int(payload, 'eventCalendarId', 'event_calendar_id');
+    if (direct != null) {
+      return direct;
+    }
+    final remoteCalendarId =
+        _calendarRemoteId(payload) ?? _calendarIdFromOutlookEventUid(uid);
+    if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
+      throw StateError('Remote calendar event is missing calendar identity.');
+    }
+    final existing = await _findCalendarIdByRemoteId(remoteCalendarId);
+    if (existing != null) {
+      return existing;
+    }
+    return _createOutlookPlaceholderCalendar(
+      remoteCalendarId,
+      colorHex: _string(payload, 'colorHex', 'color_hex'),
+    );
+  }
+
+  Future<int> _createOutlookPlaceholderCalendar(
+    String remoteCalendarId, {
+    String? colorHex,
+  }) {
+    return _database.into(_database.eventCalendars).insert(
+          EventCalendarsCompanion.insert(
+            name: 'Outlook',
+            colorHex: Value(colorHex ?? '#2563eb'),
+            description:
+                const Value('Outlook calendar restored from server sync'),
+            isVisible: const Value(true),
+            isDefault: const Value(false),
+            source: const Value('outlook'),
+            syncUrl: Value(remoteCalendarId),
+            createdAt: DateTime.now(),
+          ),
+        );
+  }
+
+  Future<int> repairOutlookOrphanEvents() async {
+    final query = _database.select(_database.calendarEvents)
+      ..where(
+        (event) =>
+            event.source.equals('outlook') & event.eventCalendarId.isNull(),
+      );
+    final events = await query.get();
+    var repaired = 0;
+    for (final event in events) {
+      final remoteCalendarId = _calendarIdFromOutlookEventUid(event.uid);
+      if (remoteCalendarId == null || remoteCalendarId.trim().isEmpty) {
+        continue;
+      }
+      final calendarId = await _findCalendarIdByRemoteId(remoteCalendarId) ??
+          await _createOutlookPlaceholderCalendar(
+            remoteCalendarId,
+            colorHex: event.colorHex,
+          );
+      await (_database.update(_database.calendarEvents)
+            ..where((row) => row.id.equals(event.id)))
+          .write(CalendarEventsCompanion(eventCalendarId: Value(calendarId)));
+      repaired++;
+    }
+    return repaired;
+  }
+
+  String? _calendarRemoteId(Map<String, dynamic> payload) {
+    return _string(
+      payload,
+      'eventCalendarRemoteId',
+      'remoteCalendarId',
+      'calendarId',
+      'calendar_id',
+    );
+  }
+
+  String? _calendarIdFromOutlookEventUid(String uid) {
+    const prefix = 'outlook_event:';
+    if (!uid.startsWith(prefix)) {
+      return null;
+    }
+    final rest = uid.substring(prefix.length);
+    final separator = rest.indexOf(':');
+    if (separator <= 0) {
+      return null;
+    }
+    return rest.substring(0, separator);
   }
 
   Future<String> _upsertTaskItem(

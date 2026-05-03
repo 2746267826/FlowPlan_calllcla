@@ -35,6 +35,12 @@ class ServerSyncEngine {
     var cursor = await _cursorStore.readPullCursor();
     var pageCount = 0;
     var pulledChanges = 0;
+    var appliedChanges = 0;
+    var skippedChanges = 0;
+    var failedChanges = 0;
+    var repairedOrphanCalendarEvents = 0;
+    final perType = <String, int>{};
+    final applyErrors = <String>[];
     final allChanges = <Object?>[];
     Map<String, dynamic> latestResponse = const <String, dynamic>{};
 
@@ -52,11 +58,27 @@ class ServerSyncEngine {
       pulledChanges += changes.length;
       onProgress?.call(pulledChanges, pageCount);
 
+      final applyResult = await _changeApplier?.applyPullResponse(response);
+      if (applyResult != null) {
+        appliedChanges += applyResult.applied;
+        skippedChanges += applyResult.skipped;
+        failedChanges += applyResult.failed;
+        repairedOrphanCalendarEvents += applyResult.orphanCalendarEvents;
+        applyErrors.addAll(applyResult.errors);
+        for (final entry in applyResult.perType.entries) {
+          perType.update(entry.key, (value) => value + entry.value,
+              ifAbsent: () => entry.value);
+        }
+      }
+      if (applyResult?.hasFailures == true) {
+        throw StateError(
+          'Failed to apply server changes: ${applyResult!.errors.take(3).join('; ')}',
+        );
+      }
       final appliedChangeIds =
-          await _changeApplier?.applyPullResponse(response) ?? const <String>[];
+          applyResult?.appliedChangeIds ?? const <String>[];
       final nextCursor = response['nextCursor'] as String?;
       if (nextCursor != null && nextCursor.isNotEmpty) {
-        await _cursorStore.savePullCursor(nextCursor);
         await _apiClient.postJson(
           '/sync/ack',
           body: {
@@ -64,6 +86,7 @@ class ServerSyncEngine {
             'appliedChangeIds': appliedChangeIds,
           },
         );
+        await _cursorStore.savePullCursor(nextCursor);
       }
 
       if (changes.length < limit || nextCursor == null || nextCursor == cursor) {
@@ -73,11 +96,21 @@ class ServerSyncEngine {
     }
 
     await _cursorStore.markPulledAt(DateTime.now());
+    final finalOrphanRepair =
+        await _changeApplier?.repairOutlookOrphanEvents() ?? 0;
+    repairedOrphanCalendarEvents += finalOrphanRepair;
     return <String, dynamic>{
       ...latestResponse,
       'changes': allChanges,
       'pageCount': pageCount,
       'pulledChanges': pulledChanges,
+      'appliedChanges': appliedChanges,
+      'skippedChanges': skippedChanges,
+      'failedChanges': failedChanges,
+      'perType': perType,
+      'orphanCalendarEvents': repairedOrphanCalendarEvents,
+      if (applyErrors.isNotEmpty)
+        'applyErrors': applyErrors.take(5).toList(growable: false),
     };
   }
 }
