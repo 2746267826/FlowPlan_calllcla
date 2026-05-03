@@ -815,22 +815,54 @@ export class AnalyticsService {
     });
   }
 
+  private activityStartAtSql() {
+    return `
+      COALESCE(
+        CASE
+          WHEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+          THEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt')::timestamptz
+          ELSE NULL
+        END,
+        updated_at
+      )
+    `;
+  }
+
+  private activityEndAtSql() {
+    return `
+      CASE
+        WHEN COALESCE(payload->>'endTime', payload->>'end_time', payload->>'endedAt') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+        THEN COALESCE(payload->>'endTime', payload->>'end_time', payload->>'endedAt')::timestamptz
+        ELSE NULL
+      END
+    `;
+  }
+
+  private activityDurationMinutesSql() {
+    const durationMinutes =
+      "COALESCE(payload->>'durationMinutes', payload->>'duration_minutes')";
+    const durationSeconds =
+      "COALESCE(payload->>'durationSeconds', payload->>'duration_seconds')";
+    const startAt = this.activityStartAtSql();
+    const endAt = this.activityEndAtSql();
+    return `
+      CASE
+        WHEN ${durationMinutes} ~ '^-?\\d+(\\.\\d+)?$'
+        THEN ${durationMinutes}::numeric
+        WHEN ${durationSeconds} ~ '^-?\\d+(\\.\\d+)?$'
+        THEN ${durationSeconds}::numeric / 60
+        WHEN ${endAt} IS NOT NULL
+        THEN GREATEST(EXTRACT(EPOCH FROM (${endAt} - ${startAt})) / 60, 0)
+        ELSE 0
+      END
+    `;
+  }
+
   private activitySourceSql() {
     return `
       SELECT
-        COALESCE(
-          CASE
-            WHEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt') ~ '^\\d{4}-\\d{2}-\\d{2}T'
-            THEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt')::timestamptz
-            ELSE NULL
-          END,
-          updated_at
-        ) AS occurred_at,
-        CASE
-          WHEN COALESCE(payload->>'durationMinutes', payload->>'duration_minutes') ~ '^-?\\d+(\\.\\d+)?$'
-          THEN COALESCE(payload->>'durationMinutes', payload->>'duration_minutes')::numeric
-          ELSE 0
-        END AS duration_minutes,
+        ${this.activityStartAtSql()} AS occurred_at,
+        ${this.activityDurationMinutesSql()} AS duration_minutes,
         CASE
           WHEN COALESCE(payload->>'keyCount', payload->>'key_count') ~ '^-?\\d+$'
           THEN COALESCE(payload->>'keyCount', payload->>'key_count')::int
@@ -873,19 +905,8 @@ export class AnalyticsService {
         object_type,
         payload,
         updated_at,
-        COALESCE(
-          CASE
-            WHEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt') ~ '^\\d{4}-\\d{2}-\\d{2}T'
-            THEN COALESCE(payload->>'startTime', payload->>'start_time', payload->>'startedAt')::timestamptz
-            ELSE NULL
-          END,
-          updated_at
-        ) AS occurred_at,
-        CASE
-          WHEN COALESCE(payload->>'durationMinutes', payload->>'duration_minutes') ~ '^-?\\d+(\\.\\d+)?$'
-          THEN COALESCE(payload->>'durationMinutes', payload->>'duration_minutes')::numeric
-          ELSE 0
-        END AS duration_minutes,
+        ${this.activityStartAtSql()} AS occurred_at,
+        ${this.activityDurationMinutesSql()} AS duration_minutes,
         COALESCE(
           payload->>'processName',
           payload->>'process_name',
