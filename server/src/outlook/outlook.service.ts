@@ -626,16 +626,22 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         payload: Record<string, unknown>;
       }>(
         `
-        SELECT id::text, object_type, server_version, payload
-        FROM sync_objects
-        WHERE user_id = $1
-          AND object_type IN ('calendar_book', 'calendar_event')
-          AND deleted_at IS NULL
-          AND payload->>'source' = 'outlook'
+        SELECT o.id::text, o.object_type, o.server_version, o.payload
+        FROM sync_objects o
+        WHERE o.user_id = $1
+          AND o.object_type IN ('calendar_book', 'calendar_event')
+          AND o.deleted_at IS NULL
+          AND o.payload->>'source' = 'outlook'
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_changes c
+            WHERE c.server_object_id = o.id
+              AND c.server_version = o.server_version
+              AND c.device_id IS NULL
+          )
         ORDER BY
-          CASE object_type WHEN 'calendar_book' THEN 0 ELSE 1 END,
-          updated_at ASC,
-          id ASC
+          CASE o.object_type WHEN 'calendar_book' THEN 0 ELSE 1 END,
+          o.updated_at ASC,
+          o.id ASC
         `,
         [userId],
       );
@@ -751,16 +757,14 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           },
         );
       }
-      if (triggerSource !== 'automatic') {
-        replay = await this.replayCurrentOutlookObjects(
-          userId,
-          `${triggerSource}_refresh`,
-        );
-        diagnostics.replay = {
-          ...replay,
-          reason: `${triggerSource}_refresh`,
-        };
-      }
+      replay = await this.replayCurrentOutlookObjects(
+        userId,
+        `${triggerSource}_refresh`,
+      );
+      diagnostics.replay = {
+        ...replay,
+        reason: `${triggerSource}_refresh`,
+      };
 
       await this.database.query(
         `
