@@ -569,12 +569,12 @@ class ServerSyncChangeApplier {
 
   String? _calendarRemoteId(Map<String, dynamic> payload) {
     return _string(
-      payload,
-      'eventCalendarRemoteId',
-      'remoteCalendarId',
-      'calendarId',
-      'calendar_id',
-    );
+          payload,
+          'eventCalendarRemoteId',
+          'remoteCalendarId',
+          'calendarId',
+        ) ??
+        _string(payload, 'calendar_id');
   }
 
   String? _calendarIdFromOutlookEventUid(String uid) {
