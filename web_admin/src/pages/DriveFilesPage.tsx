@@ -68,9 +68,9 @@ export function DriveFilesPage(props: {
         maxNodes: values.maxNodes,
       });
       if (result.ok !== true) {
-        throw new Error(String(result.message ?? result.reason ?? 'Drive root save failed.'));
+        throw new Error(String(result.message ?? result.reason ?? '云盘根目录保存失败。'));
       }
-      messageApi.success('Drive root saved.');
+      messageApi.success('云盘根目录已保存。');
       form.resetFields(['name', 'rootUri', 'rootDisplayPath']);
       await load();
     } finally {
@@ -85,9 +85,9 @@ export function DriveFilesPage(props: {
       const maxNodes = readMaxNodes(root) ?? form.getFieldValue('maxNodes') ?? 5000;
       const result = await props.api.scanDriveRoot(rootId, { maxNodes });
       if (result.ok !== true) {
-        throw new Error(String(result.error ?? result.reason ?? 'Drive root scan failed.'));
+        throw new Error(String(result.error ?? result.reason ?? '云盘根目录扫描失败。'));
       }
-      messageApi.success(`Scan completed: ${String(result.scanned ?? result.applied ?? 0)} nodes.`);
+      messageApi.success(`扫描完成：${String(result.scanned ?? result.applied ?? 0)} 个节点。`);
       await load();
     } finally {
       setScanningRootId(null);
@@ -97,19 +97,19 @@ export function DriveFilesPage(props: {
   const columns = useMemo<ColumnsType<DriveRootRecord>>(
     () => [
       {
-        title: 'Name',
+        title: '名称',
         dataIndex: 'name',
         width: 220,
         ellipsis: true,
       },
       {
-        title: 'Server Path',
+        title: '服务器路径',
         dataIndex: 'rootUri',
         ellipsis: true,
         render: (value) => <Typography.Text copyable>{String(value ?? '')}</Typography.Text>,
       },
       {
-        title: 'Status',
+        title: '状态',
         dataIndex: 'scanStatus',
         width: 130,
         render: (value, row) => (
@@ -124,19 +124,19 @@ export function DriveFilesPage(props: {
         ),
       },
       {
-        title: 'Nodes',
+        title: '节点数',
         dataIndex: 'nodeCount',
         width: 90,
         render: (value) => String(value ?? 0),
       },
       {
-        title: 'Last Scan',
+        title: '上次扫描',
         dataIndex: 'lastScanAt',
         width: 180,
         render: (value) => formatDate(value),
       },
       {
-        title: 'Action',
+        title: '操作',
         width: 120,
         render: (_, row) => (
           <Button
@@ -144,7 +144,7 @@ export function DriveFilesPage(props: {
             loading={scanningRootId === row.id}
             onClick={() => void scanRoot(row)}
           >
-            Scan
+            扫描
           </Button>
         ),
       },
@@ -154,16 +154,16 @@ export function DriveFilesPage(props: {
 
   return (
     <PageContainer
-      title="Drive Files"
-      content="Configure server-side Drive roots, scan their file trees, then let clients browse and download files from the server."
+      title="文件资料"
+      content="配置服务器端的云盘根目录，扫描其文件树，然后让客户端从服务器浏览和下载文件。"
     >
       {contextHolder}
       <Space direction="vertical" size={16} className="full-width">
         <Alert
           type="info"
           showIcon
-          message="Server is the source of truth"
-          description="Add absolute filesystem paths that are readable by the server process. Client devices will browse the scanned tree and download files through resumable transfer sessions."
+          message="服务器是数据的唯一来源"
+          description="添加服务器进程可读取的绝对文件系统路径。客户端设备将浏览扫描的文件树，并通过可恢复的传输会话下载文件。"
         />
 
         <Card title="Add or Update Drive Root">
@@ -174,46 +174,46 @@ export function DriveFilesPage(props: {
             onFinish={(values) => void onSubmit(values)}
           >
             <Form.Item
-              label="Display name"
+              label="显示名称"
               name="name"
-              rules={[{ required: true, message: 'Please enter a Drive root name.' }]}
+              rules={[{ required: true, message: '请输入云盘根目录名称。' }]}
             >
-              <Input placeholder="Course files, Project archive, Documents..." />
+              <Input placeholder="课程文件、项目档案、文档..." />
             </Form.Item>
             <Form.Item
-              label="Server absolute path"
+              label="服务器绝对路径"
               name="rootUri"
-              rules={[{ required: true, message: 'Please enter an absolute server path.' }]}
-              extra="Examples: C:\\FlowPlanDrive\\Documents or /srv/flowplan-drive/documents"
+              rules={[{ required: true, message: '请输入服务器绝对路径。' }]}
+              extra="示例：C:\\FlowPlanDrive\\Documents 或 /srv/flowplan-drive/documents"
             >
               <Input placeholder="C:\\FlowPlanDrive\\Documents" />
             </Form.Item>
-            <Form.Item label="Display path" name="rootDisplayPath">
-              <Input placeholder="Optional friendly path shown to clients" />
+            <Form.Item label="显示路径" name="rootDisplayPath">
+              <Input placeholder="可选的友好路径，显示给客户端" />
             </Form.Item>
-            <Form.Item label="Scan node limit" name="maxNodes">
+            <Form.Item label="扫描节点限制" name="maxNodes">
               <InputNumber min={1} max={200000} step={500} style={{ width: 220 }} />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<FolderAddOutlined />} loading={saving}>
-              Save Drive Root
+              保存云盘根目录
             </Button>
           </Form>
         </Card>
 
         <Card
-          title="Drive Roots"
+          title="云盘根目录"
           extra={
             <Space>
               <Input.Search
                 allowClear
-                placeholder="Search roots"
+                placeholder="搜索根目录"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 onSearch={() => void load()}
                 style={{ width: 240 }}
               />
               <Button icon={<ReloadOutlined />} onClick={() => void load()}>
-                Refresh
+                刷新
               </Button>
             </Space>
           }
@@ -225,7 +225,7 @@ export function DriveFilesPage(props: {
             columns={columns}
             pagination={{ pageSize: 8, showSizeChanger: true }}
           />
-          <RawDataCollapse title="Drive roots raw response" value={payload} />
+          <RawDataCollapse title="云盘根目录原始响应" value={payload} />
         </Card>
       </Space>
     </PageContainer>
