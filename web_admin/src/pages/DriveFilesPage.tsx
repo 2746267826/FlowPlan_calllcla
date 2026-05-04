@@ -76,9 +76,11 @@ export function DriveFilesPage(props: {
   const [pageError, setPageError] = useState<string | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
 
-  const load = async () => {
-    setLoading(true);
-    setPageError(null);
+  const load = async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setLoading(true);
+      setPageError(null);
+    }
     try {
       const result = await props.api.driveRoots(keyword);
       setPayload(result);
@@ -86,16 +88,30 @@ export function DriveFilesPage(props: {
       props.onDataRefresh();
     } catch (error) {
       const detail = errorMessage(error);
-      setPageError(`加载 Drive roots 失败：${detail}`);
-      messageApi.error('加载 Drive roots 失败');
+      if (!options.silent) {
+        setPageError(`加载 Drive roots 失败：${detail}`);
+        messageApi.error('加载 Drive roots 失败');
+      }
     } finally {
-      setLoading(false);
+      if (!options.silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!scanningRootId) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      void load({ silent: true });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [scanningRootId, keyword]);
 
   const onSubmit = async (values: DriveRootFormValues) => {
     setSaving(true);
@@ -196,6 +212,11 @@ export function DriveFilesPage(props: {
         render: (value, row) => (
           <Space direction="vertical" size={2}>
             <Tag color={scanStatusColor(String(value ?? 'idle'))}>{String(value ?? 'idle')}</Tag>
+            {String(value ?? '') === 'scanning' ? (
+              <Typography.Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
+                {String(asRecord(row.metadata?.lastScan).progressMessage ?? '正在扫描...')}
+              </Typography.Text>
+            ) : null}
             {row.lastError ? (
               <Typography.Text type="danger" copyable ellipsis style={{ maxWidth: 240 }}>
                 {row.lastError}
@@ -412,6 +433,15 @@ function RootDiagnostics(props: { root: DriveRootRecord }) {
         <Descriptions.Item label="扫描数量">{formatCount(lastScan.scanned)}</Descriptions.Item>
         <Descriptions.Item label="应用数量">{formatCount(lastScan.applied)}</Descriptions.Item>
         <Descriptions.Item label="达到上限">{lastScan.reachedMaxNodes === true ? '是' : '否'}</Descriptions.Item>
+        <Descriptions.Item label="最近进度">{formatDate(lastScan.lastProgressAt)}</Descriptions.Item>
+        <Descriptions.Item label="扫描阶段">{String(lastScan.phase ?? '无')}</Descriptions.Item>
+        <Descriptions.Item label="待扫文件夹">{formatCount(lastScan.queuedFolders)}</Descriptions.Item>
+        <Descriptions.Item label="进度日志" span={2}>
+          <Typography.Text copyable>{String(lastScan.progressMessage ?? '无')}</Typography.Text>
+        </Descriptions.Item>
+        <Descriptions.Item label="当前路径" span={2}>
+          <Typography.Text copyable>{String(lastScan.currentPath ?? '无')}</Typography.Text>
+        </Descriptions.Item>
         <Descriptions.Item label="扫描路径" span={2}>
           <Typography.Text copyable>{String(lastScan.rootPath ?? root.rootUri ?? '无')}</Typography.Text>
         </Descriptions.Item>

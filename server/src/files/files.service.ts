@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { readdir, stat } from 'node:fs/promises';
-import { extname, join, posix, relative, win32 } from 'node:path';
+import { open, stat } from 'node:fs/promises';
+import { posix, win32 } from 'node:path';
 import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
@@ -94,9 +94,9 @@ export class FilesService {
     const [
       providers,
       treeSummary,
-      transfers,
       storageObjects,
       versionRecords,
+      transfers,
       conflicts,
       versionRequests,
       storageStatus,
@@ -935,11 +935,42 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const session = await this.findSession(this.database, userId, sessionId, 'download');
-    if (!session || !session.storage_object_id) {
-      return { ok: false, reason: 'download_session_or_storage_missing' };
+    if (!session) {
+      return { ok: false, reason: 'download_session_missing' };
     }
     const start = this.readNumber(query.start, 0);
     const end = this.readNumber(query.end, Math.max(start, start + session.chunk_size - 1));
+    if (!session.storage_object_id) {
+      const sharedPath = await this.resolveSharedDownloadPath(userId, session);
+      if (!sharedPath) {
+        return { ok: false, reason: 'download_source_missing' };
+      }
+      try {
+        const payload = await this.readLocalFileRange(sharedPath, start, end);
+        return {
+          ok: true,
+          sessionId,
+          range: { start, end: start + payload.length - 1 },
+          chunks: [
+            {
+              chunkIndex: Math.floor(start / Math.max(session.chunk_size, 1)),
+              startByte: start,
+              endByte: start + payload.length - 1,
+              sizeBytes: payload.length,
+              checksum: this.sha256(payload),
+              payloadBase64: payload.toString('base64'),
+            },
+          ],
+          note: 'shared server folder file range',
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: 'shared_source_read_failed',
+          error: this.errorMessage(error),
+        };
+      }
+    }
     const storage = await this.database.query<QueryResultRow>(
       `
       SELECT metadata
@@ -1764,7 +1795,7 @@ export class FilesService {
       ? 'open_local'
       : comparableLocalCopy
         ? 'conflict_or_download_required'
-      : node.storage?.storageObjectId
+      : node.storage?.storageObjectId || this.clean(node.serverPath)
         ? 'download_then_open'
         : 'needs_upload_or_relink';
     await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.open_plan', nodeId, {
@@ -1839,17 +1870,26 @@ export class FilesService {
     if (!node) {
       return { ok: false, reason: 'node_not_found' };
     }
-    if (!node.storage?.storageObjectId) {
-      return { ok: false, reason: 'storage_object_missing', node };
+    if (node.nodeType !== 'file') {
+      return { ok: false, reason: 'node_is_not_file', node };
+    }
+    const serverPath = this.clean(node.serverPath);
+    if (!node.storage?.storageObjectId && !serverPath) {
+      return { ok: false, reason: 'download_source_missing', node };
     }
     const session = await this.createDownloadSession(
       {
-        storageObjectId: node.storage.storageObjectId,
+        storageObjectId: node.storage?.storageObjectId,
         fileName: node.name,
         totalBytes: node.sizeBytes,
-        checksum: node.storage.checksum ?? node.hashSha256,
+        checksum: node.storage?.checksum ?? node.hashSha256,
         metadata: {
           nodeId,
+          rootId: node.rootId,
+          sourcePath: serverPath,
+          sourceType: node.storage?.storageObjectId
+            ? 'storage_object'
+            : 'shared_server_path',
           targetPath: this.clean(body.targetPath),
           requestSource: 'drive_download_request',
         },
@@ -2143,12 +2183,13 @@ export class FilesService {
     const deviceLocalPath = this.clean(row.deviceLocalPath);
     const deviceAvailability = this.clean(row.deviceAvailability);
     const storageObjectId = this.clean(row.storageObjectId);
+    const serverPath = this.clean(row.localPath);
     const metadata = this.asRecord(row.metadata);
     const availability = row.isMissing
       ? 'missing'
       : deviceAvailability === 'available' || deviceAvailability === 'local'
         ? 'local'
-        : storageObjectId
+        : storageObjectId || serverPath
           ? 'remote_only'
           : 'metadata_only';
     return {
@@ -2162,7 +2203,7 @@ export class FilesService {
       relativePath: row.relativePath,
       displayPath: row.displayPath,
       localPath: deviceLocalPath,
-      serverPath: row.localPath,
+      serverPath,
       providerFileId: row.providerFileId,
       mimeType: row.mimeType,
       extension: row.extension,
@@ -2181,12 +2222,13 @@ export class FilesService {
         rootUri: row.rootUri,
         rootDisplayPath: row.rootDisplayPath,
       },
-      storage: storageObjectId
+      storage: storageObjectId || serverPath
         ? {
-            storageObjectId,
-            providerKey: row.storageProviderKey,
-            status: row.storageStatus,
+            storageObjectId: storageObjectId ?? null,
+            providerKey: row.storageProviderKey ?? 'server_shared_folder',
+            status: row.storageStatus ?? 'available',
             checksum: row.storageChecksum,
+            sourceType: storageObjectId ? 'storage_object' : 'shared_server_path',
           }
         : null,
       currentDevice: deviceLocalPath || deviceAvailability
@@ -2256,194 +2298,62 @@ export class FilesService {
     };
   }
 
-  private async collectLocalNodesForRoot(
+  private async resolveSharedDownloadPath(
     userId: string,
-    rootId: string,
-    rootPath: string,
-    maxNodes: number,
-    nodes: Record<string, unknown>[],
-  ) {
-    const rootStat = await stat(rootPath);
-    nodes.push(this.createScannedRootNode(rootPath, rootStat.mtime.toISOString()));
-    const queue: Array<{ path: string; parentUid: string }> = [
-      { path: rootPath, parentUid: `root:${rootPath}` },
-    ];
-    while (queue.length > 0 && nodes.length < maxNodes) {
-      const current = queue.shift();
-      if (!current) {
-        continue;
-      }
-      const entries = await readdir(current.path, { withFileTypes: true });
-      entries.sort((left, right) => left.name.localeCompare(right.name));
-      for (const entry of entries) {
-        if (nodes.length >= maxNodes) {
-          break;
-        }
-        if (!entry.isFile() && !entry.isDirectory()) {
-          continue;
-        }
-        const fullPath = join(current.path, entry.name);
-        const entryStat = await stat(fullPath);
-        const relativePath = relative(rootPath, fullPath).replace(/\\/g, '/');
-        const isFolder = entry.isDirectory();
-        const node = await this.createScannedNode({
-          userId,
-          rootId,
-          rootPath,
-          parentUid: current.parentUid,
-          fullPath,
-          relativePath,
-          name: entry.name,
-          isFolder,
-          sizeBytes: entryStat.size,
-          mtime: entryStat.mtime.toISOString(),
-          ctime: entryStat.ctime.toISOString(),
-        });
-        nodes.push(node);
-        if (isFolder) {
-          queue.push({ path: fullPath, parentUid: node.nodeUid });
-        }
-      }
+    session: SessionRow,
+  ): Promise<string | null> {
+    const metadata = this.asRecord(session.metadata);
+    const sourcePath = this.clean(metadata.sourcePath);
+    if (!sourcePath) {
+      return null;
     }
-  }
-
-  private createScannedRootNode(rootPath: string, mtime: string) {
-    return {
-      nodeUid: `root:${rootPath}`,
-      nodeType: 'folder',
-      name: this.basename(rootPath),
-      relativePath: '',
-      displayPath: rootPath,
-      localPath: rootPath,
-      mtime,
-      metadata: { source: 'server_scan' },
-    };
-  }
-
-  private async createScannedNode(input: {
-    userId: string;
-    rootId: string;
-    rootPath: string;
-    parentUid: string;
-    fullPath: string;
-    relativePath: string;
-    name: string;
-    isFolder: boolean;
-    sizeBytes: number;
-    mtime: string;
-    ctime: string;
-  }) {
-    const nodeUid = `node:${input.rootPath}:${input.relativePath}`;
-    if (input.isFolder) {
-      return {
-        nodeUid,
-        parentNodeUid: input.parentUid,
-        nodeType: 'folder',
-        name: input.name,
-        relativePath: input.relativePath,
-        displayPath: input.fullPath,
-        localPath: input.fullPath,
-        mimeType: null,
-        extension: null,
-        sizeBytes: null,
-        mtime: input.mtime,
-        ctime: input.ctime,
-        hashSha256: null,
-        providerKey: 'server_storage',
-        metadata: { source: 'server_scan' },
-      };
+    const rootId = this.clean(metadata.rootId);
+    if (!rootId) {
+      return null;
     }
-    const storedObject = await this.storeScannedFileObject(
-      input.userId,
-      input.rootId,
-      input.fullPath,
-      input.relativePath,
-      input.name,
-      input.sizeBytes,
-    );
-    return {
-      nodeUid,
-      parentNodeUid: input.parentUid,
-      nodeType: 'file',
-      name: input.name,
-      relativePath: input.relativePath,
-      displayPath: input.fullPath,
-      localPath: input.fullPath,
-      mimeType: this.guessMimeType(input.name),
-      extension: extname(input.name).replace(/^\./, ''),
-      sizeBytes: input.sizeBytes,
-      mtime: input.mtime,
-      ctime: input.ctime,
-      hashSha256: storedObject?.checksum,
-      providerKey: 'server_storage',
-      metadata: {
-        source: 'server_scan',
-        storageObjectId: storedObject?.storageObjectId,
-        storagePath: storedObject?.storagePath,
-      },
-    };
-  }
-
-  private async storeScannedFileObject(
-    userId: string,
-    rootId: string,
-    fullPath: string,
-    relativePath: string,
-    displayName: string,
-    sizeBytes: number,
-  ) {
-    const objectKey = `server-scan:${rootId}:${relativePath}`;
-    const stored = await this.objectStorage.copyLocalFile(userId, fullPath, objectKey);
-    const chunkSize = 5 * 1024 * 1024;
-    const chunkCount = Math.max(1, Math.ceil(sizeBytes / chunkSize));
-    const row = await this.database.query<QueryResultRow>(
+    const rootResult = await this.database.query<QueryResultRow>(
       `
-      INSERT INTO file_storage_objects (
-        user_id,
-        provider_key,
-        object_key,
-        display_name,
-        size_bytes,
-        checksum,
-        chunk_size,
-        chunk_count,
-        status,
-        metadata
-      ) VALUES ($1, 'server_storage', $2, $3, $4, $5, $6, $7, 'available', $8::jsonb)
-      ON CONFLICT (user_id, provider_key, object_key) DO UPDATE SET
-        display_name = EXCLUDED.display_name,
-        size_bytes = EXCLUDED.size_bytes,
-        checksum = EXCLUDED.checksum,
-        status = 'available',
-        metadata = file_storage_objects.metadata || EXCLUDED.metadata,
-        updated_at = now()
-      RETURNING id::text AS "storageObjectId"
+      SELECT root_uri AS "rootUri"
+      FROM file_roots
+      WHERE user_id = $1 AND id = $2
+      LIMIT 1
       `,
-      [
-        userId,
-        objectKey,
-        displayName,
-        sizeBytes,
-        stored.checksum,
-        chunkSize,
-        chunkCount,
-        JSON.stringify({
-          source: 'server_scan',
-          rootId,
-          relativePath,
-          originalServerPath: fullPath,
-          storageType: 'local_filesystem',
-          storageRoot: this.objectStorage.root(),
-          storagePath: stored.relativePath,
-          absoluteStoragePath: stored.storagePath,
-        }),
-      ],
+      [userId, rootId],
     );
-    return {
-      storageObjectId: row.rows[0]?.storageObjectId as string | undefined,
-      checksum: stored.checksum,
-      storagePath: stored.relativePath,
-    };
+    const rootUri = this.clean(rootResult.rows[0]?.rootUri);
+    if (!rootUri) {
+      return null;
+    }
+    const normalizedRoot = rootUri.replace(/\\/g, '/').replace(/\/$/, '');
+    const normalizedSource = sourcePath.replace(/\\/g, '/');
+    if (
+      !normalizedSource.startsWith(normalizedRoot + '/') &&
+      normalizedSource !== normalizedRoot
+    ) {
+      return null;
+    }
+    return sourcePath;
+  }
+
+  private async readLocalFileRange(
+    filePath: string,
+    start: number,
+    endInclusive: number,
+  ): Promise<Buffer> {
+    const fileStat = await stat(filePath);
+    const safeStart = Math.max(0, Math.min(start, fileStat.size));
+    const safeEnd = Math.max(safeStart - 1, Math.min(endInclusive, fileStat.size - 1));
+    if (safeEnd < safeStart) {
+      return Buffer.alloc(0);
+    }
+    const handle = await open(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(safeEnd - safeStart + 1);
+      await handle.read(buffer, 0, buffer.length, safeStart);
+      return buffer;
+    } finally {
+      await handle.close();
+    }
   }
 
   private guessMimeType(path: string) {
@@ -2547,55 +2457,6 @@ export class FilesService {
       WHERE s.user_id = $1 AND s.id = $2
       `,
       [userId, sessionId],
-    );
-  }
-
-  private async ensureServerRelayCandidate(userId: string, sessionId: string) {
-    await this.database.query(
-      `
-      INSERT INTO file_transfer_candidates (
-        user_id,
-        session_id,
-        candidate_type,
-        protocol,
-        priority,
-        status
-      )
-      SELECT $1, $2, 'server_relay', 'server_api', 10, 'available'
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM file_transfer_candidates
-        WHERE user_id = $1 AND session_id = $2 AND candidate_type = 'server_relay'
-      )
-      `,
-      [userId, sessionId],
-    );
-  }
-
-  private async appendTransferEventWithClient(
-    client: Pick<DatabaseService | TransactionClient, 'query'>,
-    userId: string,
-    sessionId: string,
-    eventType: string,
-    payload: Record<string, unknown>,
-  ) {
-    await client.query(
-      `
-      INSERT INTO file_transfer_events (
-        user_id,
-        session_id,
-        event_type,
-        message,
-        payload_json
-      ) VALUES ($1, $2, $3, $4, $5::jsonb)
-      `,
-      [
-        userId,
-        sessionId,
-        eventType,
-        this.clean(payload.message),
-        JSON.stringify(payload),
-      ],
     );
   }
 

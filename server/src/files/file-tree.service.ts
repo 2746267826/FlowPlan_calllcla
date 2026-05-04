@@ -6,14 +6,20 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { LocalObjectStorageService } from './local-object-storage.service';
+
+type DriveScanProgress = {
+  scanned: number;
+  maxNodes: number;
+  currentPath: string;
+  queuedFolders: number;
+  phase: 'reading' | 'collected';
+};
 
 @Injectable()
 export class FileTreeService {
   constructor(
     private readonly database: DatabaseService,
     private readonly devicesService: DevicesService,
-    private readonly objectStorage: LocalObjectStorageService,
   ) {}
 
   async scanDriveRoot(
@@ -47,6 +53,10 @@ export class FileTreeService {
     }
     const startedAt = new Date();
     const maxNodes = this.readNumber(body.maxNodes, 5000);
+    const logPrefix = `[drive-scan:${rootId}]`;
+    console.log(
+      `${logPrefix} start name="${String(root.name ?? '')}" rootPath="${rootPath}" maxNodes=${maxNodes}`,
+    );
     await this.database.query(
       `
       UPDATE file_roots
@@ -71,11 +81,70 @@ export class FileTreeService {
       ],
     );
     const nodes: Record<string, unknown>[] = [];
+    let lastProgressAt = 0;
+    let lastProgressCount = 0;
+    const publishProgress = async (progress: DriveScanProgress) => {
+      const now = Date.now();
+      const shouldPublish =
+        progress.scanned === 0 ||
+        progress.scanned >= maxNodes ||
+        progress.scanned - lastProgressCount >= 100 ||
+        now - lastProgressAt >= 2000;
+      if (!shouldPublish) {
+        return;
+      }
+      lastProgressAt = now;
+      lastProgressCount = progress.scanned;
+      const durationMs = now - startedAt.getTime();
+      const progressMessage = `${progress.phase}: ${progress.scanned}/${maxNodes} nodes, current=${progress.currentPath}`;
+      console.log(
+        `${logPrefix} ${progressMessage}, queuedFolders=${progress.queuedFolders}, durationMs=${durationMs}`,
+      );
+      await this.database.query(
+        `
+        UPDATE file_roots
+        SET
+          metadata = metadata || $3::jsonb,
+          updated_at = now()
+        WHERE user_id = $1 AND id = $2
+        `,
+        [
+          userId,
+          rootId,
+          JSON.stringify({
+            lastScan: {
+              status: 'scanning',
+              startedAt: startedAt.toISOString(),
+              lastProgressAt: new Date(now).toISOString(),
+              durationMs,
+              maxNodes,
+              rootPath,
+              scanned: progress.scanned,
+              currentPath: progress.currentPath,
+              queuedFolders: progress.queuedFolders,
+              phase: progress.phase,
+              progressMessage,
+              reachedMaxNodes: progress.scanned >= maxNodes,
+            },
+          }),
+        ],
+      );
+    };
     try {
-      await this.collectLocalNodesForRoot(userId, rootId, rootPath, maxNodes, nodes);
+      await this.collectLocalNodesForRoot(
+        userId,
+        rootId,
+        rootPath,
+        maxNodes,
+        nodes,
+        publishProgress,
+      );
     } catch (error) {
       const failedAt = new Date();
       const errorMessage = this.errorMessage(error);
+      console.log(
+        `${logPrefix} failed scanned=${nodes.length}/${maxNodes} durationMs=${failedAt.getTime() - startedAt.getTime()} error="${errorMessage}"`,
+      );
       await this.database.query(
         `
         UPDATE file_roots
@@ -99,6 +168,8 @@ export class FileTreeService {
               maxNodes,
               rootPath,
               scanned: nodes.length,
+              currentPath: nodes.length > 0 ? this.clean(nodes[nodes.length - 1]?.localPath) : rootPath,
+              progressMessage: `failed after ${nodes.length}/${maxNodes} nodes: ${errorMessage}`,
               error: errorMessage,
             },
           }),
@@ -126,9 +197,14 @@ export class FileTreeService {
           rootPath,
           scanned: nodes.length,
           reachedMaxNodes: nodes.length >= maxNodes,
+          progressMessage: `collected ${nodes.length}/${maxNodes} nodes; applying snapshot`,
         },
       },
       context,
+    );
+    const completedAt = new Date();
+    console.log(
+      `${logPrefix} completed scanned=${nodes.length}/${maxNodes} applied=${applied.applied} durationMs=${completedAt.getTime() - startedAt.getTime()}`,
     );
     await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.root.scan', null, {
       rootId,
@@ -136,7 +212,7 @@ export class FileTreeService {
       status: 'success',
       scanned: nodes.length,
       applied: applied.applied,
-      durationMs: new Date().getTime() - startedAt.getTime(),
+      durationMs: completedAt.getTime() - startedAt.getTime(),
     });
     return { ...applied, ok: true, rootId, scanned: nodes.length };
   }
@@ -326,13 +402,14 @@ export class FileTreeService {
         Object.keys(scanDiagnostic).length > 0
           ? {
               lastScan: {
-                ...scanDiagnostic,
-                status: scanStatus,
-                applied,
-                finishedAt: finishedAt.toISOString(),
-                durationMs: Number.isFinite(startedTime)
-                  ? finishedAt.getTime() - startedTime
-                  : undefined,
+              ...scanDiagnostic,
+              status: scanStatus,
+              applied,
+              finishedAt: finishedAt.toISOString(),
+              progressMessage: `${scanStatus}: applied ${applied} nodes`,
+              durationMs: Number.isFinite(startedTime)
+                ? finishedAt.getTime() - startedTime
+                : undefined,
               },
             }
           : {};
@@ -364,6 +441,7 @@ export class FileTreeService {
     rootPath: string,
     maxNodes: number,
     nodes: Record<string, unknown>[],
+    onProgress?: (progress: DriveScanProgress) => Promise<void>,
   ) {
     const rootStat = await stat(rootPath);
     nodes.push(this.createScannedRootNode(rootPath, rootStat.mtime.toISOString()));
@@ -385,6 +463,13 @@ export class FileTreeService {
           continue;
         }
         const fullPath = join(current.path, entry.name);
+        await onProgress?.({
+          scanned: nodes.length,
+          maxNodes,
+          currentPath: fullPath,
+          queuedFolders: queue.length,
+          phase: 'reading',
+        });
         const entryStat = await stat(fullPath);
         const relativePath = relative(rootPath, fullPath).replace(/\\/g, '/');
         const isFolder = entry.isDirectory();
@@ -402,6 +487,13 @@ export class FileTreeService {
           ctime: entryStat.ctime.toISOString(),
         });
         nodes.push(node);
+        await onProgress?.({
+          scanned: nodes.length,
+          maxNodes,
+          currentPath: fullPath,
+          queuedFolders: queue.length,
+          phase: 'collected',
+        });
         if (isFolder) {
           queue.push({ path: fullPath, parentUid: node.nodeUid });
         }
@@ -455,14 +547,6 @@ export class FileTreeService {
         metadata: { source: 'server_scan' },
       };
     }
-    const storedObject = await this.storeScannedFileObject(
-      input.userId,
-      input.rootId,
-      input.fullPath,
-      input.relativePath,
-      input.name,
-      input.sizeBytes,
-    );
     return {
       nodeUid,
       parentNodeUid: input.parentUid,
@@ -476,75 +560,15 @@ export class FileTreeService {
       sizeBytes: input.sizeBytes,
       mtime: input.mtime,
       ctime: input.ctime,
-      hashSha256: storedObject?.checksum,
+      hashSha256: null,
       providerKey: 'server_storage',
       metadata: {
-        source: 'server_scan',
-        storageObjectId: storedObject?.storageObjectId,
-        storagePath: storedObject?.storagePath,
+        source: 'server_shared_root',
+        rootId: input.rootId,
+        relativePath: input.relativePath,
+        originalServerPath: input.fullPath,
+        storageMode: 'shared_server_path',
       },
-    };
-  }
-
-  private async storeScannedFileObject(
-    userId: string,
-    rootId: string,
-    fullPath: string,
-    relativePath: string,
-    displayName: string,
-    sizeBytes: number,
-  ) {
-    const objectKey = `server-scan:${rootId}:${relativePath}`;
-    const stored = await this.objectStorage.copyLocalFile(userId, fullPath, objectKey);
-    const chunkSize = 5 * 1024 * 1024;
-    const chunkCount = Math.max(1, Math.ceil(sizeBytes / chunkSize));
-    const row = await this.database.query<QueryResultRow>(
-      `
-      INSERT INTO file_storage_objects (
-        user_id,
-        provider_key,
-        object_key,
-        display_name,
-        size_bytes,
-        checksum,
-        chunk_size,
-        chunk_count,
-        status,
-        metadata
-      ) VALUES ($1, 'server_storage', $2, $3, $4, $5, $6, $7, 'available', $8::jsonb)
-      ON CONFLICT (user_id, provider_key, object_key) DO UPDATE SET
-        display_name = EXCLUDED.display_name,
-        size_bytes = EXCLUDED.size_bytes,
-        checksum = EXCLUDED.checksum,
-        status = 'available',
-        metadata = file_storage_objects.metadata || EXCLUDED.metadata,
-        updated_at = now()
-      RETURNING id::text AS "storageObjectId"
-      `,
-      [
-        userId,
-        objectKey,
-        displayName,
-        sizeBytes,
-        stored.checksum,
-        chunkSize,
-        chunkCount,
-        JSON.stringify({
-          source: 'server_scan',
-          rootId,
-          relativePath,
-          originalServerPath: fullPath,
-          storageType: 'local_filesystem',
-          storageRoot: this.objectStorage.root(),
-          storagePath: stored.relativePath,
-          absoluteStoragePath: stored.storagePath,
-        }),
-      ],
-    );
-    return {
-      storageObjectId: row.rows[0]?.storageObjectId as string | undefined,
-      checksum: stored.checksum,
-      storagePath: stored.relativePath,
     };
   }
 
