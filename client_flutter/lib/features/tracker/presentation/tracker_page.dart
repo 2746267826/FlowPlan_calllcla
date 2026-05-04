@@ -724,11 +724,19 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     final hasAndroidUsageAccess =
         androidUsagePermission ?? trackerState.hasUsageStatsPermission;
     final lastRefreshedAt = snapshot?.refreshedAt;
+    final trackerNotifier = ref.read(trackerServiceNotifierProvider.notifier);
+    final lastAutoUploadAt = trackerNotifier.lastAutoUploadAt;
+    final lastAutoUploadError = trackerNotifier.lastAutoUploadError;
+    final autoUploadStatus = lastAutoUploadError != null
+        ? '自动上传出错：$lastAutoUploadError'
+        : (lastAutoUploadAt != null
+            ? '上次自动上传：${_formatDateTimeShort(lastAutoUploadAt)}'
+            : '尚未自动上传');
     final freezeNotice = !hasFreshSnapshot && _isRefreshing
-        ? '该页面已暂停自动刷新。正在按当前条件加载新的手动快照，后台记录不会中断。数据每3分钟自动上传到服务端。'
+        ? '该页面已暂停自动刷新。正在按当前条件加载新的手动快照，后台记录不会中断。$autoUploadStatus'
         : (lastRefreshedAt == null
-            ? '该页面已暂停自动刷新。进入页面后会固定当前快照，后台仍继续记录；点击右上角刷新后才会更新显示。展示数据来自服务端汇总。'
-            : '该页面已暂停自动刷新。当前显示固定在 ${_formatDateTimeShort(lastRefreshedAt)} 的快照；后台仍继续记录，点击右上角刷新后才会更新显示。展示数据来自服务端汇总。');
+            ? '该页面已暂停自动刷新。进入页面后会固定当前快照，后台仍继续记录；点击右上角刷新后才会更新显示。展示数据来自服务端汇总。$autoUploadStatus'
+            : '该页面已暂停自动刷新。当前显示固定在 ${_formatDateTimeShort(lastRefreshedAt)} 的快照；后台仍继续记录，点击右上角刷新后才会更新显示。展示数据来自服务端汇总。$autoUploadStatus');
 
     return Scaffold(
       appBar: AppBar(
@@ -775,14 +783,20 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                   },
           ),
           IconButton(
-            tooltip: _isUploading ? '正在上传到服务端' : '手动上传追踪数据到服务端',
+            tooltip: _isUploading
+                ? '正在上传到服务端'
+                : (lastAutoUploadError != null
+                    ? '上次自动上传失败：$lastAutoUploadError\n点击手动重试'
+                    : '手动上传追踪数据到服务端'),
             icon: _isUploading
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2.2),
                   )
-                : const Icon(Icons.cloud_upload_outlined),
+                : (lastAutoUploadError != null
+                    ? const Icon(Icons.cloud_upload_outlined, color: Colors.orange)
+                    : const Icon(Icons.cloud_upload_outlined)),
             onPressed: _isUploading ? null : _uploadTrackingBuffer,
           ),
           if (supportsInputAnalytics)

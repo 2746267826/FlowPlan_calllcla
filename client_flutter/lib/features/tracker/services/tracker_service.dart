@@ -118,22 +118,28 @@ class TrackerState {
 class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   Timer? _timer;
   Timer? _inputEventTimer;
+  Timer? _autoUploadTimer;
   final WindowSensor _sensor = const WindowSensor();
   final ActivityClassifier _classifier = ActivityClassifier();
   final DeviceIdentityService _deviceIdentityService = DeviceIdentityService();
   final TrackerPlatformSource _platform = TrackerPlatformSource.current();
   final Duration _sampleInterval = const Duration(seconds: 5);
   final Duration _inputEventPollInterval = const Duration(seconds: 1);
+  final Duration _autoUploadInterval = const Duration(minutes: 10);
   InputTelemetry? _telemetryBaseline;
   InputTelemetry _activeTelemetry = InputTelemetry.empty();
   bool _sampleInFlight = false;
   bool _inputEventPollInFlight = false;
+  bool _autoUploadInFlight = false;
+  DateTime? _lastAutoUploadAt;
+  String? _lastAutoUploadError;
 
   @override
   TrackerState build() {
     ref.onDispose(() {
       _timer?.cancel();
       _inputEventTimer?.cancel();
+      _autoUploadTimer?.cancel();
     });
     ref.listen<bool>(sequenceRecordingProvider, (previous, next) {
       if (_platform.supportsSequenceRecording) {
@@ -175,10 +181,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       await rawInputService.start();
     } catch (error) {
       state = state.copyWith(
-        isRunning: false,
-        lastError: 'RawInput 启动失败：$error',
+        lastError: 'RawInput 启动失败（降级为仅窗口追踪）：$error',
       );
-      return;
     }
 
     if (!state.isRunning) {
@@ -193,6 +197,9 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     _inputEventTimer = Timer.periodic(_inputEventPollInterval, (_) {
       unawaited(_pollInputEvents());
     });
+    _autoUploadTimer = Timer.periodic(_autoUploadInterval, (_) {
+      unawaited(_autoUploadTrackingBuffer());
+    });
   }
 
   void stop() {
@@ -200,6 +207,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     _timer = null;
     _inputEventTimer?.cancel();
     _inputEventTimer = null;
+    _autoUploadTimer?.cancel();
+    _autoUploadTimer = null;
     if (_platform.supportsInputAnalytics) {
       unawaited(rawInputService.stop());
     }
@@ -292,7 +301,10 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     }
     _sampleInFlight = true;
     try {
-      await _sampleOnce();
+      await _sampleOnce().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {},
+      );
     } catch (error) {
       state = state.copyWith(
         lastSampleAt: DateTime.now(),
@@ -313,7 +325,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     try {
       final events = await rawInputService.getPendingInputEvents(
         maxEvents: 1000,
-      );
+      ).timeout(const Duration(seconds: 10), onTimeout: () => const <RawInputEvent>[]);
       if (events.isEmpty) {
         return;
       }
@@ -345,6 +357,22 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       );
     } finally {
       _inputEventPollInFlight = false;
+    }
+  }
+
+  Future<void> _autoUploadTrackingBuffer() async {
+    if (_autoUploadInFlight) return;
+    _autoUploadInFlight = true;
+    try {
+      final service = await ref.read(trackingUploadServiceProvider.future);
+      final result = await service.uploadPending();
+      _lastAutoUploadAt = DateTime.now();
+      _lastAutoUploadError = result.uploadedBatches > 0 ? null : null;
+    } catch (error) {
+      _lastAutoUploadAt = DateTime.now();
+      _lastAutoUploadError = error.toString();
+    } finally {
+      _autoUploadInFlight = false;
     }
   }
 
@@ -745,4 +773,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
 
   ActivityClassifier get classifier => _classifier;
   InputTelemetry? get currentTelemetry => state.currentTelemetry;
+  DateTime? get lastAutoUploadAt => _lastAutoUploadAt;
+  String? get lastAutoUploadError => _lastAutoUploadError;
+  bool get isAutoUploading => _autoUploadInFlight;
 }

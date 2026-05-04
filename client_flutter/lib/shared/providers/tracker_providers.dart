@@ -83,7 +83,105 @@ final activityDaySummaryProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final date = ref.watch(selectedDateProvider);
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
-  return store.activityDaySummary(date: date);
+  final serverResponse = await store.activityDaySummary(date: date);
+
+  final serverInsights = _asStringMap(serverResponse['insights']);
+  final serverMinutes = _intValue(serverInsights['totalMinutes']);
+
+  final start = DateTime(date.year, date.month, date.day);
+  final end = start.add(const Duration(days: 1));
+  final localRecords =
+      await ref.read(activityLogServiceProvider).readEntriesBetween(start, end, limit: 5000);
+  final localMinutes = localRecords
+      .where((e) => !e.isIgnored && e.durationMinutes != null)
+      .fold<int>(0, (sum, e) => sum + (e.durationMinutes ?? 0));
+
+  if (localMinutes > 0 && serverMinutes < localMinutes * 0.5) {
+    final db = ref.read(databaseProvider);
+    final localRows = await db.customSelect(
+      '''
+      SELECT * FROM activity_records
+      WHERE start_time < ? AND (end_time >= ? OR end_time IS NULL)
+      ORDER BY start_time ASC
+      ''',
+      variables: [
+        Variable<String>(end.toIso8601String()),
+        Variable<String>(start.toIso8601String()),
+      ],
+    ).get();
+    final localRecordsList = localRows.map((row) {
+      final data = row.data;
+      final startTime = _dateValue(data['start_time']) ?? start;
+      final endTime = _dateValue(data['end_time']);
+      final dur = _intValue(data['duration_minutes']);
+      return <String, Object?>{
+        'serverId': 'local-${data['id']}',
+        'objectType': 'activity_record',
+        'occurredAt': startTime.toIso8601String(),
+        'metricMinutes': dur > 0 ? dur : (endTime != null ? endTime.difference(startTime).inMinutes : 1),
+        'metricCount': 1,
+        'payload': <String, Object?>{
+          'startTime': startTime.toIso8601String(),
+          if (endTime != null) 'endTime': endTime.toIso8601String(),
+          'durationMinutes': dur > 0 ? dur : (endTime != null ? endTime.difference(startTime).inMinutes : 1),
+          'processName': data['process_name'],
+          'windowTitle': data['window_title'],
+          'packageName': data['package_name'],
+          'category': data['category'],
+          'linkedTaskId': data['linked_task_id'],
+          'keyCount': data['key_count'],
+          'mouseClicks': data['mouse_clicks'],
+          'mouseMovePx': data['mouse_move_px'],
+          'scrollPx': data['scroll_px'],
+          'manualLabel': data['manual_label'],
+        },
+      };
+    }).toList();
+
+    final totalMin = localRecordsList.fold<int>(
+      0,
+      (sum, r) => sum + _intValue(r['metricMinutes']),
+    );
+    final totalKeys = localRows.fold<int>(
+      0,
+      (sum, r) => sum + _intValue(r.data['key_count']),
+    );
+    final totalClicks = localRows.fold<int>(
+      0,
+      (sum, r) => sum + _intValue(r.data['mouse_clicks']),
+    );
+    final totalMove = localRows.fold<int>(
+      0,
+      (sum, r) => sum + _intValue(r.data['mouse_move_px']),
+    );
+    final totalScroll = localRows.fold<int>(
+      0,
+      (sum, r) => sum + _intValue(r.data['scroll_px']),
+    );
+
+    return <String, dynamic>{
+      'range': serverResponse['range'],
+      'source': 'local-fallback',
+      'insights': <String, Object?>{
+        'recordCount': localRecordsList.length,
+        'totalMinutes': totalMin,
+        'focusMinutes': totalMin,
+        'totalKeys': totalKeys,
+        'totalClicks': totalClicks,
+        'totalMovePx': totalMove,
+        'totalScrollPx': totalScroll,
+        'productiveRecordCount': localRecordsList.length,
+        'sequenceRecordCount': 0,
+        'topProcesses': <Object?>[],
+        'topCategories': <Object?>[],
+        'busiestRecords': localRecordsList.take(3).toList(),
+      },
+      'sessions': <Object?>[],
+      'previewRecords': localRecordsList,
+    };
+  }
+
+  return serverResponse;
 });
 
 final inputHeatmapSummaryProvider =

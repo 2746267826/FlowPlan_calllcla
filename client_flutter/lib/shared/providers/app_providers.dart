@@ -1,6 +1,7 @@
 // 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
 import 'dart:convert';
 
+import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/bootstrap/client_bootstrap_service.dart';

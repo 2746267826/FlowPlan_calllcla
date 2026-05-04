@@ -52,7 +52,7 @@ class TrackingUploadService {
   Future<TrackingUploadResult>? _inFlight;
 
   Future<TrackingUploadResult> uploadPending({
-    int limitPerKind = 500,
+    int limitPerKind = 2000,
     int chunkSize = 200,
   }) async {
     final activeUpload = _inFlight;
@@ -80,25 +80,34 @@ class TrackingUploadService {
     var uploadedRecords = 0;
     var rejectedRecords = 0;
 
-    final kinds = <_TrackingKindExport>[
-      await _loadActivityRecords(limitPerKind),
-      await _loadTrackedInputEvents(limitPerKind),
-      await _loadRawActivityLogs(limitPerKind),
-    ];
+    const maxRounds = 10;
+    for (var round = 0; round < maxRounds; round++) {
+      final kinds = <_TrackingKindExport>[
+        await _loadActivityRecords(limitPerKind),
+        await _loadTrackedInputEvents(limitPerKind),
+        await _loadRawActivityLogs(limitPerKind),
+      ];
 
-    for (final export in kinds) {
-      if (export.records.isEmpty) {
-        continue;
+      var roundHasData = false;
+      for (final export in kinds) {
+        if (export.records.isEmpty) {
+          continue;
+        }
+        roundHasData = true;
+        try {
+          final detail = await _uploadKind(export, chunkSize: chunkSize);
+          details.add(detail);
+          uploadedBatches++;
+          uploadedRecords += export.records.length;
+          rejectedRecords += _readInt(detail['rejected']) ?? 0;
+        } catch (error) {
+          await _recordUploadError(export.dataKind, error);
+          rethrow;
+        }
       }
-      try {
-        final detail = await _uploadKind(export, chunkSize: chunkSize);
-        details.add(detail);
-        uploadedBatches++;
-        uploadedRecords += export.records.length;
-        rejectedRecords += _readInt(detail['rejected']) ?? 0;
-      } catch (error) {
-        await _recordUploadError(export.dataKind, error);
-        rethrow;
+
+      if (!roundHasData) {
+        break;
       }
     }
 
@@ -340,6 +349,10 @@ class TrackingUploadService {
     final startAt = _readDate(data['start_time']);
     final endAt = _readDate(data['end_time']);
     final durationMinutes = _readInt(data['duration_minutes']) ?? 0;
+    final keyCount = _readInt(data['key_count']) ?? 0;
+    final mouseClicks = _readInt(data['mouse_clicks']) ?? 0;
+    final mouseMovePx = _readInt(data['mouse_move_px']) ?? 0;
+    final scrollPx = _readInt(data['scroll_px']) ?? 0;
     return <String, dynamic>{
       'uid': 'activity-record:$id',
       'kind': 'activity_record',
@@ -347,6 +360,7 @@ class TrackingUploadService {
       'localId': id.toString(),
       if (startAt != null) 'startTime': _utcIso(startAt),
       if (endAt != null) 'endTime': _utcIso(endAt),
+      'durationMinutes': durationMinutes,
       'durationSeconds': durationMinutes * 60,
       'processName': data['process_name'],
       'windowTitle': data['window_title'],
@@ -355,11 +369,19 @@ class TrackingUploadService {
       'linkedTaskId': data['linked_task_id'],
       'isAuto': _readBool(data['is_auto']),
       'source': data['source'],
+      'keyCount': keyCount,
+      'key_count': keyCount,
+      'mouseClicks': mouseClicks,
+      'mouse_clicks': mouseClicks,
+      'mouseMovePx': mouseMovePx,
+      'mouse_move_px': mouseMovePx,
+      'scrollPx': scrollPx,
+      'scroll_px': scrollPx,
       'metadata': <String, Object?>{
-        'keyCount': data['key_count'],
-        'mouseClicks': data['mouse_clicks'],
-        'mouseMovePx': data['mouse_move_px'],
-        'scrollPx': data['scroll_px'],
+        'keyCount': keyCount,
+        'mouseClicks': mouseClicks,
+        'mouseMovePx': mouseMovePx,
+        'scrollPx': scrollPx,
         'manualLabel': data['manual_label'],
         'deviceId': data['device_id'],
         'platform': data['platform'],
