@@ -80,7 +80,6 @@ export class AdminApiClient {
     rootUri: string;
     rootDisplayPath?: string;
     syncPolicy?: string;
-    maxNodes?: number;
   }) {
     return this.request<ApiRecord>('/api/files/roots', {
       method: 'POST',
@@ -93,18 +92,15 @@ export class AdminApiClient {
         syncPolicy: body.syncPolicy ?? 'metadata_only',
         metadata: {
           source: 'web_admin_drive_root',
-          maxNodes: body.maxNodes,
         },
       }),
     });
   }
 
-  scanDriveRoot(rootId: string, body: { maxNodes?: number } = {}) {
+  scanDriveRoot(rootId: string) {
     return this.request<ApiRecord>(`/api/files/drive/roots/${encodeURIComponent(rootId)}/scan`, {
       method: 'POST',
-      body: JSON.stringify({
-        maxNodes: body.maxNodes,
-      }),
+      body: JSON.stringify({}),
     });
   }
 

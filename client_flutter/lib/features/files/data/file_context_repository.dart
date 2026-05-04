@@ -651,6 +651,35 @@ class FileContextRepository {
     }
   }
 
+  Future<void> deleteRoot(int folderId) async {
+    final folder = await getFolderById(folderId);
+    if (folder == null) {
+      throw StateError('资料库不存在。');
+    }
+    final remoteId = folder.remoteId;
+    if (remoteId == null || remoteId.trim().isEmpty) {
+      throw StateError('该资料库没有服务端 ID，无法删除。');
+    }
+    final apiLoader = _apiLoader;
+    if (apiLoader == null) {
+      throw StateError('未配置服务端 API。');
+    }
+    final api = await apiLoader();
+    final result = await api.deleteDriveRoot(rootId: remoteId);
+    if (result['ok'] != true) {
+      final reason = result['reason']?.toString() ?? result['error']?.toString() ?? 'unknown';
+      throw StateError('服务端删除失败：$reason');
+    }
+    await _db.customStatement(
+      'DELETE FROM file_folders WHERE id = ?',
+      [folderId],
+    );
+    await _db.customStatement(
+      'DELETE FROM file_nodes WHERE root_folder_id = ?',
+      [folderId],
+    );
+  }
+
   Future<FileFolder> bindRootLocalDirectory({
     required int folderId,
     required String localPath,
@@ -838,7 +867,7 @@ class FileContextRepository {
 
   Future<FileScanResult> scanRoot({
     required int folderId,
-    int maxNodes = 5000,
+    int maxNodes = 0,
     void Function(FileScanProgress progress)? onProgress,
   }) async {
     final folder = await getFolderById(folderId);
@@ -902,7 +931,7 @@ class FileContextRepository {
       );
 
       for (final entity in children) {
-        if (scanned >= maxNodes) {
+        if (maxNodes > 0 && scanned >= maxNodes) {
           truncated = true;
           queue.clear();
           break;

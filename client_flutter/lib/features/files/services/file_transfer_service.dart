@@ -243,6 +243,21 @@ class FileTransferService extends ChangeNotifier {
     }
   }
 
+  Future<void> removeJob(String jobId) async {
+    _jobs.removeWhere((job) => job.id == jobId);
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> clearCompletedJobs() async {
+    _jobs.removeWhere((job) =>
+        job.status == FileTransferStatus.uploaded ||
+        job.status == FileTransferStatus.downloaded ||
+        job.status == FileTransferStatus.failed);
+    await _save();
+    notifyListeners();
+  }
+
   Future<void> uploadFile(String path) async {
     await load();
     final file = File(path);
@@ -609,6 +624,9 @@ class FileTransferService extends ChangeNotifier {
     final sessionId = job.sessionId;
     if (sessionId == null) {
       throw StateError('下载任务缺少 sessionId。');
+    }
+    if (job.totalBytes <= 0) {
+      throw StateError('文件大小未知或为0，无法下载。请确认服务端文件元数据是否完整。');
     }
     final partPath = _partPath(job.localPath);
     await Directory(File(partPath).parent.path).create(recursive: true);

@@ -5,7 +5,6 @@ import {
   Descriptions,
   Form,
   Input,
-  InputNumber,
   Popconfirm,
   Space,
   Statistic,
@@ -58,7 +57,6 @@ interface DriveRootFormValues {
   name: string;
   rootUri: string;
   rootDisplayPath?: string;
-  maxNodes?: number;
 }
 
 export function DriveFilesPage(props: {
@@ -121,7 +119,6 @@ export function DriveFilesPage(props: {
         name: values.name.trim(),
         rootUri: values.rootUri.trim(),
         rootDisplayPath: values.rootDisplayPath?.trim(),
-        maxNodes: values.maxNodes,
       });
       if (result.ok !== true) {
         throw new Error(String(result.message ?? result.reason ?? 'Drive root 保存失败'));
@@ -143,8 +140,7 @@ export function DriveFilesPage(props: {
     setScanningRootId(rootId);
     setPageError(null);
     try {
-      const maxNodes = readMaxNodes(root) ?? form.getFieldValue('maxNodes') ?? 5000;
-      const result = await props.api.scanDriveRoot(rootId, { maxNodes });
+      const result = await props.api.scanDriveRoot(rootId);
       if (result.ok !== true) {
         throw new Error(String(result.error ?? result.reason ?? 'Drive root 扫描失败'));
       }
@@ -315,7 +311,6 @@ export function DriveFilesPage(props: {
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ maxNodes: 5000 }}
             onFinish={(values) => void onSubmit(values)}
           >
             <Form.Item
@@ -335,9 +330,6 @@ export function DriveFilesPage(props: {
             </Form.Item>
             <Form.Item label="显示路径" name="rootDisplayPath">
               <Input placeholder="可选：显示给客户端的友好路径" />
-            </Form.Item>
-            <Form.Item label="扫描节点上限" name="maxNodes">
-              <InputNumber min={1} max={200000} step={500} style={{ width: 220 }} />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<FolderAddOutlined />} loading={saving}>
               保存 Drive root
@@ -429,7 +421,7 @@ function RootDiagnostics(props: { root: DriveRootRecord }) {
         <Descriptions.Item label="耗时">{formatDuration(lastScan.durationMs)}</Descriptions.Item>
         <Descriptions.Item label="开始">{formatDate(lastScan.startedAt)}</Descriptions.Item>
         <Descriptions.Item label="结束">{formatDate(lastScan.finishedAt)}</Descriptions.Item>
-        <Descriptions.Item label="扫描上限">{formatCount(lastScan.maxNodes)}</Descriptions.Item>
+        <Descriptions.Item label="扫描上限">{Number(lastScan.maxNodes) > 0 ? formatCount(lastScan.maxNodes) : '不限制'}</Descriptions.Item>
         <Descriptions.Item label="扫描数量">{formatCount(lastScan.scanned)}</Descriptions.Item>
         <Descriptions.Item label="应用数量">{formatCount(lastScan.applied)}</Descriptions.Item>
         <Descriptions.Item label="达到上限">{lastScan.reachedMaxNodes === true ? '是' : '否'}</Descriptions.Item>
@@ -477,12 +469,6 @@ function readRoots(payload: unknown): DriveRootRecord[] {
       id: String(item.id ?? item.rootId ?? item.rootUid ?? ''),
     }))
     .filter((item) => item.id.length > 0);
-}
-
-function readMaxNodes(root: DriveRootRecord) {
-  const value = root.metadata?.maxNodes;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
 }
 
 function asRecord(value: unknown): ApiRecord {

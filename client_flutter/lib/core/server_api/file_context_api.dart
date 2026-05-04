@@ -133,7 +133,7 @@ class FileContextApi {
   Future<Map<String, dynamic>> scanDriveRoot({
     required String rootId,
     String? rootPath,
-    int maxNodes = 5000,
+    int maxNodes = 0,
   }) {
     return _apiClient.postJson(
       '/files/drive/roots/$rootId/scan',
@@ -141,6 +141,14 @@ class FileContextApi {
         'rootPath': rootPath,
         'maxNodes': maxNodes,
       },
+    );
+  }
+
+  Future<Map<String, dynamic>> deleteDriveRoot({
+    required String rootId,
+  }) {
+    return _apiClient.deleteJson(
+      '/files/drive/roots/${Uri.encodeComponent(rootId)}',
     );
   }
 

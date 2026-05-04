@@ -199,27 +199,24 @@ class TrackingUploadService {
     }
     final rejected = _readInt(completed['rejected']) ?? 0;
     final accepted = _readInt(completed['accepted']) ?? 0;
-    if (rejected > 0) {
+    if (accepted <= 0 && rejected > 0) {
       await _database.setSetting(
         lastErrorKey,
-        'Tracking ingest completed with $rejected rejected '
-        '${export.dataKind} records.',
+        'Tracking ingest rejected all ${rejected} ${export.dataKind} records.',
       );
       throw StateError(
-        'Tracking ingest rejected $rejected ${export.dataKind} records; '
+        'Tracking ingest rejected all ${rejected} ${export.dataKind} records; '
         'local upload cursor was preserved for retry.',
       );
     }
-    if (accepted < export.records.length) {
+    if (rejected > 0) {
       await _database.setSetting(
         lastErrorKey,
-        'Tracking ingest accepted $accepted/${export.records.length} '
-        '${export.dataKind} records.',
+        'Tracking ingest accepted $accepted, rejected $rejected '
+        '${export.dataKind} records (partial success).',
       );
-      throw StateError(
-        'Tracking ingest accepted only $accepted/${export.records.length} '
-        '${export.dataKind} records; local upload cursor was preserved.',
-      );
+    } else {
+      await _database.deleteSetting(lastErrorKey);
     }
     await _database.setSetting(export.lastIdKey, export.maxId.toString());
 

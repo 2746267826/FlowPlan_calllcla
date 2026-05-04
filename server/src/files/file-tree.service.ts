@@ -52,7 +52,7 @@ export class FileTreeService {
       });
     }
     const startedAt = new Date();
-    const maxNodes = this.readNumber(body.maxNodes, 5000);
+    const maxNodes = this.readNumber(body.maxNodes, 0);
     const logPrefix = `[drive-scan:${rootId}]`;
     console.log(
       `${logPrefix} start name="${String(root.name ?? '')}" rootPath="${rootPath}" maxNodes=${maxNodes}`,
@@ -87,7 +87,7 @@ export class FileTreeService {
       const now = Date.now();
       const shouldPublish =
         progress.scanned === 0 ||
-        progress.scanned >= maxNodes ||
+        (maxNodes > 0 && progress.scanned >= maxNodes) ||
         progress.scanned - lastProgressCount >= 100 ||
         now - lastProgressAt >= 2000;
       if (!shouldPublish) {
@@ -124,7 +124,7 @@ export class FileTreeService {
               queuedFolders: progress.queuedFolders,
               phase: progress.phase,
               progressMessage,
-              reachedMaxNodes: progress.scanned >= maxNodes,
+              reachedMaxNodes: maxNodes > 0 && progress.scanned >= maxNodes,
             },
           }),
         ],
@@ -196,8 +196,10 @@ export class FileTreeService {
           maxNodes,
           rootPath,
           scanned: nodes.length,
-          reachedMaxNodes: nodes.length >= maxNodes,
-          progressMessage: `collected ${nodes.length}/${maxNodes} nodes; applying snapshot`,
+          reachedMaxNodes: maxNodes > 0 && nodes.length >= maxNodes,
+          progressMessage: maxNodes > 0
+            ? `collected ${nodes.length}/${maxNodes} nodes; applying snapshot`
+            : `collected ${nodes.length} nodes (no limit); applying snapshot`,
         },
       },
       context,
@@ -448,7 +450,8 @@ export class FileTreeService {
     const queue: Array<{ path: string; parentUid: string }> = [
       { path: rootPath, parentUid: `root:${rootPath}` },
     ];
-    while (queue.length > 0 && nodes.length < maxNodes) {
+    const hasLimit = maxNodes > 0;
+    while (queue.length > 0 && (!hasLimit || nodes.length < maxNodes)) {
       const current = queue.shift();
       if (!current) {
         continue;
@@ -456,7 +459,7 @@ export class FileTreeService {
       const entries = await readdir(current.path, { withFileTypes: true });
       entries.sort((left, right) => left.name.localeCompare(right.name));
       for (const entry of entries) {
-        if (nodes.length >= maxNodes) {
+        if (hasLimit && nodes.length >= maxNodes) {
           break;
         }
         if (!entry.isFile() && !entry.isDirectory()) {

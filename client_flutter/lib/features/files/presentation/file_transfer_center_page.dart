@@ -16,6 +16,11 @@ class FileTransferCenterPage extends ConsumerWidget {
         title: const Text('文件传输中心'),
         actions: [
           IconButton(
+            tooltip: '清除已完成/失败的任务',
+            icon: const Icon(Icons.cleaning_services_outlined),
+            onPressed: service.clearCompletedJobs,
+          ),
+          IconButton(
             tooltip: '刷新服务端会话',
             icon: service.refreshingServer
                 ? const SizedBox(
@@ -69,6 +74,7 @@ class FileTransferCenterPage extends ConsumerWidget {
                 onDownload: job.canDownload
                     ? () => _downloadUploadedJob(context, service, job)
                     : null,
+                onDelete: () => service.removeJob(job.id),
               ),
             ),
           const SizedBox(height: 24),
@@ -224,11 +230,13 @@ class _TransferJobTile extends StatelessWidget {
     required this.job,
     required this.onResume,
     required this.onDownload,
+    required this.onDelete,
   });
 
   final FileTransferJob job;
   final VoidCallback onResume;
   final VoidCallback? onDownload;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -286,6 +294,14 @@ class _TransferJobTile extends StatelessWidget {
                     icon: const Icon(Icons.download, size: 18),
                     label: const Text('下载'),
                   ),
+                OutlinedButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('删除'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
               ],
             ),
           ],

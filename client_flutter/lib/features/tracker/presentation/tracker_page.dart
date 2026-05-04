@@ -515,7 +515,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
 
   Future<T> _withLoadTimeout<T>(Future<T> future, String label) {
     return future.timeout(
-      const Duration(seconds: 12),
+      const Duration(seconds: 30),
       onTimeout: () {
         throw _TrackerLoadTimeout('$label加载超时，请点击右上角刷新重试。');
       },

@@ -83,6 +83,7 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
                     _query = '';
                   });
                 },
+                onDelete: (root) => _deleteRoot(root),
               );
               final browser = _NodeBrowserPane(
                 root: selectedRoot,
@@ -180,6 +181,51 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('云盘树已从服务端刷新')),
     );
+  }
+
+  Future<void> _deleteRoot(FileFolder root) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除 Root'),
+        content: Text(
+          '确认删除「${root.displayName}」？\n\n'
+          '这会删除服务端的 Root 配置和文件树索引，但不会删除服务器上的真实文件。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(fileContextRepositoryProvider).deleteRoot(root.id);
+      if (!mounted) return;
+      setState(() {
+        _selectedRootId = null;
+        _currentFolderNodeId = null;
+        _selectedNodeId = null;
+      });
+      ref.read(fileContextRefreshTickProvider.notifier).state++;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已删除「${root.displayName}」')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：$error')),
+      );
+    }
   }
 
   Future<void> _scanRoot(FileFolder root) async {
@@ -288,12 +334,14 @@ class _RootList extends ConsumerWidget {
     required this.selectedRootId,
     required this.onAdd,
     required this.onSelect,
+    required this.onDelete,
   });
 
   final List<FileFolder> roots;
   final int selectedRootId;
   final VoidCallback onAdd;
   final ValueChanged<FileFolder> onSelect;
+  final ValueChanged<FileFolder> onDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -339,6 +387,23 @@ class _RootList extends ConsumerWidget {
               onLongPress: () => ref
                   .read(fileContextInteractionServiceProvider)
                   .revealFolder(root),
+              trailing: PopupMenuButton<String>(
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline),
+                      title: Text('删除 Root'),
+                      dense: true,
+                    ),
+                  ),
+                ],
+                onSelected: (value) {
+                  if (value == 'delete') {
+                    onDelete(root);
+                  }
+                },
+              ),
             ),
           ),
         ),

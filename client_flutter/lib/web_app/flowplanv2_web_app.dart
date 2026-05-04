@@ -1171,17 +1171,29 @@ class _DrivePageState extends State<_DrivePage> {
   }
 
   Future<void> _download(Map<String, dynamic> node) async {
-    final bytes = await _downloadNodeBytes(node, previewOnly: false);
-    final blob = html.Blob(
-      [bytes],
-      '${node['mimeType'] ?? 'application/octet-stream'}',
-    );
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..download = '${node['name'] ?? 'download'}'
-      ..click();
-    html.Url.revokeObjectUrl(url);
-    setState(() => status = '已开始下载：${node['name']}');
+    setState(() => status = '正在下载：${node['name']}...');
+    try {
+      final bytes = await _downloadNodeBytes(node, previewOnly: false);
+      if (!mounted) return;
+      final blob = html.Blob(
+        [bytes],
+        '${node['mimeType'] ?? 'application/octet-stream'}',
+      );
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..download = '${node['name'] ?? 'download'}';
+      html.document.body?.append(anchor);
+      anchor.click();
+      anchor.remove();
+      html.Url.revokeObjectUrl(url);
+      setState(() => status = '已开始下载：${node['name']}');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => status = '下载失败：$error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('下载失败：$error')),
+      );
+    }
   }
 
   Future<Uint8List> _downloadNodeBytes(
@@ -1192,8 +1204,15 @@ class _DrivePageState extends State<_DrivePage> {
       '/files/drive/nodes/${node['id']}/download-request',
       body: {'targetMode': previewOnly ? 'browser_preview' : 'browser_download'},
     );
+    if (request['ok'] == false) {
+      final reason = request['reason']?.toString() ?? 'unknown';
+      throw StateError('服务端拒绝下载请求：$reason');
+    }
     final session = _asMap(request['downloadSession']);
-    final sessionId = '${session['sessionId']}';
+    final sessionId = session['sessionId']?.toString();
+    if (sessionId == null || sessionId.isEmpty) {
+      throw StateError('服务端未返回下载会话 ID');
+    }
     final total = (session['totalBytes'] as num?)?.toInt() ??
         (node['sizeBytes'] as num?)?.toInt() ??
         0;
@@ -1206,11 +1225,18 @@ class _DrivePageState extends State<_DrivePage> {
         '/files/download-sessions/$sessionId/range',
         query: {'start': '$start', 'end': '$end'},
       );
+      if (range['ok'] == false) {
+        final reason = range['reason']?.toString() ?? 'unknown';
+        throw StateError('下载分块失败：$reason');
+      }
       for (final chunk in (range['chunks'] as List? ?? const [])) {
         final payload = _asMap(chunk)['payloadBase64'];
         if (payload is String) chunks.addAll(decodeBytes(payload));
       }
       if (targetBytes == 0) break;
+    }
+    if (chunks.isEmpty && total > 0) {
+      throw StateError('下载完成但未收到任何数据');
     }
     return Uint8List.fromList(chunks);
   }
