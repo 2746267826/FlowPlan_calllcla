@@ -515,6 +515,7 @@ export class SyncService {
         WHERE user_id = $1
           AND object_type = $2
           AND uid = $3
+          AND deleted_at IS NULL
         LIMIT 1
         `,
         [userId, mutation.objectType, mutation.uid],

@@ -1458,6 +1458,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         SELECT id::text
         FROM sync_objects
         WHERE user_id = $1 AND object_type = $2 AND uid = $3
+        ORDER BY deleted_at NULLS FIRST
         LIMIT 1
         `,
         [userId, objectType, uid],
@@ -1500,13 +1501,12 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           deleted_at = NULL,
           server_version = server_version + 1,
           updated_at = now()
-        WHERE user_id = $1
-          AND object_type = $2
-          AND uid = $3
+        WHERE id = $5
+          AND user_id = $1
           AND (payload IS DISTINCT FROM $4::jsonb OR deleted_at IS NOT NULL)
         RETURNING id::text, server_version, payload
         `,
-        [userId, objectType, uid, JSON.stringify(payload)],
+        [userId, objectType, uid, JSON.stringify(payload), existing.rows[0].id],
       );
       const object = updated.rows[0];
       if (!object) {

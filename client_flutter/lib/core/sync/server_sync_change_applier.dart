@@ -256,6 +256,10 @@ class ServerSyncChangeApplier {
       case 'calendar_book':
         if (id != null) {
           await _database.customStatement(
+            "DELETE FROM sync_object_states WHERE object_type = 'calendar_event' AND local_id IN (SELECT CAST(id AS TEXT) FROM calendar_events WHERE event_calendar_id = ?)",
+            [id],
+          );
+          await _database.customStatement(
             'DELETE FROM calendar_events WHERE event_calendar_id = ?',
             [id],
           );
