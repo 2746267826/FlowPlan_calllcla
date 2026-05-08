@@ -13,7 +13,7 @@ import {
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { clean, iso, encrypt, decrypt, encryptionKey } from '../common/utils';
+import { clean, iso, encrypt, decrypt, encryptionKey, isEncryptionKeySecure } from '../common/utils';
 import { ObjectType } from '../common/constants/object-types';
 import { GraphClientService } from './graph-client.service';
 
@@ -155,11 +155,10 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
 
   async status(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const [connection, calendars, lastRun, tokenSecretStatus] = await Promise.all([
+    const [connection, calendars, lastRun] = await Promise.all([
       this.getConnection(userId),
       this.countCalendars(userId),
       this.latestRun(userId),
-      this.tokenSecretStatus(userId),
     ]);
 
     return {
@@ -170,8 +169,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       scope: outlookScope(),
       syncMode: 'server_pull_only',
       automaticSyncIntervalMinutes: SYNC_INTERVAL_MINUTES,
-      tokenSecretConfigured: tokenSecretStatus.configured,
-      tokenSecretSource: tokenSecretStatus.source,
+      encryptionKeySecure: isEncryptionKeySecure(),
       connected: connection?.status === 'connected',
       status: connection?.status ?? 'disconnected',
       accountEmail: connection?.account_email ?? null,
@@ -256,7 +254,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    if (!(await this.hasTokenSecret(userId))) {
+    if (!isEncryptionKeySecure()) {
       throw new BadRequestException(
         'Outlook token encryption secret is required before authorization. Configure FLOWPLANV2_OUTLOOK_TOKEN_SECRET or save it in the Outlook admin panel, then retry authorization.',
       );
@@ -355,75 +353,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return this.syncUser(userId, triggerSource);
   }
 
-  async saveTokenSecret(
-    body: Record<string, unknown>,
-    context: FlowPlanV2RequestContext,
-  ) {
-    const userId = await this.devicesService.ensureUser(context.userId);
-    const secret = this.cleanString(body.secret);
-    if (!secret || secret.length < 32) {
-      throw new BadRequestException(
-        'Outlook token encryption secret must be at least 32 characters',
-      );
-    }
-    const confirmRotation = body.confirmRotation === true;
-    const connection = await this.getConnection(userId);
-    const hasTokens = Boolean(
-      connection?.access_token_encrypted || connection?.refresh_token_encrypted,
-    );
-    if (hasTokens && !confirmRotation) {
-      throw new BadRequestException(
-        'Outlook tokens already exist. Confirm rotation to clear existing tokens and reconnect Outlook.',
-      );
-    }
-
-    await this.database.transaction(async (client) => {
-      await client.query(
-        `
-        INSERT INTO admin_remote_configs (
-          user_id, config_key, config_value, description, is_sensitive, scope, updated_by
-        ) VALUES ($1, 'outlook.token_secret', $2::jsonb, $3, true, 'outlook.connection', 'admin')
-        ON CONFLICT (user_id, config_key) DO UPDATE SET
-          config_value = EXCLUDED.config_value,
-          description = EXCLUDED.description,
-          is_sensitive = true,
-          scope = EXCLUDED.scope,
-          version = admin_remote_configs.version + 1,
-          updated_by = 'admin',
-          updated_at = now()
-        `,
-        [
-          userId,
-          JSON.stringify({ secret, configuredAt: new Date().toISOString() }),
-          'Outlook token encryption secret configured from admin panel',
-        ],
-      );
-      if (hasTokens) {
-        await client.query(
-          `
-          UPDATE outlook_connections
-          SET
-            refresh_token_encrypted = NULL,
-            access_token_encrypted = NULL,
-            access_token_expires_at = NULL,
-            status = 'disconnected',
-            last_error = 'Token secret rotated; reconnect Outlook.',
-            updated_at = now()
-          WHERE user_id = $1
-          `,
-          [userId],
-        );
-      }
-    });
-
-    process.env.FLOWPLANV2_OUTLOOK_TOKEN_SECRET = secret;
-    return {
-      ok: true,
-      configured: true,
-      source: 'admin_panel',
-      tokensCleared: hasTokens,
-    };
-  }
+  // saveTokenSecret removed — encryption key now managed via FLOWPLANV2_ENCRYPTION_KEY env var
 
   async reset(context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
@@ -1626,7 +1556,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async ensureAccessToken(connection: OutlookConnectionRow) {
-    if (!(await this.hasTokenSecret(connection.user_id))) {
+    if (!isEncryptionKeySecure()) {
       throw new Error('Outlook token secret is required');
     }
     const expiresAt = connection.access_token_expires_at
@@ -1882,39 +1812,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       .replace(/=+$/g, '');
   }
 
-  private tokenKey() {
-    const secret = process.env.FLOWPLANV2_OUTLOOK_TOKEN_SECRET;
-    if (!secret) {
-      throw new Error('Outlook token secret is required');
-    }
-    return createHash('sha256').update(secret).digest();
-  }
-
-  private async hasTokenSecret(userId: string) {
-    return (await this.tokenSecretStatus(userId)).configured;
-  }
-
-  private async tokenSecretStatus(userId: string) {
-    if (process.env.FLOWPLANV2_OUTLOOK_TOKEN_SECRET) {
-      return { configured: true, source: 'environment' };
-    }
-    const result = await this.database.query<{ config_value: Record<string, unknown> }>(
-      `
-      SELECT config_value
-      FROM admin_remote_configs
-      WHERE user_id = $1 AND config_key = 'outlook.token_secret'
-      LIMIT 1
-      `,
-      [userId],
-    );
-    const secret = this.cleanString(result.rows[0]?.config_value?.secret);
-    if (!secret) {
-      return { configured: false, source: 'missing' };
-    }
-    process.env.FLOWPLANV2_OUTLOOK_TOKEN_SECRET = secret;
-    return { configured: true, source: 'admin_panel' };
-  }
-
+  // Token encryption now uses encryptionKey() / isEncryptionKeySecure() from crypto.ts
+  // (unified in Phase A5).  No per-service secretKey / tokenSecret methods remain.
 
   // ====================================================================
   // Human-confirmed Outlook writes (prepare/confirm pattern)

@@ -126,8 +126,6 @@ export interface OutlookStatus extends ApiRecord {
   scope?: string;
   lastSyncAt?: string;
   calendars?: number;
-  tokenSecretConfigured?: boolean;
-  tokenSecretSource?: string;
   clientIdConfigured?: boolean;
   lastError?: string;
 }

@@ -269,14 +269,6 @@ export class AdminController {
     return this.outlookService.completeAuth(body, readRequestContext(headers));
   }
 
-  @Post('outlook/token-secret')
-  outlookTokenSecret(
-    @Body() body: Record<string, unknown>,
-    @Headers() headers: Record<string, unknown>,
-  ) {
-    return this.outlookService.saveTokenSecret(body, readRequestContext(headers));
-  }
-
   @Post('outlook/sync')
   outlookSync(@Headers() headers: Record<string, unknown>) {
     return this.outlookService.syncNow(readRequestContext(headers), 'admin');

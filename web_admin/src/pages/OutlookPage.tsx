@@ -30,11 +30,8 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
   const [loading, setLoading] = useState(true);
   const [startingAuth, setStartingAuth] = useState(false);
   const [completingAuth, setCompletingAuth] = useState(false);
-  const [savingTokenSecret, setSavingTokenSecret] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [tokenSecret, setTokenSecret] = useState('');
-  const [confirmTokenRotation, setConfirmTokenRotation] = useState(false);
-  const authConfigReady = Boolean(status.clientIdConfigured && status.tokenSecretConfigured);
+  const authConfigReady = Boolean(status.clientIdConfigured);
 
   const load = async () => {
     setLoading(true);
@@ -122,10 +119,6 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
       message.warning('请粘贴 Microsoft 回调后的完整 URL');
       return;
     }
-    if (!status.tokenSecretConfigured) {
-      message.warning('请先配置 Outlook token 加密密钥');
-      return;
-    }
     setCompletingAuth(true);
     setAuthError('');
     try {
@@ -136,27 +129,6 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
       showAuthError('完成 Outlook 授权失败', error);
     } finally {
       setCompletingAuth(false);
-    }
-  };
-
-  const saveTokenSecret = async () => {
-    const trimmed = tokenSecret.trim();
-    if (!trimmed) {
-      message.warning('请先输入 Outlook token 加密密钥');
-      return;
-    }
-    setSavingTokenSecret(true);
-    setAuthError('');
-    try {
-      await props.api.saveOutlookTokenSecret(trimmed, confirmTokenRotation);
-      message.success('Outlook token 加密密钥已保存');
-      setTokenSecret('');
-      setConfirmTokenRotation(false);
-      await load();
-    } catch (error) {
-      showAuthError('保存 Outlook token 加密密钥失败', error);
-    } finally {
-      setSavingTokenSecret(false);
     }
   };
 
@@ -254,29 +226,11 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
                 onSearch={(clientId) => void startAuthorization(clientId)}
               />
             </Form.Item>
-            <Form.Item label="Outlook token 加密密钥">
-              <Space direction="vertical" size={8} className="full-width">
-                <Input.Password
-                  value={tokenSecret}
-                  onChange={(event) => setTokenSecret(event.target.value)}
-                  placeholder={status.tokenSecretConfigured ? '已配置，如需轮换请输入新密钥' : '至少 32 个字符，用于加密保存 Outlook token'}
-                  visibilityToggle={false}
-                />
-                <Space wrap>
-                  <Switch checked={confirmTokenRotation} onChange={setConfirmTokenRotation} />
-                  <Typography.Text type="secondary">确认轮换并清空现有 Outlook token</Typography.Text>
-                  <Button loading={savingTokenSecret} onClick={() => void saveTokenSecret()}>
-                    保存密钥
-                  </Button>
-                </Space>
-              </Space>
-            </Form.Item>
             <Form.Item label="授权回调 URL">
               <Input.Search
                 enterButton="完成授权"
                 loading={completingAuth}
                 placeholder="粘贴 Microsoft 回调后的完整 URL"
-                disabled={!status.tokenSecretConfigured}
                 onSearch={(callbackUrl) => void completeAuthorization(callbackUrl)}
               />
             </Form.Item>
@@ -319,8 +273,7 @@ export function OutlookPage(props: { api: AdminApiClient; onDataRefresh: () => v
               children: (
                 <Space direction="vertical" className="full-width">
                   <Descriptions bordered size="small" column={2}>
-                    <Descriptions.Item label="令牌密钥">{status.tokenSecretConfigured ? '已配置' : '未配置'}</Descriptions.Item>
-                    <Descriptions.Item label="密钥来源">{displayValue(status.tokenSecretSource)}</Descriptions.Item>
+                    <Descriptions.Item label="加密密钥">{status.encryptionKeySecure ? '已配置' : '未配置 (请设置 FLOWPLANV2_ENCRYPTION_KEY)'}</Descriptions.Item>
                     <Descriptions.Item label="权限范围">{displayValue(status.scope)}</Descriptions.Item>
                     <Descriptions.Item label="只读模式">{status.readOnly === false ? '否' : '是'}</Descriptions.Item>
                   </Descriptions>

@@ -204,13 +204,6 @@ export class AdminApiClient {
     });
   }
 
-  saveOutlookTokenSecret(secret: string, confirmRotation: boolean) {
-    return this.request<ApiRecord>('/api/admin/outlook/token-secret', {
-      method: 'POST',
-      body: JSON.stringify({ secret, confirmRotation }),
-    });
-  }
-
   syncOutlook() {
     return this.request<ApiRecord>('/api/admin/outlook/sync', {
       method: 'POST',
