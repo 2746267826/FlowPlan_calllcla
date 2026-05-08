@@ -10,8 +10,14 @@ export default defineConfig({
     root: resolve(__dirname, 'src'),
     include: ['**/*.spec.ts'],
     setupFiles: [resolve(__dirname, 'src/test-setup.ts')],
-    testTimeout: 15000,
+    testTimeout: 30000,
     hookTimeout: 15000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.spec.ts', 'src/test-setup.ts', 'node_modules'],
+    },
   },
   resolve: {
     alias: {

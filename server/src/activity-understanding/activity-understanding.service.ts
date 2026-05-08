@@ -5,7 +5,7 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
-import { clean, asRecord, readDate, readLimit, readOffset } from '../common/utils';
+import { clean, asRecord, asArray, readDate, readLimit, readOffset } from '../common/utils';
 import { TfidfMatcher } from '../common/utils/tfidf';
 import { ObjectType, TaskTypes, TrackingTypes } from '../common/constants/object-types';
 
@@ -808,6 +808,153 @@ export class ActivityUnderstandingService {
     const start = new Date(`${dateText}T00:00:00.000Z`);
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
     return { start, end };
+  }
+
+  async splitSegment(
+    segmentId: string,
+    body: Record<string, unknown>,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    const splitAt = readDate(body.splitAt);
+    if (!splitAt) throw new BadRequestException('splitAt must be a valid ISO-8601 date string');
+
+    return this.database.transaction(async (client) => {
+      const seg = await client.query<QueryResultRow>(
+        `SELECT * FROM activity_segments WHERE user_id = $1 AND id = $2 LIMIT 1`,
+        [userId, segmentId],
+      );
+      if (!seg.rows[0]) throw new BadRequestException('segment not found');
+
+      const startAt = new Date(String(seg.rows[0].start_at));
+      const endAt = new Date(String(seg.rows[0].end_at));
+      if (splitAt <= startAt || splitAt >= endAt) {
+        throw new BadRequestException('splitAt must be between segment startAt and endAt');
+      }
+
+      // Mark original as split
+      await client.query(
+        `UPDATE activity_segments SET status = 'split', updated_at = now() WHERE user_id = $1 AND id = $2`,
+        [userId, segmentId],
+      );
+
+      // Create first half
+      const first = await client.query<QueryResultRow>(
+        `INSERT INTO activity_segments (
+           user_id, segment_uid, start_at, end_at, duration_seconds,
+           primary_process_name, primary_app, primary_window_title, primary_file_path,
+           category, label, source_record_ids, evidence, confidence, status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'candidate')
+         RETURNING id::text AS id`,
+        [
+          userId,
+          `split-a:${seg.rows[0].segment_uid}`,
+          startAt, splitAt,
+          Math.round((splitAt.getTime() - startAt.getTime()) / 1000),
+          seg.rows[0].primary_process_name,
+          seg.rows[0].primary_window_title,
+          seg.rows[0].primary_file_path,
+          seg.rows[0].category,
+          seg.rows[0].label,
+          seg.rows[0].source_record_ids,
+          seg.rows[0].evidence,
+          seg.rows[0].confidence,
+        ],
+      );
+
+      // Create second half
+      const second = await client.query<QueryResultRow>(
+        `INSERT INTO activity_segments (
+           user_id, segment_uid, start_at, end_at, duration_seconds,
+           primary_process_name, primary_app, primary_window_title, primary_file_path,
+           category, label, source_record_ids, evidence, confidence, status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'candidate')
+         RETURNING id::text AS id`,
+        [
+          userId,
+          `split-b:${seg.rows[0].segment_uid}`,
+          splitAt, endAt,
+          Math.round((endAt.getTime() - splitAt.getTime()) / 1000),
+          seg.rows[0].primary_process_name,
+          seg.rows[0].primary_window_title,
+          seg.rows[0].primary_file_path,
+          seg.rows[0].category,
+          seg.rows[0].label,
+          seg.rows[0].source_record_ids,
+          seg.rows[0].evidence,
+          seg.rows[0].confidence,
+        ],
+      );
+
+      await this.recordAudit(client, userId, deviceId, 'activity.split_segment', {
+        originalSegmentId: segmentId,
+        splitAt: splitAt.toISOString(),
+        firstHalfId: first.rows[0]?.id,
+        secondHalfId: second.rows[0]?.id,
+      });
+
+      return { ok: true, firstHalfId: first.rows[0]?.id, secondHalfId: second.rows[0]?.id };
+    });
+  }
+
+  async mergeSegments(
+    body: Record<string, unknown>,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    const segmentIds = asArray(body.segmentIds).map(String);
+    if (segmentIds.length < 2) throw new BadRequestException('segmentIds must have at least 2 segment IDs');
+
+    return this.database.transaction(async (client) => {
+      const segs = await client.query<QueryResultRow>(
+        `SELECT * FROM activity_segments
+         WHERE user_id = $1 AND id = ANY($2::uuid[])
+         ORDER BY start_at ASC`,
+        [userId, segmentIds],
+      );
+      if (segs.rows.length < 2) throw new BadRequestException('at least 2 valid segments required');
+
+      const earliest = new Date(Math.min(...segs.rows.map((r: QueryResultRow) => new Date(String(r.start_at)).getTime())));
+      const latest = new Date(Math.max(...segs.rows.map((r: QueryResultRow) => new Date(String(r.end_at)).getTime())));
+
+      const mergedUid = `merged:${segs.rows.map((r: QueryResultRow) => (r as Record<string,unknown>).segment_uid).join(':')}`;
+      const apps = [...new Set(segs.rows.map((r: QueryResultRow) => (r as Record<string,unknown>).primary_process_name))];
+
+      const merged = await client.query<QueryResultRow>(
+        `INSERT INTO activity_segments (
+           user_id, segment_uid, start_at, end_at, duration_seconds,
+           primary_process_name, primary_app, category, label,
+           source_record_ids, evidence, confidence, status
+         ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9::jsonb,$10::jsonb,$11,'candidate')
+         RETURNING id::text AS id`,
+        [
+          userId, mergedUid, earliest, latest,
+          Math.round((latest.getTime() - earliest.getTime()) / 1000),
+          (apps[0] ?? 'unknown'),
+          'merged',
+          `合并片段 (${segs.rows.length} 段)`,
+          JSON.stringify(segmentIds),
+          JSON.stringify({ mergedFrom: segmentIds, mergeRule: 'manual' }),
+          Math.min(...segs.rows.map((r: QueryResultRow) => Number(r.confidence ?? 0.5))),
+        ],
+      );
+
+      for (const row of segs.rows) {
+        await client.query(
+          `UPDATE activity_segments SET status = 'merged', updated_at = now()
+           WHERE user_id = $1 AND id = $2`,
+          [userId, (row as Record<string,unknown>).id],
+        );
+      }
+
+      await this.recordAudit(client, userId, deviceId, 'activity.merge_segments', {
+        segmentIds, mergedId: merged.rows[0]?.id,
+      });
+
+      return { ok: true, mergedId: merged.rows[0]?.id };
+    });
   }
 
   private durationSeconds(start: Date, end: Date) {

@@ -15,6 +15,8 @@ export const modules: Array<{ key: ModuleKey; label: string; description: string
   { key: 'operations', label: '运维操作', description: '执行需要 prepare/confirm 的受控管理动作。' },
   { key: 'logs', label: '系统日志', description: '查看审计日志、操作记录和变更详情。' },
   { key: 'jobs', label: '定时任务', description: '管理后台定时任务：查看、触发、暂停、恢复。' },
+  { key: 'schedule', label: '智能排程', description: '拓扑排序、遗传算法调度、依赖管理。' },
+  { key: 'alerts', label: '异常告警', description: '查看所有模块的失败记录和错误信息。' },
 ];
 
 export const datasets: Record<string, DatasetDefinition> = {

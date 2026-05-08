@@ -13,7 +13,7 @@ import {
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { clean, iso, encrypt, decrypt } from '../common/utils';
+import { clean, iso, encrypt, decrypt, encryptionKey } from '../common/utils';
 import { ObjectType } from '../common/constants/object-types';
 import { GraphClientService } from './graph-client.service';
 
@@ -329,8 +329,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         [
           userId,
           authSession.client_id,
-          encrypt(refreshToken, this.secretKey()),
-          encrypt(token.access_token, this.secretKey()),
+          encrypt(refreshToken, encryptionKey()),
+          encrypt(token.access_token, encryptionKey()),
           expiresAt,
           this.cleanString(me.mail) ?? this.cleanString(me.userPrincipalName),
           this.cleanString(me.displayName),
@@ -1633,7 +1633,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       ? new Date(connection.access_token_expires_at).getTime()
       : 0;
     if (connection.access_token_encrypted && expiresAt > Date.now() + 120_000) {
-      return decrypt(connection.access_token_encrypted, this.secretKey());
+      return decrypt(connection.access_token_encrypted, encryptionKey());
     }
     if (!connection.refresh_token_encrypted) {
       throw new Error('Outlook refresh token is missing');
@@ -1642,7 +1642,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       connection.client_id,
       connection.redirect_uri,
       connection.scope,
-      decrypt(connection.refresh_token_encrypted, this.secretKey()),
+      decrypt(connection.refresh_token_encrypted, encryptionKey()),
     );
     const expires = new Date(Date.now() + Number(refreshed.expires_in ?? 3600) * 1000);
     await this.database.query(
@@ -1657,8 +1657,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       `,
       [
         connection.user_id,
-        encrypt(refreshed.access_token, this.secretKey()),
-        refreshed.refresh_token ? encrypt(refreshed.refresh_token, this.secretKey()) : null,
+        encrypt(refreshed.access_token, encryptionKey()),
+        refreshed.refresh_token ? encrypt(refreshed.refresh_token, encryptionKey()) : null,
         expires,
       ],
     );
@@ -1915,16 +1915,6 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return { configured: true, source: 'admin_panel' };
   }
 
-  private secretKey() {
-    const secret =
-      process.env.OUTLOOK_CONFIG_SECRET ??
-      process.env.OUTLOOK_CONFIG_SECRET ??
-      process.env.AI_CONFIG_SECRET ??
-      process.env.FLOWPLANV2_DATABASE_URL ??
-      process.env.DATABASE_URL ??
-      'flowplanv2-local-development-secret';
-    return createHash('sha256').update(secret).digest();
-  }
 
   // ====================================================================
   // Human-confirmed Outlook writes (prepare/confirm pattern)

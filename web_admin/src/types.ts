@@ -14,7 +14,9 @@ export type ModuleKey =
   | 'settings'
   | 'operations'
   | 'logs'
-  | 'jobs';
+  | 'jobs'
+  | 'schedule'
+  | 'alerts';
 
 export type DatasetDomain =
   | 'tasks'

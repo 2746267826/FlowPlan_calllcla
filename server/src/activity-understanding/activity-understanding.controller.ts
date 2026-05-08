@@ -59,4 +59,21 @@ export class ActivityUnderstandingController {
   ) {
     return this.service.feedback(segmentId, body, readRequestContext(headers));
   }
+
+  @Post('segments/:segmentId/split')
+  splitSegment(
+    @Param('segmentId') segmentId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.service.splitSegment(segmentId, body, readRequestContext(headers));
+  }
+
+  @Post('segments/merge')
+  mergeSegments(
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.service.mergeSegments(body, readRequestContext(headers));
+  }
 }

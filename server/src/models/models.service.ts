@@ -4,7 +4,7 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { clean, asRecord, readNumber, readInt, readLimit, decrypt } from '../common/utils';
+import { clean, asRecord, readNumber, readInt, readLimit, decrypt, encryptionKey } from '../common/utils';
 
 export interface ModelRunInput {
   source: string;
@@ -897,19 +897,9 @@ export class ModelsService {
   }
 
   private readApiKey(provider: ProviderConfig) {
-    return provider.api_key_ciphertext ? decrypt(provider.api_key_ciphertext, this.secretKey()) : null;
+    return provider.api_key_ciphertext ? decrypt(provider.api_key_ciphertext, encryptionKey()) : null;
   }
 
-  private secretKey() {
-    return createHash('sha256')
-      .update(
-        process.env.AI_CONFIG_SECRET ??
-          process.env.FLOWPLANV2_DATABASE_URL ??
-          process.env.DATABASE_URL ??
-          'flowplanv2-local-development-secret',
-      )
-      .digest();
-  }
 
   private async recordAudit(
     client: Pick<DatabaseService | TransactionClient, 'query'>,

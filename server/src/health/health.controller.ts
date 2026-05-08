@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { errorMessage } from '../common/utils';
+import { errorMessage, isEncryptionKeySecure } from '../common/utils';
 
 @Controller('health')
 export class HealthController {
@@ -143,6 +143,16 @@ export class HealthController {
       bodyLimit:
         process.env.FLOWPLANV2_BODY_LIMIT ?? '50mb',
       corsOrigin: process.env.ADMIN_CORS_ORIGIN ?? 'any',
+      encryptionKeySecure: isEncryptionKeySecure(),
+      encryptionKeySource: process.env.FLOWPLANV2_ENCRYPTION_KEY
+        ? 'FLOWPLANV2_ENCRYPTION_KEY'
+        : process.env.OUTLOOK_CONFIG_SECRET
+          ? 'OUTLOOK_CONFIG_SECRET'
+          : process.env.AI_CONFIG_SECRET
+            ? 'AI_CONFIG_SECRET'
+            : 'DATABASE_URL (fallback — set FLOWPLANV2_ENCRYPTION_KEY for production)',
+      poolStats: this.database.poolStats(),
+      slowQueryThresholdMs: Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? 1000),
     };
   }
 

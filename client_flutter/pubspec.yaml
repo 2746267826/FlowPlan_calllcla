@@ -51,6 +51,9 @@ dependencies:
   intl: ^0.20.2                 # 中文日期格式化
   collection: ^1.19.1           # Dart 集合工具
   shared_preferences: ^2.3.4    # 轻量设置存储
+  flutter_chat_ui: ^1.6.15       # AI 聊天 UI 组件
+  flutter_chat_types: ^3.6.2     # 聊天类型定义
+  markdown_widget: ^2.3.0        # Markdown 渲染
 
   cupertino_icons: ^1.0.8
   file_picker: ^10.3.10

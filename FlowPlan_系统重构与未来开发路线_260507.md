@@ -700,26 +700,26 @@ GROUP BY user_id, day_key, process_name, category;
 
 | 编号 | 任务 | 需要什么 | 预计工时 | 来源 |
 |------|------|---------|---------|------|
-| A1 | Azure AD 应用注册 → Outlook OAuth 端到端验证 | Microsoft 开发者账号 (portal.azure.com) | 2-4h | 6.1 |
-| A2 | Telegram Bot 创建 → 出站推送验证 | Telegram BotFather → bot token + chatId | 1h | 6.2 |
-| A3 | SMTP 配置 → Email 推送验证 | SMTP 服务器地址 + 认证凭据 (nodemailer 已集成) | 1h | 6.2 |
-| A4 | OneDrive OAuth 注册 → 云文件集成 | Azure AD 应用 (独立于 Outlook) | 4-8h | 6.3 |
-| A5 | AI API Key 加密密钥独立化 | 生成独立 OUTLOOK_CONFIG_SECRET / AI_CONFIG_SECRET | 0.5h | 2.3 |
+| A1 | ✅ Azure AD 应用注册 | 已完成 — 应用已创建 | — | 6.1 |
+| A2 | Telegram Bot 创建 — 暂缓 | Telegram BotFather → bot token + chatId | 1h | 6.2 |
+| A3 | SMTP 配置 — 暂缓 | SMTP 服务器地址 + 认证凭据 | 1h | 6.2 |
+| A4 | OneDrive OAuth — 暂缓 | Azure AD 应用 (独立于 Outlook) | 4-8h | 6.3 |
+| A5 | ✅ 加密密钥统一管理 | `encryptionKey()` unified + `isEncryptionKeySecure()` health check + 4 service secretKey() deleted | — | 2.3 |
 
 ### B. 客户端验证（需真实设备 + SDK）
 
 | 编号 | 任务 | 需要什么 | 预计工时 | 来源 |
 |------|------|---------|---------|------|
-| B1 | Flutter Windows build → 桌面客户端 | Windows + Flutter SDK + Visual Studio | 4h | 2.1.3 |
-| B2 | Flutter Android build → 移动端 | Android 设备 + Flutter SDK + Android Studio | 4h | 2.1.3 |
-| B3 | Flutter analyze + test → 静态分析修复 | Flutter SDK | 2h | 2.1.3 |
-| B4 | Drift migration test (schemaVersion 18) | Flutter SDK + 旧版 DB 文件 | 2h | 2.1.3 |
+| B1 | Flutter Windows build | `flutter build windows` → [见操作指南] | 1h | 2.1.3 |
+| B2 | Flutter Android build | `flutter build apk` → [见操作指南] | 1h | 2.1.3 |
+| B3 | ✅ Flutter 静态分析 | Claude 完成：0 TODO/FIXME，已知 deprecated outlook import | — | 2.1.3 |
+| B4 | ✅ 跳过 | 用户明确不需要导入旧数据 | — | 2.1.3 |
 | B5 | RawInput 24h 连续运行验证 | Windows 设备 | 8h | 5.2 |
 | B6 | Android UsageStats 真机验证 | Android 设备 | 2h | 5.2 |
-| B7 | Flutter AI 聊天 UI 开发 | Flutter SDK (flutter_chat_ui + markdown_widget + langchain_dart) | 16h | 5.8 |
-| B8 | Flutter task_repository / event_repository 重构 | Flutter SDK | 8h | 5.1 |
-| B9 | 人工拆分/合并活动 UI | Flutter SDK | 8h | 5.4 |
-| B10 | 管理端排程可视化 | 管理端开发 | 8h | 5.5 |
+| B7 | ✅ Flutter AI 聊天 UI | Chat page + Markdown rendering + Route → `flutter analyze` 0 errors | — | 5.8 |
+| B8 | ✅ 任务/日程仓库重构 | Shared payload_utils.dart + status alignment + 6 Value wrappers dedup | — | 5.1 |
+| B9 | ✅ 活动拆分/合并 | Server split/merge endpoints + Flutter API + Controller | — | 5.4 |
+| B10 | ✅ 管理端排程可视化 | SchedulePage (topo/genetic/jobs) + adminApi methods + route | — | 5.5 |
 
 ### C. 性能与并发验证
 

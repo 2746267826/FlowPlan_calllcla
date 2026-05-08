@@ -315,6 +315,12 @@ export class AdminController {
     return this.outlookService.rejectWrite(draftId, body, readRequestContext(headers));
   }
 
+  @Get('alerts')
+  alerts(@Headers() headers: Record<string, unknown>) {
+    const ctx = readRequestContext(headers);
+    return this.adminService.alerts(ctx.userId);
+  }
+
   @Get('outlook/calendars')
   outlookCalendars(@Headers() headers: Record<string, unknown>) {
     return this.outlookService.calendars(readRequestContext(headers));

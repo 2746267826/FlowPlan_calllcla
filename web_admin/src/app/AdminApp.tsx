@@ -11,6 +11,8 @@ import {
   ToolOutlined,
   FileTextOutlined,
   ClockCircleOutlined,
+  PlayCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { ProLayout, type MenuDataItem } from '@ant-design/pro-components';
 import { Alert, Button, ConfigProvider, Input, Space, theme } from 'antd';
@@ -26,8 +28,10 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { DevicesPage } from '../pages/DevicesPage';
 import { DriveFilesPage } from '../pages/DriveFilesPage';
 import { OperationsPage } from '../pages/OperationsPage';
+import { SchedulePage } from '../pages/SchedulePage';
 import { LogsPage } from '../pages/LogsPage';
 import { JobsPage } from '../pages/JobsPage';
+import { AlertsPage } from '../pages/AlertsPage';
 import { OutlookPage } from '../pages/OutlookPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TasksSchedulesPage } from '../pages/TasksSchedulesPage';
@@ -60,6 +64,8 @@ const iconMap: Record<ModuleKey, ReactNode> = {
   operations: <ToolOutlined />,
   logs: <FileTextOutlined />,
   jobs: <ClockCircleOutlined />,
+  schedule: <PlayCircleOutlined />,
+  alerts: <WarningOutlined />,
 };
 
 const actualPanels: BusinessPanel[] = [
@@ -511,6 +517,14 @@ export function AdminApp() {
       case 'jobs':
         return (
           <JobsPage api={api} onDataRefresh={onDataRefresh} />
+        );
+      case 'schedule':
+        return (
+          <SchedulePage api={api} onDataRefresh={onDataRefresh} />
+        );
+      case 'alerts':
+        return (
+          <AlertsPage api={api} onDataRefresh={onDataRefresh} />
         );
       default:
         return null;

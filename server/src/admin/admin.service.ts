@@ -1935,6 +1935,41 @@ export class AdminService {
     return [...expanded];
   }
 
+  // ---- D8: Alerts ----
+
+  async alerts(userId: string) {
+    const [tracking, sync, outlook, jobs, push] = await Promise.all([
+      this.database.query(
+        `SELECT id::text, batch_uid AS "batchUid", status, error_message AS "errorMessage", updated_at AS "updatedAt"
+         FROM tracking_ingest_batches WHERE user_id=$1 AND status='failed'
+         ORDER BY updated_at DESC LIMIT 5`, [userId]),
+      this.database.query(
+        `SELECT mutation_uid AS "mutationUid", object_type AS "objectType", result, error_message AS "errorMessage", created_at AS "createdAt"
+         FROM sync_mutations WHERE user_id=$1 AND (result='failed' OR result='rejected') AND error_message IS NOT NULL
+         ORDER BY created_at DESC LIMIT 10`, [userId]),
+      this.database.query(
+        `SELECT id::text, trigger_source AS "triggerSource", status, error_message AS "errorMessage", finished_at AS "finishedAt"
+         FROM outlook_sync_runs WHERE user_id=$1 AND status='failed'
+         ORDER BY finished_at DESC LIMIT 5`, [userId]),
+      this.database.query(
+        `SELECT id::text, job_key AS "jobKey", status, last_error AS "errorMessage", last_finished_at AS "lastFinishedAt"
+         FROM server_jobs WHERE user_id=$1 AND (status='failed' OR last_error IS NOT NULL)
+         ORDER BY last_finished_at DESC LIMIT 5`, [userId]),
+      this.database.query(
+        `SELECT id::text, channel, status, last_error AS "errorMessage", updated_at AS "updatedAt"
+         FROM report_push_deliveries WHERE user_id=$1 AND status='failed'
+         ORDER BY updated_at DESC LIMIT 5`, [userId]),
+    ]);
+    return {
+      trackingFailures: tracking.rows,
+      syncFailures: sync.rows,
+      outlookFailures: outlook.rows,
+      jobFailures: jobs.rows,
+      pushFailures: push.rows,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
 
   private readDeviceId(value: unknown) {
     const cleaned = clean(value);

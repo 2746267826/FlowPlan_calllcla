@@ -4,7 +4,7 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
-import { clean, asRecord, readNumber, readInt, readLimit, readOffset, encrypt, decrypt } from '../common/utils';
+import { clean, asRecord, readNumber, readInt, readLimit, readOffset, encrypt, decrypt, encryptionKey } from '../common/utils';
 import { ObjectType } from '../common/constants/object-types';
 
 export interface AiQuery {
@@ -86,7 +86,7 @@ export class AiService {
     const baseUrl = this.validateProviderBaseUrl(
       clean(body.baseUrl) ?? 'https://api.openai.com/v1',
     );
-    const encryptedKey = apiKey ? encrypt(apiKey, this.secretKey() as Buffer) : null;
+    const encryptedKey = apiKey ? encrypt(apiKey, encryptionKey()) : null;
     const apiKeyHint = apiKey ? apiKey.slice(-4) : null;
     const isDefault = body.isDefault !== false;
 
@@ -1427,7 +1427,7 @@ export class AiService {
     if (!provider.api_key_ciphertext) {
       return null;
     }
-    return decrypt(provider.api_key_ciphertext, this.secretKey() as Buffer);
+    return decrypt(provider.api_key_ciphertext, encryptionKey());
   }
 
   private async executeDraft(
@@ -1618,14 +1618,6 @@ export class AiService {
   }
 
 
-  private secretKey() {
-    const secret =
-      process.env.AI_CONFIG_SECRET ??
-      process.env.FLOWPLANV2_DATABASE_URL ??
-      process.env.DATABASE_URL ??
-      'flowplanv2-local-development-secret';
-    return createHash('sha256').update(secret).digest();
-  }
 
   private summarize(value: string) {
     const cleaned = value.replace(/\s+/g, ' ').trim();

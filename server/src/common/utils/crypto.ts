@@ -29,7 +29,50 @@ export function randomUid(): string {
   return randomUUID();
 }
 
-// ---- AES-256-GCM encryption (shared with AiService / ReportsService) ----
+// ---- Unified encryption key ----
+
+/**
+ * Derive the AES-256-GCM encryption key from the configured secret.
+ *
+ * Priority order:
+ *   1. FLOWPLANV2_ENCRYPTION_KEY (dedicated env var — PREFERRED)
+ *   2. OUTLOOK_CONFIG_SECRET (Outlook token encryption)
+ *   3. AI_CONFIG_SECRET (AI provider key encryption)
+ *   4. FLOWPLANV2_DATABASE_URL / DATABASE_URL (legacy fallback)
+ *   5. Hardcoded dev-only fallback (prints warning)
+ *
+ * All AI / Outlook / models services MUST use this function via
+ * `encrypt(value, encryptionKey())` instead of maintaining their own
+ * `private secretKey()`.
+ */
+export function encryptionKey(): Buffer {
+  const secret =
+    process.env.FLOWPLANV2_ENCRYPTION_KEY ??
+    process.env.OUTLOOK_CONFIG_SECRET ??
+    process.env.AI_CONFIG_SECRET ??
+    process.env.FLOWPLANV2_DATABASE_URL ??
+    process.env.DATABASE_URL ??
+    'flowplanv2-local-fallback-key-for-dev-only';
+
+  if (!process.env.FLOWPLANV2_ENCRYPTION_KEY && !process.env.OUTLOOK_CONFIG_SECRET && !process.env.AI_CONFIG_SECRET) {
+    // Only warn in non-test environments
+    if (!process.env.DATABASE_URL?.includes('flowplantest')) {
+      console.warn('[FlowPlanV2] WARNING: Encryption key is derived from DATABASE_URL. Set FLOWPLANV2_ENCRYPTION_KEY for production.');
+    }
+  }
+
+  return createHash('sha256').update(secret).digest();
+}
+
+/**
+ * Validate that the encryption key is properly configured for production.
+ * Returns true if FLOWPLANV2_ENCRYPTION_KEY or a dedicated service key is set.
+ */
+export function isEncryptionKeySecure(): boolean {
+  return !!(process.env.FLOWPLANV2_ENCRYPTION_KEY ?? process.env.OUTLOOK_CONFIG_SECRET ?? process.env.AI_CONFIG_SECRET);
+}
+
+// ---- AES-256-GCM encryption ----
 
 function deriveKey(secret: string | Buffer): Buffer {
   if (Buffer.isBuffer(secret)) return secret;

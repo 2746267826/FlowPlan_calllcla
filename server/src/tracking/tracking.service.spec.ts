@@ -193,4 +193,48 @@ describe('TrackingService', () => {
       expect(summary.canonicalObjectCounts).toBeDefined();
     });
   });
+
+  // C4: throughput with randomly generated tracking events
+  describe('throughput (C4)', () => {
+    const processes = ['code.exe', 'chrome.exe', 'explorer.exe', 'terminal.exe'];
+    const kinds = ['key_down', 'mouse_move', 'mouse_button', 'mouse_wheel'];
+
+    function makeRandomRecords(count: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        uid: `c4-event-${i}`,
+        objectType: 'tracked_input_event',
+        timestamp: new Date(Date.now() - Math.random() * 86400000).toISOString(),
+        eventKind: kinds[Math.floor(Math.random() * kinds.length)],
+        eventCount: Math.floor(Math.random() * 20) + 1,
+        processName: processes[Math.floor(Math.random() * processes.length)],
+        keyCode: Math.floor(Math.random() * 100),
+      }));
+    }
+
+    const scales = [100, 1000, 3000];
+
+    scales.forEach((n) => {
+      it(`processes ${n} records and reports throughput`, async () => {
+        const records = makeRandomRecords(n);
+        const start = Date.now();
+
+        const batch = await service.createBatch(
+          { dataKind: 'input', records, batchUid: `c4-batch-${n}` },
+          ctx,
+        );
+        const result = await service.completeBatch(String(batch.batch.batchId), {}, ctx);
+
+        const ms = Date.now() - start;
+        const rps = Math.round((result.accepted / (ms / 1000)) * 10) / 10;
+
+        console.log(
+          `[C4] ${n} records: accepted=${result.accepted} rejected=${result.rejected} dedup=${result.deduplicated} time=${ms}ms throughput=${rps} records/sec`,
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.accepted).toBeGreaterThan(0);
+        expect(ms).toBeLessThan(n > 1000 ? 30000 : 10000);
+      });
+    });
+  });
 });

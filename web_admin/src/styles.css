@@ -241,8 +241,54 @@ body {
   word-break: break-word;
 }
 
+/* ---- Responsive breakpoints (D5) ---- */
+
+/* Tablet: 1024px — collapse sidebar, single-column cards */
+@media (max-width: 1024px) {
+  .admin-pro-layout .ant-pro-sider {
+    position: absolute;
+    z-index: 100;
+    height: 100vh;
+  }
+  .ant-pro-card-col {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+  .ant-pro-table-list-toolbar-right {
+    flex-wrap: wrap;
+  }
+}
+
+/* Mobile: 768px — horizontal scroll tables, compact padding */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+  .admin-pro-layout .ant-pro-page-container-children-container {
+    padding-inline: 8px;
+  }
+  .ant-pro-table .ant-table {
+    overflow-x: auto;
+  }
+  .ant-card-extra {
+    display: none;
+  }
+  .ant-statistic-content-value {
+    font-size: 20px !important;
+  }
+  .table-toolbar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+}
+
+/* Small mobile: 640px */
 @media (max-width: 640px) {
   .admin-pro-layout .ant-pro-page-container-children-container {
     padding-inline: 12px;
+  }
+  .ant-pro-table-list-toolbar-container {
+    flex-direction: column;
   }
 }

@@ -70,6 +70,25 @@ class ActivityUnderstandingApi {
     );
   }
 
+  Future<Map<String, dynamic>> splitSegment({
+    required String segmentId,
+    required DateTime splitAt,
+  }) {
+    return _apiClient.postJson(
+      '/activity-understanding/segments/$segmentId/split',
+      body: <String, Object?>{'splitAt': splitAt.toIso8601String()},
+    );
+  }
+
+  Future<Map<String, dynamic>> mergeSegments({
+    required List<String> segmentIds,
+  }) {
+    return _apiClient.postJson(
+      '/activity-understanding/segments/merge',
+      body: <String, Object?>{'segmentIds': segmentIds},
+    );
+  }
+
   Future<Map<String, dynamic>> sendFeedback({
     required String segmentId,
     String feedbackType = 'modified',

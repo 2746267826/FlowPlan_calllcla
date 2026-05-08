@@ -13,7 +13,11 @@
       "Bash(node *)",
       "Bash(npm *)",
       "Bash(PGPASSWORD=060331 psql *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter test *)",
+      "Bash(kopia --version)"
     ]
   }
 }

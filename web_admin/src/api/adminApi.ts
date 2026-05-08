@@ -251,6 +251,48 @@ export class AdminApiClient {
     );
   }
 
+  // ---- Scheduler / Genetic / Dependency ----
+
+  geneticEvolve(body: ApiRecord) {
+    return this.request<ApiRecord>('/api/scheduler/genetic/evolve', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  }
+
+  geneticFeedback(body: ApiRecord) {
+    return this.request<ApiRecord>('/api/scheduler/genetic/feedback', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  }
+
+  geneticPrompts(body: ApiRecord) {
+    return this.request<ApiRecord>('/api/scheduler/genetic/prompts', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  }
+
+  topoSort(body: ApiRecord) {
+    return this.request<ApiRecord>('/api/scheduler/dependency/topo', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  }
+
+  validateDependencies(body: ApiRecord) {
+    return this.request<ApiRecord>('/api/scheduler/dependency/validate', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  }
+
+  listJobs() {
+    return this.request<ApiRecord>('/api/admin/jobs');
+  }
+
+  triggerJob(jobName: string) {
+    return this.request<ApiRecord>(`/api/admin/jobs/${jobName}/trigger`, {
+      method: 'POST',
+    });
+  }
+
   // ---- internal ----
 
   /** Call an endpoint that does NOT require auth (login, refresh, health). */

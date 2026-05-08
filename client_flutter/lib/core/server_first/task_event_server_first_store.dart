@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../features/calendar/data/event_repository.dart';
 import '../../features/task/data/task_repository.dart';
+import '../utils/payload_utils.dart';
 import '../database/app_database.dart';
 import '../offline_queue/offline_mutation.dart';
 import '../sync/sync_object_registry.dart';
@@ -62,7 +63,7 @@ class TaskEventServerFirstStore {
       await _markSyncedFromResult(
         objectType: SyncObjectType.taskItem.key,
         localId: localId.toString(),
-        fallbackUid: _string(writePayload, 'uid'),
+        fallbackUid: stringFromMap(writePayload, 'uid'),
         result: result,
       );
       return result;
@@ -121,7 +122,7 @@ class TaskEventServerFirstStore {
         await _markSyncedFromResult(
           objectType: SyncObjectType.taskItem.key,
           localId: localId.toString(),
-          fallbackUid: state?.uid ?? _string(patch, 'uid'),
+          fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
           fallbackServerId: serverId,
           result: result,
         );
@@ -266,7 +267,7 @@ class TaskEventServerFirstStore {
       await _markSyncedFromResult(
         objectType: SyncObjectType.calendarEvent.key,
         localId: localId.toString(),
-        fallbackUid: _string(writePayload, 'uid'),
+        fallbackUid: stringFromMap(writePayload, 'uid'),
         result: result,
       );
       return result;
@@ -325,7 +326,7 @@ class TaskEventServerFirstStore {
         await _markSyncedFromResult(
           objectType: SyncObjectType.calendarEvent.key,
           localId: localId.toString(),
-          fallbackUid: state?.uid ?? _string(patch, 'uid'),
+          fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
           fallbackServerId: serverId,
           result: result,
         );
@@ -449,7 +450,7 @@ class TaskEventServerFirstStore {
       objectType: objectType,
       localId: localId,
       serverId: serverId,
-      uid: _string(payload, 'uid'),
+      uid: stringFromMap(payload, 'uid'),
       state: _pendingState(action),
     );
     return queued;
@@ -493,42 +494,42 @@ class TaskEventServerFirstStore {
 
   TaskItemsCompanion _taskInsertCompanion(Map<String, Object?> payload) {
     final now = DateTime.now();
-    final completedAt = _date(payload, const ['completedAt', 'completed']);
-    final completed = _bool(payload, const ['completed']) == true ||
-        _isDone(_string(payload, 'status'));
+    final completedAt = dateAny(payload, const ['completedAt', 'completed']);
+    final completed = boolAny(payload, const ['completed']) == true ||
+        isDone(stringFromMap(payload, 'status'));
     return TaskItemsCompanion.insert(
-      uid: _string(payload, 'uid') ?? const Uuid().v4(),
-      dtstamp: _date(payload, const ['dtstamp']) ?? now,
+      uid: stringFromMap(payload, 'uid') ?? const Uuid().v4(),
+      dtstamp: dateAny(payload, const ['dtstamp']) ?? now,
       summary:
-          _stringAny(payload, const ['summary', 'title', 'name']) ?? '未命名任务',
-      description: Value(_string(payload, 'description')),
-      location: Value(_string(payload, 'location')),
-      dtstart: Value(_date(payload, const ['dtstart', 'startAt'])),
-      due: Value(_date(payload, const ['dueAt', 'due', 'dueDate'])),
+          stringAny(payload, const ['summary', 'title', 'name']) ?? '未命名任务',
+      description: Value(stringFromMap(payload, 'description')),
+      location: Value(stringFromMap(payload, 'location')),
+      dtstart: Value(dateAny(payload, const ['dtstart', 'startAt'])),
+      due: Value(dateAny(payload, const ['dueAt', 'due', 'dueDate'])),
       completed: Value(completedAt),
-      priority: Value(_int(payload, const ['priority']) ?? 0),
-      status: Value(_taskStatus(_string(payload, 'status'))),
+      priority: Value(intAny(payload, const ['priority']) ?? 0),
+      status: Value(taskStatus(stringFromMap(payload, 'status'))),
       percentComplete: Value(
-        _int(payload, const ['percentComplete']) ?? (completed ? 100 : 0),
+        intAny(payload, const ['percentComplete']) ?? (completed ? 100 : 0),
       ),
-      categories: Value(_string(payload, 'categories') ?? '[]'),
-      rrule: Value(_string(payload, 'rrule')),
-      durationMinutes: Value(_int(payload, const ['durationMinutes']) ?? 60),
-      isSplittable: Value(_bool(payload, const ['isSplittable']) ?? false),
-      priorityLocal: Value(_int(payload, const ['priorityLocal']) ?? 2),
-      isAutoScheduled: Value(_bool(payload, const ['isAutoScheduled']) ?? true),
-      taskListId: Value(_int(payload, const ['taskListId'])),
-      tagId: Value(_string(payload, 'tagId')),
-      isLocked: Value(_bool(payload, const ['isLocked']) ?? false),
+      categories: Value(stringFromMap(payload, 'categories') ?? '[]'),
+      rrule: Value(stringFromMap(payload, 'rrule')),
+      durationMinutes: Value(intAny(payload, const ['durationMinutes']) ?? 60),
+      isSplittable: Value(boolAny(payload, const ['isSplittable']) ?? false),
+      priorityLocal: Value(intAny(payload, const ['priorityLocal']) ?? 2),
+      isAutoScheduled: Value(boolAny(payload, const ['isAutoScheduled']) ?? true),
+      taskListId: Value(intAny(payload, const ['taskListId'])),
+      tagId: Value(stringFromMap(payload, 'tagId')),
+      isLocked: Value(boolAny(payload, const ['isLocked']) ?? false),
       reminderMinutesBefore: Value(
-        _int(payload, const ['reminderMinutesBefore']) ?? 15,
+        intAny(payload, const ['reminderMinutesBefore']) ?? 15,
       ),
     );
   }
 
   TaskItemsCompanion _taskUpdateCompanion(Map<String, Object?> patch) {
-    final status = _string(patch, 'status');
-    final completed = _date(patch, const ['completedAt', 'completed']);
+    final status = stringFromMap(patch, 'status');
+    final completed = dateAny(patch, const ['completedAt', 'completed']);
     return TaskItemsCompanion(
       uid: _valueString(patch, const ['uid']),
       dtstamp: Value(DateTime.now()),
@@ -542,11 +543,11 @@ class TaskEventServerFirstStore {
           : const Value.absent(),
       priority: _valueInt(patch, const ['priority']),
       status: patch.containsKey('status')
-          ? Value(_taskStatus(status))
+          ? Value(taskStatus(status))
           : const Value.absent(),
-      percentComplete: _hasAny(patch, const ['percentComplete'])
+      percentComplete: hasAny(patch, const ['percentComplete'])
           ? _valueInt(patch, const ['percentComplete'])
-          : _isDone(status)
+          : isDone(status)
               ? const Value(100)
               : const Value.absent(),
       categories: _valueString(patch, const ['categories']),
@@ -564,23 +565,23 @@ class TaskEventServerFirstStore {
 
   CalendarEventsCompanion _eventInsertCompanion(Map<String, Object?> payload) {
     final now = DateTime.now();
-    final start = _date(payload, const ['startAt', 'dtstart']) ?? now;
+    final start = dateAny(payload, const ['startAt', 'dtstart']) ?? now;
     return CalendarEventsCompanion.insert(
-      uid: _string(payload, 'uid') ?? const Uuid().v4(),
-      dtstamp: _date(payload, const ['dtstamp']) ?? now,
+      uid: stringFromMap(payload, 'uid') ?? const Uuid().v4(),
+      dtstamp: dateAny(payload, const ['dtstamp']) ?? now,
       summary:
-          _stringAny(payload, const ['summary', 'title', 'name']) ?? '未命名日程',
-      description: Value(_stringAny(payload, const ['description', 'notes'])),
-      location: Value(_string(payload, 'location')),
+          stringAny(payload, const ['summary', 'title', 'name']) ?? '未命名日程',
+      description: Value(stringAny(payload, const ['description', 'notes'])),
+      location: Value(stringFromMap(payload, 'location')),
       dtstart: start,
-      dtend: Value(_date(payload, const ['endAt', 'dtend'])),
-      rrule: Value(_string(payload, 'rrule')),
-      status: Value(_eventStatus(_string(payload, 'status'))),
-      transp: Value(_string(payload, 'transp') ?? 'OPAQUE'),
-      source: Value(_string(payload, 'source') ?? 'local'),
-      eventCalendarId: Value(_int(payload, const ['eventCalendarId'])),
-      colorHex: Value(_string(payload, 'colorHex') ?? '#6B5EE4'),
-      isBlock: Value(_bool(payload, const ['isBlock', 'blocking']) ?? false),
+      dtend: Value(dateAny(payload, const ['endAt', 'dtend'])),
+      rrule: Value(stringFromMap(payload, 'rrule')),
+      status: Value(eventStatus(stringFromMap(payload, 'status'))),
+      transp: Value(stringFromMap(payload, 'transp') ?? 'OPAQUE'),
+      source: Value(stringFromMap(payload, 'source') ?? 'local'),
+      eventCalendarId: Value(intAny(payload, const ['eventCalendarId'])),
+      colorHex: Value(stringFromMap(payload, 'colorHex') ?? '#6B5EE4'),
+      isBlock: Value(boolAny(payload, const ['isBlock', 'blocking']) ?? false),
     );
   }
 
@@ -595,7 +596,7 @@ class TaskEventServerFirstStore {
       dtend: _nullableDateValue(patch, const ['endAt', 'dtend']),
       rrule: _nullableStringValue(patch, const ['rrule']),
       status: patch.containsKey('status')
-          ? Value(_eventStatus(_string(patch, 'status')))
+          ? Value(eventStatus(stringFromMap(patch, 'status')))
           : const Value.absent(),
       transp: _valueString(patch, const ['transp']),
       source: _valueString(patch, const ['source']),
@@ -634,7 +635,7 @@ class TaskEventServerFirstStore {
   }
 
   Map<String, Object?> _ensureUid(Map<String, Object?> payload) {
-    final uid = _string(payload, 'uid');
+    final uid = stringFromMap(payload, 'uid');
     if (uid != null && uid.isNotEmpty) {
       return Map<String, Object?>.from(payload);
     }
@@ -681,12 +682,12 @@ class TaskEventServerFirstStore {
   String? _serverIdFromResult(ServerFirstWriteResult result) {
     final response = result.response;
     final item = _itemFromResult(result);
-    return _string(response, 'serverId') ?? _string(item, 'id');
+    return stringFromMap(response, 'serverId') ?? stringFromMap(item, 'id');
   }
 
   String? _uidFromResult(ServerFirstWriteResult result) {
     final item = _itemFromResult(result);
-    return _string(item, 'uid');
+    return stringFromMap(item, 'uid');
   }
 
   int? _serverVersionFromResult(ServerFirstWriteResult result) {
@@ -712,155 +713,45 @@ class TaskEventServerFirstStore {
     }
   }
 
-  String _taskStatus(String? value) {
-    if (_isDone(value)) {
-      return 'COMPLETED';
-    }
-    return 'NEEDS-ACTION';
-  }
+  // Status helpers now imported from payload_utils.dart (aligned with server 5.1)
+  // _taskStatus → taskStatus()  (returns 'todo'/'done' etc.)
+  // _eventStatus → eventStatus()  (returns 'confirmed'/'tentative'/'cancelled')
+  // _isDone → isDone()
 
-  bool _isDone(String? value) {
-    final normalized = value?.trim().toLowerCase();
-    return normalized == 'done' || normalized == 'completed';
-  }
-
-  String _eventStatus(String? value) {
-    final normalized = value?.trim();
-    if (normalized == null || normalized.isEmpty) {
-      return 'CONFIRMED';
-    }
-    return normalized.toUpperCase();
-  }
-
-  String? _string(Map<String, Object?>? map, String key) {
-    final value = map?[key];
-    if (value == null) {
-      return null;
-    }
-    final text = value.toString().trim();
-    return text.isEmpty ? null : text;
-  }
-
-  String? _stringAny(Map<String, Object?> map, List<String> keys) {
-    for (final key in keys) {
-      final value = _string(map, key);
-      if (value != null) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  int? _int(Map<String, Object?> map, List<String> keys) {
-    for (final key in keys) {
-      final value = map[key];
-      if (value is int) {
-        return value;
-      }
-      if (value is num) {
-        return value.toInt();
-      }
-      if (value is String) {
-        final parsed = int.tryParse(value);
-        if (parsed != null) {
-          return parsed;
-        }
-      }
-    }
-    return null;
-  }
-
-  bool? _bool(Map<String, Object?> map, List<String> keys) {
-    for (final key in keys) {
-      final value = map[key];
-      if (value is bool) {
-        return value;
-      }
-      if (value is String) {
-        final normalized = value.toLowerCase();
-        if (normalized == 'true' || normalized == '1') {
-          return true;
-        }
-        if (normalized == 'false' || normalized == '0') {
-          return false;
-        }
-      }
-    }
-    return null;
-  }
-
-  DateTime? _date(Map<String, Object?> map, List<String> keys) {
-    for (final key in keys) {
-      final value = map[key];
-      if (value is DateTime) {
-        return value;
-      }
-      if (value is String && value.trim().isNotEmpty) {
-        final parsed = DateTime.tryParse(value);
-        if (parsed != null) {
-          return parsed;
-        }
-      }
-    }
-    return null;
-  }
-
-  bool _hasAny(Map<String, Object?> map, List<String> keys) {
-    return keys.any(map.containsKey);
-  }
-
+  // Drift Value<T> wrappers (use shared payload utils internally)
   Value<String> _valueString(Map<String, Object?> map, List<String> keys) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_stringAny(map, keys) ?? '');
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(stringAny(map, keys) ?? '');
   }
-
-  Value<String?> _nullableStringValue(
-    Map<String, Object?> map,
-    List<String> keys,
-  ) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_stringAny(map, keys));
+  Value<String?> _nullableStringValue(Map<String, Object?> map, List<String> keys) {
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(stringAny(map, keys));
   }
-
   Value<int> _valueInt(Map<String, Object?> map, List<String> keys) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_int(map, keys) ?? 0);
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(intAny(map, keys) ?? 0);
   }
-
   Value<int?> _nullableIntValue(Map<String, Object?> map, List<String> keys) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_int(map, keys));
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(intAny(map, keys));
   }
-
   Value<bool> _valueBool(Map<String, Object?> map, List<String> keys) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_bool(map, keys) ?? false);
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(boolAny(map, keys) ?? false);
   }
-
   Value<DateTime> _valueDate(Map<String, Object?> map, List<String> keys) {
-    if (!_hasAny(map, keys)) {
-      return const Value.absent();
-    }
-    return Value(_date(map, keys) ?? DateTime.now());
+    if (!hasAny(map, keys)) return const Value.absent();
+    return Value(dateAny(map, keys) ?? DateTime.now());
   }
+  // All payload extraction helpers now imported from payload_utils.dart
 
   Value<DateTime?> _nullableDateValue(
     Map<String, Object?> map,
     List<String> keys,
   ) {
-    if (!_hasAny(map, keys)) {
+    if (!hasAny(map, keys)) {
       return const Value.absent();
     }
-    return Value(_date(map, keys));
+    return Value(dateAny(map, keys));
   }
 }

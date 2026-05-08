@@ -20,10 +20,33 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
       );
     }
 
+    const poolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
+    const idleTimeout = Number(process.env.DATABASE_POOL_IDLE_TIMEOUT ?? 30000);
+
     this.pool = new Pool({
       connectionString,
-      max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+      max: poolMax,
+      idleTimeoutMillis: idleTimeout,
+      connectionTimeoutMillis: Number(process.env.DATABASE_POOL_CONNECTION_TIMEOUT ?? 10000),
     });
+
+    // Pool event monitoring (D7)
+    this.pool.on('connect', () => {
+      // client connected — high-frequency, debug only
+    });
+    this.pool.on('error', (err: Error) => {
+      console.error('[DatabaseService] Pool error:', err.message);
+    });
+  }
+
+  /** Get current pool statistics (D7). */
+  poolStats(): { totalCount: number; idleCount: number; waitingCount: number; max: number } {
+    return {
+      totalCount: this.pool.totalCount,
+      idleCount: this.pool.idleCount,
+      waitingCount: this.pool.waitingCount,
+      max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    };
   }
 
   async onModuleInit() {
@@ -44,6 +67,17 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
     text: string,
     values: unknown[] = [],
   ): Promise<QueryResult<T>> {
+    const threshold = Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? 1000);
+    if (threshold > 0) {
+      const start = Date.now();
+      return this.pool.query<T>(text, values).then((result) => {
+        const ms = Date.now() - start;
+        if (ms >= threshold) {
+          console.warn(`[SlowQuery] ${ms}ms: ${text.slice(0, 200).replace(/\s+/g, ' ')}`);
+        }
+        return result;
+      });
+    }
     return this.pool.query<T>(text, values);
   }
 

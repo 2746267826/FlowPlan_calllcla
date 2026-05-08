@@ -5,7 +5,7 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
-import { clean, asRecord, asArray, readDate, readNumber, readInt, readLimit } from '../common/utils';
+import { clean, asRecord, asArray, readDate, readNumber, readInt, readLimit, encryptionKey } from '../common/utils';
 
 export interface ReportsQuery {
   reportType?: string;
@@ -1557,7 +1557,7 @@ export class ReportsService {
     if (!ivRaw || !tagRaw || !encryptedRaw) return null;
     const decipher = createDecipheriv(
       'aes-256-gcm',
-      this.secretKey(),
+      encryptionKey(),
       Buffer.from(ivRaw, 'base64'),
     );
     decipher.setAuthTag(Buffer.from(tagRaw, 'base64'));
@@ -1567,14 +1567,6 @@ export class ReportsService {
     ]).toString('utf8');
   }
 
-  private secretKey() {
-    const secret =
-      process.env.AI_CONFIG_SECRET ??
-      process.env.FLOWPLANV2_DATABASE_URL ??
-      process.env.DATABASE_URL ??
-      'flowplanv2-local-development-secret';
-    return createHash('sha256').update(secret).digest();
-  }
 
   private weatherSummaryFromPayload(payload: Record<string, unknown>) {
     const daily = asRecord(payload.daily);

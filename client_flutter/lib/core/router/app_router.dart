@@ -20,6 +20,7 @@ import '../../features/files/presentation/file_transfer_center_page.dart';
 import '../../features/reports/presentation/report_center_page.dart';
 import '../../features/sync/outlook_settings_page.dart';
 import '../../features/sync/server_sync_status_page.dart';
+import '../../features/ai_chat/presentation/ai_chat_page.dart';
 
 /// 路由名称常量
 class AppRoutes {
@@ -45,6 +46,7 @@ class AppRoutes {
   static const String icalImportExport = '/ical';
   static const String outlookSync = '/outlook-sync';
   static const String serverSync = '/server-sync';
+  static const String aiChat = '/ai-chat';
 }
 
 final GoRouter appRouter = GoRouter(
@@ -194,6 +196,11 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.serverSync,
       name: 'serverSync',
       builder: (context, state) => const ServerSyncStatusPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.aiChat,
+      name: 'aiChat',
+      builder: (context, state) => const AiChatPage(),
     ),
   ],
 );
