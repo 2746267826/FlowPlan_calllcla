@@ -63,7 +63,7 @@ const appConfig = loadConfig();
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true, load: [loadConfig] }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env', load: [loadConfig] }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

@@ -256,7 +256,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     const userId = await this.devicesService.ensureUser(context.userId);
     if (!isEncryptionKeySecure()) {
       throw new BadRequestException(
-        'Outlook token encryption secret is required before authorization. Configure FLOWPLANV2_OUTLOOK_TOKEN_SECRET or save it in the Outlook admin panel, then retry authorization.',
+        'Encryption key is not configured. Set FLOWPLANV2_ENCRYPTION_KEY in your .env file, then restart the server.',
       );
     }
     const parsed = this.readAuthCompletion(body);
@@ -1557,7 +1557,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
 
   private async ensureAccessToken(connection: OutlookConnectionRow) {
     if (!isEncryptionKeySecure()) {
-      throw new Error('Outlook token secret is required');
+      throw new Error('Encryption key not configured. Set FLOWPLANV2_ENCRYPTION_KEY in .env');
     }
     const expiresAt = connection.access_token_expires_at
       ? new Date(connection.access_token_expires_at).getTime()
