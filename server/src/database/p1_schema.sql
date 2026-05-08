@@ -669,6 +669,26 @@ CREATE TABLE IF NOT EXISTS file_node_device_locations (
 CREATE INDEX IF NOT EXISTS file_node_device_locations_user_node_idx
   ON file_node_device_locations(user_id, node_id, availability, last_seen_at DESC);
 
+CREATE TABLE IF NOT EXISTS file_storage_objects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider_key text NOT NULL DEFAULT 'server_storage',
+  object_key text NOT NULL,
+  display_name text NOT NULL,
+  size_bytes bigint NOT NULL DEFAULT 0,
+  checksum text,
+  chunk_size integer NOT NULL DEFAULT 5242880,
+  chunk_count integer NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'available',
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, provider_key, object_key)
+);
+
+CREATE INDEX IF NOT EXISTS file_storage_objects_user_provider_idx
+  ON file_storage_objects(user_id, provider_key, updated_at);
+
 CREATE TABLE IF NOT EXISTS file_identity_mappings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -749,26 +769,6 @@ CREATE INDEX IF NOT EXISTS cloud_file_tree_nodes_user_provider_path_idx
   ON cloud_file_tree_nodes(user_id, provider_key, path);
 CREATE INDEX IF NOT EXISTS cloud_file_tree_nodes_user_parent_idx
   ON cloud_file_tree_nodes(user_id, provider_key, parent_remote_id);
-
-CREATE TABLE IF NOT EXISTS file_storage_objects (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider_key text NOT NULL DEFAULT 'server_storage',
-  object_key text NOT NULL,
-  display_name text NOT NULL,
-  size_bytes bigint NOT NULL DEFAULT 0,
-  checksum text,
-  chunk_size integer NOT NULL DEFAULT 5242880,
-  chunk_count integer NOT NULL DEFAULT 0,
-  status text NOT NULL DEFAULT 'available',
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(user_id, provider_key, object_key)
-);
-
-CREATE INDEX IF NOT EXISTS file_storage_objects_user_provider_idx
-  ON file_storage_objects(user_id, provider_key, updated_at);
 
 CREATE TABLE IF NOT EXISTS file_transfer_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
