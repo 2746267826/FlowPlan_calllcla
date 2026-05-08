@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm cache *)",
+      "Bash(DATABASE_URL=\"postgres://postgres:060331@localhost:5432/flowplantest\" node *)",
+      "Bash(DATABASE_URL=\"postgres://postgres:060331@localhost:5432/flowplantest\" npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(cat)",
+      "Bash(node /tmp/cleanup-dead-methods.mjs)",
+      "Bash(node *)",
+      "Bash(npm *)",
+      "Bash(PGPASSWORD=060331 psql *)",
+      "Bash(npx vitest *)"
+    ]
+  }
+}

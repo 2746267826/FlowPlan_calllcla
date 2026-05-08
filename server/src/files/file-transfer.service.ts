@@ -5,6 +5,7 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import type { FilesQuery } from './files.service';
+import { clean, asRecord, readLimit, readOffset, readInt, toNumber, basename, readNullableNumber } from '../common/utils';
 import { LocalObjectStorageService } from './local-object-storage.service';
 
 @Injectable()
@@ -21,10 +22,10 @@ export class FileTransferService {
 
   async storageObjects(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const localPath = this.clean(query.localPath);
-    const nodeId = this.clean(query.nodeId);
+    const limit = readLimit(query.limit, 100, 1, 1000);
+    const offset = readOffset(query.offset);
+    const localPath = clean(query.localPath);
+    const nodeId = clean(query.nodeId);
     const result = await this.database.query(
       `
       SELECT
@@ -68,13 +69,13 @@ export class FileTransferService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const sourcePath = this.clean(body.localPath);
-    const fileNodeId = this.clean(body.fileNodeId) ?? this.clean(this.asRecord(body.metadata).fileNodeId);
+    const sourcePath = clean(body.localPath);
+    const fileNodeId = clean(body.fileNodeId) ?? clean(asRecord(body.metadata).fileNodeId);
     if (!sourcePath) {
       return { ok: false, reason: 'localPath_required' };
     }
-    const fileName = this.clean(body.fileName) ?? this.basename(sourcePath);
-    const objectKey = this.clean(body.objectKey) ?? randomUUID();
+    const fileName = clean(body.fileName) ?? basename(sourcePath);
+    const objectKey = clean(body.objectKey) ?? randomUUID();
     const copied = await this.objectStorage.copyLocalFile(userId, sourcePath, objectKey);
     const result = await this.database.transaction(async (client) => {
       const storage = await client.query(
@@ -115,7 +116,7 @@ export class FileTransferService {
             storageRoot: this.objectStorage.root(),
             storagePath: copied.relativePath,
             absoluteStoragePath: copied.storagePath,
-            ...this.asRecord(body.metadata),
+            ...asRecord(body.metadata),
           }),
         ],
       );
@@ -240,14 +241,14 @@ export class FileTransferService {
       [
         userId,
         deviceId,
-        this.clean(body.networkType) ?? 'unknown',
-        this.clean(body.wifiSsidHash),
-        this.clean(body.localIp),
-        this.readNullableNumber(body.localPort),
-        this.clean(body.publicIpHash),
-        this.clean(body.natType) ?? 'unknown',
-        JSON.stringify(this.asRecord(body.capabilities)),
-        String(this.readNumber(body.ttlMinutes, 10)),
+        clean(body.networkType) ?? 'unknown',
+        clean(body.wifiSsidHash),
+        clean(body.localIp),
+        readNullableNumber(body.localPort),
+        clean(body.publicIpHash),
+        clean(body.natType) ?? 'unknown',
+        JSON.stringify(asRecord(body.capabilities)),
+        String(readInt(body.ttlMinutes, 10)),
       ],
     );
     return { ok: true, presence: result.rows[0] };
@@ -338,17 +339,17 @@ export class FileTransferService {
         [
           userId,
           sessionId,
-          this.clean(body.candidateType) ?? 'lan_hint',
-          this.clean(body.sourceAddress),
-          this.readNullableNumber(body.sourcePort),
-          this.clean(body.targetAddress),
-          this.readNullableNumber(body.targetPort),
-          this.clean(body.protocol) ?? 'server_api',
-          this.readNumber(body.priority, 100),
-          this.clean(body.status) ?? 'pending',
-          this.readNullableNumber(body.latencyMs),
-          this.readNullableNumber(body.bandwidthEstimate),
-          this.clean(body.failureReason),
+          clean(body.candidateType) ?? 'lan_hint',
+          clean(body.sourceAddress),
+          readNullableNumber(body.sourcePort),
+          clean(body.targetAddress),
+          readNullableNumber(body.targetPort),
+          clean(body.protocol) ?? 'server_api',
+          readInt(body.priority, 100),
+          clean(body.status) ?? 'pending',
+          readNullableNumber(body.latencyMs),
+          readNullableNumber(body.bandwidthEstimate),
+          clean(body.failureReason),
         ],
       );
       await this.appendTransferEventWithClient(client, userId, sessionId, 'candidate.added', {
@@ -371,10 +372,10 @@ export class FileTransferService {
       this.database,
       userId,
       sessionId,
-      this.clean(body.eventType) ?? 'transfer.note',
+      clean(body.eventType) ?? 'transfer.note',
       {
-        message: this.clean(body.message),
-        ...this.asRecord(body.payload),
+        message: clean(body.message),
+        ...asRecord(body.payload),
       },
     );
     return { ok: true };
@@ -423,7 +424,7 @@ export class FileTransferService {
         userId,
         sessionId,
         eventType,
-        this.clean(payload.message),
+        clean(payload.message),
         JSON.stringify(payload),
       ],
     );
@@ -457,52 +458,5 @@ export class FileTransferService {
         JSON.stringify(details),
       ],
     );
-  }
-
-  private basename(path: string) {
-    const normalized = path.replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).pop() ?? path;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
-
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(1, Math.min(1000, Math.trunc(parsed)));
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return 0;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readNullableNumber(value: unknown) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
   }
 }

@@ -5,6 +5,9 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
+import { clean, asRecord, readDate, readLimit, readOffset } from '../common/utils';
+import { TfidfMatcher } from '../common/utils/tfidf';
+import { ObjectType, TaskTypes, TrackingTypes } from '../common/constants/object-types';
 
 export interface ActivityUnderstandingQuery {
   date?: string;
@@ -59,7 +62,7 @@ export class ActivityUnderstandingService {
     const { start, end } = this.readRange(body.date, body.start, body.end);
     const rebuild = body.rebuild === true;
     const activeModel = await this.modelsService.activeProfile(userId, 'activity_merge.v1');
-    const profile = this.asRecord(activeModel.ruleProfile);
+    const profile = asRecord(activeModel.ruleProfile);
     const modelRun = await this.modelsService.startRun(userId, 'activity_merge.v1', {
       source: 'activity.buildSegments',
       inputSummary: {
@@ -271,9 +274,9 @@ export class ActivityUnderstandingService {
   async segments(query: ActivityUnderstandingQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const { start, end } = this.readRange(query.date, query.start, query.end);
-    const status = this.clean(query.status);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
+    const status = clean(query.status);
+    const limit = readLimit(query.limit, 100);
+    const offset = readOffset(query.offset);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -317,7 +320,7 @@ export class ActivityUnderstandingService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const taskId = this.clean(body.taskId);
+    const taskId = clean(body.taskId);
     const result = await this.database.transaction(async (client) => {
       const segmentResult = await client.query<QueryResultRow>(
         `
@@ -331,7 +334,7 @@ export class ActivityUnderstandingService {
       if (!segment) {
         throw new BadRequestException('segment not found');
       }
-      const title = this.clean(body.title) ?? String(segment.label ?? '已确认活动');
+      const title = clean(body.title) ?? String(segment.label ?? '已确认活动');
       const actualUid = `actual:${segment.segment_uid}`;
       const actual = await client.query<QueryResultRow>(
         `
@@ -370,7 +373,7 @@ export class ActivityUnderstandingService {
           segmentId,
           JSON.stringify({ segmentId, userConfirmed: true }),
           Number(segment.confidence ?? 0.5),
-          this.clean(body.notes),
+          clean(body.notes),
         ],
       );
       const actualId = String(actual.rows[0]?.id);
@@ -469,7 +472,7 @@ export class ActivityUnderstandingService {
         SET status = 'rejected', evidence = evidence || $3::jsonb, updated_at = now()
         WHERE user_id = $1 AND id = $2
         `,
-        [userId, segmentId, JSON.stringify({ rejectReason: this.clean(body.reason) })],
+        [userId, segmentId, JSON.stringify({ rejectReason: clean(body.reason) })],
       );
       await client.query(
         `
@@ -481,7 +484,7 @@ export class ActivityUnderstandingService {
       );
         await this.recordAudit(client, userId, deviceId, 'activity.reject_segment', {
           segmentId,
-          reason: this.clean(body.reason),
+          reason: clean(body.reason),
         });
         await this.modelsService.recordFeedback(client, userId, deviceId, 'activity_merge.v1', {
           targetType: 'activity_segment',
@@ -490,7 +493,7 @@ export class ActivityUnderstandingService {
           outcome: 'rejected',
           source: 'activity.rejectSegment',
           feedbackPayload: {
-            reason: this.clean(body.reason),
+            reason: clean(body.reason),
           },
         });
       });
@@ -508,14 +511,14 @@ export class ActivityUnderstandingService {
       await this.modelsService.recordFeedback(client, userId, deviceId, 'activity_merge.v1', {
         targetType: 'activity_segment',
         targetId: segmentId,
-        feedbackType: this.clean(body.feedbackType) ?? 'modified',
-        outcome: this.clean(body.outcome) ?? this.clean(body.feedbackType) ?? 'modified',
+        feedbackType: clean(body.feedbackType) ?? 'modified',
+        outcome: clean(body.outcome) ?? clean(body.feedbackType) ?? 'modified',
         source: 'activity.segment.feedback',
-        feedbackPayload: this.asRecord(body.feedbackPayload ?? body.payload),
+        feedbackPayload: asRecord(body.feedbackPayload ?? body.payload),
       });
       await this.recordAudit(client, userId, deviceId, 'activity.segment.feedback', {
         segmentId,
-        feedbackType: this.clean(body.feedbackType) ?? 'modified',
+        feedbackType: clean(body.feedbackType) ?? 'modified',
       });
     });
     return { ok: true };
@@ -536,15 +539,7 @@ export class ActivityUnderstandingService {
       `,
       [
         userId,
-        [
-          'raw_activity_log',
-          'raw_activity_logs',
-          'activity_record',
-          'activity_records',
-          'tracked_input_event',
-          'tracked_input_events',
-          'input_event',
-        ],
+        TrackingTypes,
         start,
         end,
       ],
@@ -568,10 +563,10 @@ export class ActivityUnderstandingService {
       ORDER BY updated_at DESC
       LIMIT 500
       `,
-      [userId, ['task', 'tasks', 'task_item', 'task_items']],
+      [userId, TaskTypes],
     );
     return result.rows.map((row) => {
-      const payload = this.asRecord(row.payload);
+      const payload = asRecord(row.payload);
       return {
         id: String(row.uid ?? row.id),
         title: this.readString(payload, ['title', 'name', 'summary']) ?? String(row.uid ?? row.id),
@@ -586,33 +581,50 @@ export class ActivityUnderstandingService {
     const mergeGapMinutes = Number(profile.mergeGapMinutes ?? 10);
     const shortInterruptionMinutes = Number(profile.shortInterruptionMinutes ?? 3);
     const appConfidenceBonus = Number(profile.appConfidenceBonus ?? 0.12);
+    const filePathChangeGap = Number(profile.filePathChangeGap ?? 5);
+
     const close = () => {
       if (current.length === 0) return;
       const first = current[0];
       const last = current[current.length - 1];
       const appCounts = new Map<string, number>();
+      const pathCounts = new Map<string, number>();
       for (const item of current) {
         appCounts.set(item.appName, (appCounts.get(item.appName) ?? 0) + 1);
+        if (item.filePath) {
+          pathCounts.set(item.filePath, (pathCounts.get(item.filePath) ?? 0) + 1);
+        }
       }
       const appName = [...appCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unknown';
       const main = current.find((item) => item.appName === appName) ?? first;
-        const confidence = Math.min(0.95, 0.45 + current.length * 0.08 + (appName !== 'unknown' ? appConfidenceBonus : 0));
+      const bestPath = [...pathCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
+      let confidence = 0.45 + current.length * 0.08;
+      if (appName !== 'unknown') confidence += appConfidenceBonus;
+      if (bestPath) confidence += 0.06;
+      // Boost if window title stayed consistent
+      const uniqueWindows = new Set(current.map((item) => item.windowTitle).filter(Boolean));
+      if (uniqueWindows.size <= 2) confidence += 0.05;
+      confidence = Math.min(0.95, confidence);
+
       segments.push({
         uid: `seg:${first.startAt.toISOString().slice(0, 10)}:${first.id}:${last.id}`,
         startAt: first.startAt,
         endAt: new Date(Math.max(...current.map((item) => item.endAt.getTime()))),
         appName,
         windowTitle: main.windowTitle,
-        filePath: main.filePath,
-        title: this.inferTitle(appName, main.windowTitle),
+        filePath: bestPath ?? main.filePath,
+        title: this.inferTitle(appName, main.windowTitle, bestPath),
         confidence,
-        category: this.inferCategory(appName, main.windowTitle),
+        category: this.inferCategory(appName, main.windowTitle, bestPath),
         sourceIds: current.map((item) => item.id),
         evidence: {
           apps: [...appCounts.keys()],
           windows: current.slice(0, 8).map((item) => item.windowTitle).filter(Boolean),
           filePaths: current.map((item) => item.filePath).filter(Boolean).slice(0, 8),
-          mergeRule: 'same_app_or_short_gap',
+          primaryFilePath: bestPath,
+          uniqueWindowCount: uniqueWindows.size,
+          mergeRule: 'time_app_file_window_rule',
         },
       });
       current = [];
@@ -626,8 +638,17 @@ export class ActivityUnderstandingService {
       }
       const gapMinutes = (item.startAt.getTime() - previous.endAt.getTime()) / 60000;
       const sameApp = item.appName === previous.appName;
-        const shortInterruption = gapMinutes <= shortInterruptionMinutes && this.isInterruptible(item.appName);
-        if (gapMinutes <= mergeGapMinutes && (sameApp || shortInterruption)) {
+      const sameFile = item.filePath && previous.filePath &&
+        item.filePath === previous.filePath;
+      const sameDir = item.filePath && previous.filePath &&
+        this.sameDirectory(item.filePath, previous.filePath);
+      const shortInterruption =
+        gapMinutes <= shortInterruptionMinutes && this.isInterruptible(item.appName);
+      // Merge if: same app within gap, OR same file/dir within tighter gap
+      const shouldMerge =
+        (gapMinutes <= mergeGapMinutes && (sameApp || shortInterruption)) ||
+        (gapMinutes <= filePathChangeGap && (sameFile || (sameDir && sameApp)));
+      if (shouldMerge) {
         current.push(item);
       } else {
         close();
@@ -638,44 +659,87 @@ export class ActivityUnderstandingService {
     return segments.filter((item) => this.durationSeconds(item.startAt, item.endAt) >= 60);
   }
 
+  private sameDirectory(a: string, b: string): boolean {
+    const dirA = a.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+    const dirB = b.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+    return dirA === dirB;
+  }
+
   private matchTask(
     segment: BuiltSegment,
     tasks: Array<{ id: string; title: string; text: string }>,
     profile: Record<string, unknown>,
   ) {
-    const haystack = `${segment.title} ${segment.windowTitle} ${segment.filePath ?? ''}`.toLowerCase();
+    const haystack = `${segment.title} ${segment.windowTitle} ${segment.filePath ?? ''}`;
+    const filePathLower = segment.filePath?.toLowerCase();
+    const threshold = Number(profile.taskMatchThreshold ?? 25);
+
+    // ---- TF-IDF matching (primary) ----
+    const tfidf = new TfidfMatcher();
+    for (const task of tasks) {
+      let desc = '';
+      try {
+        const p = JSON.parse(task.text);
+        desc = String(p.description ?? p.notes ?? '');
+      } catch { /* not JSON */ }
+      // Weight title more heavily by repeating it
+      tfidf.addDocument(task.id, `${task.title} ${task.title} ${desc}`);
+    }
+
+    const tfidfBest = tfidf.bestMatch(haystack);
+    const tfidfScore = tfidfBest ? Math.round(tfidfBest.score * 100) : 0;
+
+    // ---- Keyword matching (fallback + boost) ----
     let best: { id: string; title: string; score: number } | undefined;
     for (const task of tasks) {
-      const words = task.title
-        .toLowerCase()
+      const taskTitle = task.title.toLowerCase();
+      const words = taskTitle
         .split(/[\s_/\\\-:，。,.]+/)
         .filter((word) => word.length >= 2);
-      const titleHits = words.filter((word) => haystack.includes(word)).length;
-      const pathHit = segment.filePath && task.text.includes(segment.filePath.toLowerCase());
-      const score = titleHits * 25 + (pathHit ? 35 : 0);
+
+      const titleHits = words.filter((word) => haystack.toLowerCase().includes(word)).length;
+      const exactMatch = haystack.toLowerCase().includes(taskTitle) ? 40 : 0;
+      const pathHit = filePathLower && task.text.includes(filePathLower) ? 35 : 0;
+
+      let dirMatch = 0;
+      if (filePathLower) {
+        const parts = filePathLower.replace(/\\/g, '/').split('/');
+        for (const part of parts) {
+          if (part.length >= 3 && task.text.includes(part)) { dirMatch = 15; break; }
+        }
+      }
+
+      // Boost keyword score with TF-IDF signal
+      const tfidfBoost = tfidfBest?.id === task.id ? tfidfScore : 0;
+
+      const score = titleHits * 25 + pathHit + exactMatch + dirMatch + tfidfBoost * 0.5;
       if (score > (best?.score ?? 0)) {
         best = { id: task.id, title: task.title, score };
       }
     }
-      if (best && best.score >= Number(profile.taskMatchThreshold ?? 25)) {
+
+    if (best && best.score >= threshold) {
       segment.matchedTaskId = best.id;
       segment.matchedTaskTitle = best.title;
       segment.confidence = Math.min(0.98, segment.confidence + best.score / 100);
       segment.title = `可能在推进：${best.title}`;
-      segment.evidence = { ...segment.evidence, matchedTask: best };
+      segment.evidence = {
+        ...segment.evidence,
+        matchedTask: { id: best.id, title: best.title, score: best.score, tfidfScore },
+      };
     }
     return segment;
   }
 
   private toRawActivity(row: QueryResultRow): RawActivity | null {
-    const payload = this.asRecord(row.payload);
+    const payload = asRecord(row.payload);
     const startAt =
-      this.readDate(this.readString(payload, ['startTime', 'start_at', 'startedAt', 'timestamp', 'occurredAt'])) ??
-      this.readDate(row.updatedAt) ??
+      readDate(this.readString(payload, ['startTime', 'start_at', 'startedAt', 'timestamp', 'occurredAt'])) ??
+      readDate(row.updatedAt) ??
       null;
     if (!startAt) return null;
     const endAt =
-      this.readDate(this.readString(payload, ['endTime', 'end_at', 'endedAt'])) ??
+      readDate(this.readString(payload, ['endTime', 'end_at', 'endedAt'])) ??
       new Date(startAt.getTime() + Math.max(60, Number(payload.durationSeconds ?? 300)) * 1000);
     return {
       id: String(row.id),
@@ -693,18 +757,35 @@ export class ActivityUnderstandingService {
     };
   }
 
-  private inferTitle(appName: string, windowTitle: string) {
+  private inferTitle(appName: string, windowTitle: string, filePath?: string) {
+    if (filePath) {
+      const fileName = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+      if (fileName && windowTitle) return `${appName}: ${fileName} - ${windowTitle}`.slice(0, 160);
+      if (fileName) return `${appName}: ${fileName}`.slice(0, 160);
+    }
     if (windowTitle) return `${appName}: ${windowTitle}`.slice(0, 160);
     return appName === 'unknown' ? '未识别活动片段' : `${appName} 活动`;
   }
 
-  private inferCategory(appName: string, windowTitle: string) {
-    const text = `${appName} ${windowTitle}`.toLowerCase();
-    if (/(code|studio|idea|pycharm|terminal|powershell|cmd|git)/.test(text)) return 'coding';
-    if (/(word|excel|powerpoint|pdf|markdown|obsidian|notion)/.test(text)) return 'writing';
-    if (/(teams|zoom|meeting|腾讯会议)/.test(text)) return 'meeting';
-    if (/(wechat|qq|telegram|mail)/.test(text)) return 'communication';
-    if (/(bilibili|youtube|video|music|game)/.test(text)) return 'entertainment';
+  private inferCategory(appName: string, windowTitle: string, filePath?: string) {
+    const text = `${appName} ${windowTitle} ${filePath ?? ''}`.toLowerCase();
+    // Coding / IDE
+    if (/(code|studio|idea|pycharm|terminal|powershell|cmd|git|wsl|bash)/.test(text)) return 'coding';
+    if (/\.(ts|js|py|rs|go|java|cpp|c|h|vue|svelte|dart)/.test(filePath ?? '')) return 'coding';
+    if (/^\/(home|Users|mnt).*\/(src|projects|dev|repo)/i.test(filePath ?? '')) return 'coding';
+    // Writing / Documents
+    if (/(word|excel|powerpoint|pdf|markdown|obsidian|notion|wps|typora)/.test(text)) return 'writing';
+    if (/\.(md|txt|docx?|pptx?|xlsx?|pdf)/.test(filePath ?? '')) return 'writing';
+    // Meeting / communication
+    if (/(teams|zoom|meeting|腾讯会议|webex|slack|discord)/.test(text)) return 'meeting';
+    if (/(wechat|微信|qq|telegram|mail|outlook|thunderbird)/.test(text)) return 'communication';
+    // Design
+    if (/(figma|sketch|photoshop|illustrator|blender|premiere|after.effects)/.test(text)) return 'design';
+    if (/\.(psd|ai|fig|sketch|svg|blend)/.test(filePath ?? '')) return 'design';
+    // Entertainment
+    if (/(bilibili|youtube|video|music|game|steam|抖音|快手)/.test(text)) return 'entertainment';
+    // Browsing
+    if (/(chrome|firefox|edge|safari|browser)/.test(text) && !/(code|studio|dev)/.test(text)) return 'browsing';
     return 'unknown';
   }
 
@@ -718,8 +799,8 @@ export class ActivityUnderstandingService {
   }
 
   private readRange(date: unknown, rawStart: unknown, rawEnd: unknown) {
-    const explicitStart = this.readDate(rawStart);
-    const explicitEnd = this.readDate(rawEnd);
+    const explicitStart = readDate(rawStart);
+    const explicitEnd = readDate(rawEnd);
     if (explicitStart && explicitEnd && explicitStart < explicitEnd) {
       return { start: explicitStart, end: explicitEnd };
     }
@@ -733,31 +814,6 @@ export class ActivityUnderstandingService {
     return Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
   }
 
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(1, Math.min(500, Math.trunc(parsed))) : fallback;
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  private readDate(value: unknown) {
-    if (!(typeof value === 'string' || value instanceof Date)) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  }
 
   private readString(payload: Record<string, unknown>, keys: string[]) {
     for (const key of keys) {

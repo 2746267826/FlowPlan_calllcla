@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord } from '../common/utils';
 
 type SnapshotObject = {
   objectType: string;
@@ -170,10 +171,10 @@ export class ClientService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const value = this.asRecord(body.value ?? body.configValue);
+    const value = asRecord(body.value ?? body.configValue);
     const scope = this.readScope(body.scope);
     const isSensitive = Boolean(body.isSensitive);
-    const description = this.clean(body.description);
+    const description = clean(body.description);
 
     const result = await this.database.transaction(async (client) => {
       const upserted = await client.query(
@@ -233,7 +234,7 @@ export class ClientService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const snapshot = this.asRecord(body.snapshot ?? body);
+    const snapshot = asRecord(body.snapshot ?? body);
     const objects = this.extractSnapshotObjects(snapshot);
     const conflicts = await this.detectImportConflicts(userId, objects);
     const settings = this.extractSettings(snapshot);
@@ -261,7 +262,7 @@ export class ClientService {
         [
           userId,
           deviceId,
-          this.clean(body.importUid) ?? randomUUID(),
+          clean(body.importUid) ?? randomUUID(),
           JSON.stringify(summary),
           JSON.stringify(snapshot),
         ],
@@ -404,11 +405,11 @@ export class ClientService {
             cancelled_at = now()
         WHERE user_id = $1 AND id = $2 AND status <> 'completed'
         `,
-        [userId, importId, this.clean(body.reason)],
+        [userId, importId, clean(body.reason)],
       );
       await this.recordAudit(client, userId, deviceId, 'client.import.cancel', {
         importId,
-        reason: this.clean(body.reason),
+        reason: clean(body.reason),
       });
     });
     return { ok: true, status: 'cancelled' };
@@ -680,22 +681,22 @@ export class ClientService {
       return null;
     }
     const objectType =
-      this.clean(value.objectType) ??
-      this.clean(value.object_type) ??
+      clean(value.objectType) ??
+      clean(value.object_type) ??
       fallbackType ??
       'unknown';
     const uid =
-      this.clean(value.uid) ??
-      this.clean(value.task_uid) ??
-      this.clean(value.event_uid) ??
-      this.clean(value.segment_uid) ??
-      this.clean(value.actual_uid) ??
-      this.clean(value.folder_uid) ??
-      this.clean(value.file_uid) ??
-      this.clean(value.node_uid) ??
-      this.clean(value.report_uid) ??
-      this.clean(value.diary_uid) ??
-      this.clean(value.link_uid) ??
+      clean(value.uid) ??
+      clean(value.task_uid) ??
+      clean(value.event_uid) ??
+      clean(value.segment_uid) ??
+      clean(value.actual_uid) ??
+      clean(value.folder_uid) ??
+      clean(value.file_uid) ??
+      clean(value.node_uid) ??
+      clean(value.report_uid) ??
+      clean(value.diary_uid) ??
+      clean(value.link_uid) ??
       (value.id == null ? undefined : `${objectType}:${String(value.id)}`);
     if (!uid || objectType === 'unknown') {
       return null;
@@ -705,8 +706,8 @@ export class ClientService {
       uid,
       localId: value.id == null ? uid : String(value.id),
       payload: { ...value, uid },
-      deletedAt: this.clean(value.deleted_at) ?? this.clean(value.deletedAt),
-      updatedAt: this.clean(value.updated_at) ?? this.clean(value.updatedAt),
+      deletedAt: clean(value.deleted_at) ?? clean(value.deletedAt),
+      updatedAt: clean(value.updated_at) ?? clean(value.updatedAt),
     };
   }
 
@@ -794,14 +795,14 @@ export class ClientService {
         userId,
         deviceId,
         action,
-        this.clean(metadata.importId) ?? this.clean(metadata.key),
+        clean(metadata.importId) ?? clean(metadata.key),
         JSON.stringify(metadata),
       ],
     );
   }
 
   private readScope(value: unknown) {
-    const scope = this.clean(value);
+    const scope = clean(value);
     return scope && SERVER_MANAGED_SETTING_SCOPES.includes(scope)
       ? scope
       : 'user.preference';
@@ -811,17 +812,7 @@ export class ClientService {
     return DEVICE_LOCAL_SETTING_KEYS.some((prefix) => key.startsWith(prefix));
   }
 
-  private asRecord(value: unknown): Record<string, unknown> {
-    return this.isRecord(value) ? value : {};
-  }
-
   private isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : undefined;
   }
 }

@@ -287,6 +287,34 @@ export class AdminController {
     return this.outlookService.reset(readRequestContext(headers));
   }
 
+  @Post('outlook/drafts/prepare')
+  outlookPrepareWrite(@Body() body: Record<string, unknown>, @Headers() headers: Record<string, unknown>) {
+    return this.outlookService.prepareWrite(body, readRequestContext(headers));
+  }
+
+  @Get('outlook/drafts')
+  outlookDrafts(@Headers() headers: Record<string, unknown>) {
+    return this.outlookService.drafts(readRequestContext(headers));
+  }
+
+  @Post('outlook/drafts/:draftId/confirm')
+  outlookConfirmWrite(
+    @Param('draftId') draftId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.outlookService.confirmWrite(draftId, body, readRequestContext(headers));
+  }
+
+  @Post('outlook/drafts/:draftId/reject')
+  outlookRejectWrite(
+    @Param('draftId') draftId: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.outlookService.rejectWrite(draftId, body, readRequestContext(headers));
+  }
+
   @Get('outlook/calendars')
   outlookCalendars(@Headers() headers: Record<string, unknown>) {
     return this.outlookService.calendars(readRequestContext(headers));

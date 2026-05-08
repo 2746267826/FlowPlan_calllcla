@@ -4,6 +4,7 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord, readNumber, readInt, readLimit, decrypt } from '../common/utils';
 
 export interface ModelRunInput {
   source: string;
@@ -204,8 +205,8 @@ export class ModelsService {
     context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 80, 1, 300);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -246,7 +247,7 @@ export class ModelsService {
     const deviceId = await this.devicesService.ensureDevice(context);
     await this.ensureDefaultModels(userId);
     const definition = await this.definition(userId, modelKey);
-    const feedbackType = this.clean(body.feedbackType) ?? this.clean(body.type);
+    const feedbackType = clean(body.feedbackType) ?? clean(body.type);
     if (!feedbackType) {
       throw new BadRequestException('feedbackType is required.');
     }
@@ -273,21 +274,21 @@ export class ModelsService {
           deviceId,
           definition.id,
           modelKey,
-          this.clean(body.modelRunId),
-          this.clean(body.targetType),
-          this.clean(body.targetId),
+          clean(body.modelRunId),
+          clean(body.targetType),
+          clean(body.targetId),
           feedbackType,
-          JSON.stringify(this.asRecord(body.feedbackPayload ?? body.payload)),
-          this.clean(body.outcome) ?? feedbackType,
-          this.clean(body.source) ?? 'client',
+          JSON.stringify(asRecord(body.feedbackPayload ?? body.payload)),
+          clean(body.outcome) ?? feedbackType,
+          clean(body.source) ?? 'client',
         ],
       );
       await this.insertEvalCase(client, userId, definition.id, modelKey, body);
       await this.recordAudit(client, userId, deviceId, 'model.feedback.record', {
         modelKey,
         feedbackType,
-        targetType: this.clean(body.targetType),
-        targetId: this.clean(body.targetId),
+        targetType: clean(body.targetType),
+        targetId: clean(body.targetId),
       });
       return inserted.rows[0];
     });
@@ -309,7 +310,7 @@ export class ModelsService {
       ORDER BY created_at DESC
       LIMIT $3
       `,
-      [userId, modelKey, this.readLimit(String(body.limit ?? ''), 100)],
+      [userId, modelKey, readLimit(String(body.limit ?? ''), 100, 1, 300)],
     );
     const active = await this.activeVersion(userId, modelKey);
     const metrics = {
@@ -349,7 +350,7 @@ export class ModelsService {
       `,
       [userId, modelKey],
     );
-    const currentProfile = this.asRecord(active.ruleProfile);
+    const currentProfile = asRecord(active.ruleProfile);
     const learned = this.applyFeedbackLearning(modelKey, currentProfile, feedback.rows);
     const lowRisk = this.isLowRiskLearning(currentProfile, learned.profile);
     const versionKey = `learned-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
@@ -444,7 +445,7 @@ export class ModelsService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    if (this.clean(body.confirmationToken) !== 'CONFIRM') {
+    if (clean(body.confirmationToken) !== 'CONFIRM') {
       throw new BadRequestException('confirmationToken CONFIRM is required to activate a model version.');
     }
     await this.ensureDefaultModels(userId);
@@ -473,7 +474,7 @@ export class ModelsService {
       await this.recordAudit(client, userId, deviceId, 'model.version.activate', {
         modelKey,
         versionId,
-        reason: this.clean(body.reason),
+        reason: clean(body.reason),
       });
       return activated.rows[0];
     });
@@ -585,7 +586,7 @@ export class ModelsService {
   ) {
     await this.ensureDefaultModels(userId);
     const definition = await this.definition(userId, modelKey);
-    const feedbackType = this.clean(body.feedbackType) ?? 'accepted';
+    const feedbackType = clean(body.feedbackType) ?? 'accepted';
     await client.query(
       `
       INSERT INTO model_feedback_events (
@@ -607,13 +608,13 @@ export class ModelsService {
         deviceId,
         definition.id,
         modelKey,
-        this.clean(body.modelRunId),
-        this.clean(body.targetType),
-        this.clean(body.targetId),
+        clean(body.modelRunId),
+        clean(body.targetType),
+        clean(body.targetId),
         feedbackType,
-        JSON.stringify(this.asRecord(body.feedbackPayload ?? body.payload)),
-        this.clean(body.outcome) ?? feedbackType,
-        this.clean(body.source) ?? 'service',
+        JSON.stringify(asRecord(body.feedbackPayload ?? body.payload)),
+        clean(body.outcome) ?? feedbackType,
+        clean(body.source) ?? 'service',
       ],
     );
   }
@@ -650,7 +651,7 @@ export class ModelsService {
     ];
     try {
       const raw = await this.callModel(provider, apiKey, prompt);
-      const parsed = this.asRecord(this.parseModelJson(raw));
+      const parsed = asRecord(this.parseModelJson(raw));
       return {
         used: true,
         providerKey: provider.provider_key,
@@ -662,7 +663,7 @@ export class ModelsService {
             ? parsed.draft_items
             : [],
         unplanned: Array.isArray(parsed.unplanned) ? parsed.unplanned : [],
-        explanation: this.clean(parsed.explanation) ?? raw,
+        explanation: clean(parsed.explanation) ?? raw,
       };
     } catch (error) {
       return {
@@ -767,7 +768,7 @@ export class ModelsService {
     feedback: QueryResultRow[],
   ) {
     const updated = JSON.parse(JSON.stringify(profile)) as Record<string, unknown>;
-    const adjustments = this.asRecord(updated.learnedAdjustments);
+    const adjustments = asRecord(updated.learnedAdjustments);
     const rejected = feedback.filter((row) => /reject|rejected|declined/.test(String(row.feedbackType ?? row.outcome)));
     const accepted = feedback.filter((row) => /accept|accepted|confirmed|modified/.test(String(row.feedbackType ?? row.outcome)));
     if (modelKey === 'scheduler.v1') {
@@ -814,7 +815,7 @@ export class ModelsService {
     modelKey: string,
     body: Record<string, unknown>,
   ) {
-    const feedbackType = this.clean(body.feedbackType) ?? this.clean(body.type);
+    const feedbackType = clean(body.feedbackType) ?? clean(body.type);
     if (!feedbackType) return;
     await client.query(
       `
@@ -834,12 +835,12 @@ export class ModelsService {
         definitionId,
         modelKey,
         `feedback:${randomUUID()}`,
-        JSON.stringify(this.asRecord(body.inputSnapshot)),
+        JSON.stringify(asRecord(body.inputSnapshot)),
         JSON.stringify({
           feedbackType,
-          targetType: this.clean(body.targetType),
-          targetId: this.clean(body.targetId),
-          payload: this.asRecord(body.feedbackPayload ?? body.payload),
+          targetType: clean(body.targetType),
+          targetId: clean(body.targetId),
+          payload: asRecord(body.feedbackPayload ?? body.payload),
         }),
       ],
     );
@@ -863,9 +864,9 @@ export class ModelsService {
       body: JSON.stringify({
         model: provider.model,
         messages,
-        temperature: this.readNumber(provider.temperature, 0.2),
-        max_tokens: this.readInteger(provider.max_output_tokens, 1600),
-        ...this.asRecord(provider.options),
+        temperature: readNumber(provider.temperature, 0.2),
+        max_tokens: readInt(provider.max_output_tokens, 1600),
+        ...asRecord(provider.options),
       }),
     });
     const raw = (await response.text()).trim();
@@ -896,24 +897,7 @@ export class ModelsService {
   }
 
   private readApiKey(provider: ProviderConfig) {
-    return provider.api_key_ciphertext ? this.decrypt(provider.api_key_ciphertext) : null;
-  }
-
-  private decrypt(value: string) {
-    const [ivRaw, tagRaw, encryptedRaw] = value.split('.');
-    if (!ivRaw || !tagRaw || !encryptedRaw) {
-      throw new Error('Invalid encrypted API key format.');
-    }
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      this.secretKey(),
-      Buffer.from(ivRaw, 'base64'),
-    );
-    decipher.setAuthTag(Buffer.from(tagRaw, 'base64'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(encryptedRaw, 'base64')),
-      decipher.final(),
-    ]).toString('utf8');
+    return provider.api_key_ciphertext ? decrypt(provider.api_key_ciphertext, this.secretKey()) : null;
   }
 
   private secretKey() {
@@ -952,33 +936,4 @@ export class ModelsService {
     );
   }
 
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.max(1, Math.min(300, Math.trunc(parsed)));
-  }
-
-  private readInteger(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.trunc(parsed);
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
 }

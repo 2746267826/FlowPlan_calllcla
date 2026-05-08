@@ -4,6 +4,8 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord, readNumber, readInt, readLimit, readOffset, encrypt, decrypt } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
 
 export interface AiQuery {
   status?: string;
@@ -80,11 +82,11 @@ export class AiService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const apiKey = this.clean(body.apiKey);
+    const apiKey = clean(body.apiKey);
     const baseUrl = this.validateProviderBaseUrl(
-      this.clean(body.baseUrl) ?? 'https://api.openai.com/v1',
+      clean(body.baseUrl) ?? 'https://api.openai.com/v1',
     );
-    const encryptedKey = apiKey ? this.encrypt(apiKey) : null;
+    const encryptedKey = apiKey ? encrypt(apiKey, this.secretKey() as Buffer) : null;
     const apiKeyHint = apiKey ? apiKey.slice(-4) : null;
     const isDefault = body.isDefault !== false;
 
@@ -140,22 +142,22 @@ export class AiService {
         [
           userId,
           providerKey,
-          this.clean(body.providerType) ?? 'openai_compatible',
-          this.clean(body.displayName) ?? providerKey,
+          clean(body.providerType) ?? 'openai_compatible',
+          clean(body.displayName) ?? providerKey,
           baseUrl,
-          this.clean(body.model) ?? '',
+          clean(body.model) ?? '',
           encryptedKey,
           apiKeyHint,
-          this.clean(body.status) ?? 'enabled',
-          this.readNumber(body.temperature, 0.2),
-          this.readInteger(body.maxOutputTokens, 1600),
+          clean(body.status) ?? 'enabled',
+          readNumber(body.temperature, 0.2),
+          readInt(body.maxOutputTokens, 1600),
           isDefault,
-          JSON.stringify(this.asRecord(body.options)),
+          JSON.stringify(asRecord(body.options)),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'ai.provider.upsert', {
         providerKey,
-        providerType: this.clean(body.providerType) ?? 'openai_compatible',
+        providerType: clean(body.providerType) ?? 'openai_compatible',
         hasApiKey: Boolean(apiKey),
       });
       return result.rows[0];
@@ -236,15 +238,15 @@ export class AiService {
         `,
         [
           userId,
-          this.clean(body.conversationId),
-          this.clean(body.contextType) ?? 'mixed',
+          clean(body.conversationId),
+          clean(body.contextType) ?? 'mixed',
           JSON.stringify(payload),
-          JSON.stringify(this.asRecord(body.sensitivePolicy)),
+          JSON.stringify(asRecord(body.sensitivePolicy)),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'ai.context.snapshot', {
         snapshotId: snapshot.rows[0]?.id,
-        contextType: this.clean(body.contextType) ?? 'mixed',
+        contextType: clean(body.contextType) ?? 'mixed',
       });
       return snapshot.rows[0];
     });
@@ -308,8 +310,8 @@ export class AiService {
         [
           userId,
           toolName,
-          this.clean(body.permissionLevel) ?? 'draft_only',
-          this.clean(body.riskLevel) ?? 'low',
+          clean(body.permissionLevel) ?? 'draft_only',
+          clean(body.riskLevel) ?? 'low',
           JSON.stringify(Array.isArray(body.allowedScopes) ? body.allowedScopes : []),
           JSON.stringify(Array.isArray(body.deniedScopes) ? body.deniedScopes : []),
           body.requiresConfirmation !== false,
@@ -318,7 +320,7 @@ export class AiService {
       );
       await this.recordAudit(client, userId, deviceId, 'ai.tool_policy.upsert', {
         toolName,
-        permissionLevel: this.clean(body.permissionLevel) ?? 'draft_only',
+        permissionLevel: clean(body.permissionLevel) ?? 'draft_only',
       });
       return policy.rows[0];
     });
@@ -327,9 +329,9 @@ export class AiService {
 
   async conversations(query: AiQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 50);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 50, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -373,11 +375,11 @@ export class AiService {
         `,
         [
           userId,
-          this.clean(body.source) ?? 'flowplanv2',
-          this.clean(body.title) ?? 'AI 对话',
-          this.clean(body.providerKey),
-          this.clean(body.model),
-          JSON.stringify(this.asRecord(body.contextScope)),
+          clean(body.source) ?? 'flowplanv2',
+          clean(body.title) ?? 'AI 对话',
+          clean(body.providerKey),
+          clean(body.model),
+          JSON.stringify(asRecord(body.contextScope)),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'ai.conversation.create', {
@@ -414,7 +416,7 @@ export class AiService {
   async sendMessage(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const content = this.clean(body.content);
+    const content = clean(body.content);
     if (!content) {
       throw new BadRequestException('content is required.');
     }
@@ -422,7 +424,7 @@ export class AiService {
     const conversation = await this.ensureConversation(userId, body, content);
     const provider = await this.loadProvider(
       userId,
-      this.clean(body.providerKey) ?? conversation.provider_key ?? undefined,
+      clean(body.providerKey) ?? conversation.provider_key ?? undefined,
     );
     const providerKey = provider?.provider_key ?? null;
     const apiKey = provider ? this.readApiKey(provider) : null;
@@ -461,7 +463,7 @@ export class AiService {
       for (const draft of drafts) {
         const prepared = this.prepareChatDraft(draft, content);
         if (!prepared) {
-          const action = this.clean(draft.proposed_action) ?? 'unknown';
+          const action = clean(draft.proposed_action) ?? 'unknown';
           if (action !== 'answer_only') {
             await this.recordAudit(client, userId, deviceId, 'ai.draft.blocked', {
               action,
@@ -493,8 +495,8 @@ export class AiService {
           [
             userId,
             conversation.id,
-            this.clean(draft.title) ?? 'AI 操作草案',
-            this.clean(draft.summary),
+            clean(draft.title) ?? 'AI 操作草案',
+            clean(draft.summary),
             action,
             prepared.targetType,
             prepared.targetId,
@@ -643,7 +645,7 @@ export class AiService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const provider = await this.loadProvider(userId, this.clean(body.providerKey) ?? undefined);
+    const provider = await this.loadProvider(userId, clean(body.providerKey) ?? undefined);
     const apiKey = provider ? this.readApiKey(provider) : null;
     if (!provider || !apiKey || provider.status !== 'enabled') {
       throw new BadRequestException('AI provider is not configured or enabled.');
@@ -684,7 +686,7 @@ export class AiService {
       FROM sync_objects
       WHERE user_id = $1
         AND deleted_at IS NULL
-        AND object_type IN ('task', 'tasks', 'task_item', 'task_items')
+        AND object_type IN ('task_item')
       ORDER BY updated_at DESC
       LIMIT 20
       `,
@@ -707,14 +709,14 @@ export class AiService {
       },
     ];
     const raw = await this.callModel(provider, apiKey, prompt);
-    const suggestion = this.asRecord(this.parseModelJson(raw));
+    const suggestion = asRecord(this.parseModelJson(raw));
     const safeSuggestion = {
-      suggestedTitle: this.clean(suggestion.suggestedTitle) ?? this.clean(suggestion.suggested_title),
+      suggestedTitle: clean(suggestion.suggestedTitle) ?? clean(suggestion.suggested_title),
       suggestedSummary:
-        this.clean(suggestion.suggestedSummary) ?? this.clean(suggestion.suggested_summary) ?? raw,
+        clean(suggestion.suggestedSummary) ?? clean(suggestion.suggested_summary) ?? raw,
       likelyTaskUid:
-        this.clean(suggestion.likelyTaskUid) ?? this.clean(suggestion.likely_task_uid),
-      confidence: this.readNumber(suggestion.confidence, this.readNumber(row.confidence, 0.5)),
+        clean(suggestion.likelyTaskUid) ?? clean(suggestion.likely_task_uid),
+      confidence: readNumber(suggestion.confidence, readNumber(row.confidence, 0.5)),
       reasons: Array.isArray(suggestion.reasons) ? suggestion.reasons.slice(0, 8) : [],
       model: provider.model,
     };
@@ -765,9 +767,9 @@ export class AiService {
 
   async toolDrafts(query: AiQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 80, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -807,7 +809,7 @@ export class AiService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const status = this.clean(body.status) ?? 'pending_review';
+    const status = clean(body.status) ?? 'pending_review';
     const result = await this.database.transaction(async (client) => {
       const updated = await client.query<QueryResultRow>(
         `
@@ -820,7 +822,7 @@ export class AiService {
         WHERE user_id = $1 AND id = $2
         RETURNING id::text AS id, status, review_note AS "reviewNote", reviewed_at AS "reviewedAt"
         `,
-        [userId, draftId, status, this.clean(body.reviewNote)],
+        [userId, draftId, status, clean(body.reviewNote)],
       );
       await this.recordAudit(client, userId, deviceId, 'ai.draft.review', {
         draftId,
@@ -878,7 +880,7 @@ export class AiService {
       if (String(draft.action) !== 'create_task') {
         throw new BadRequestException('Only create_task drafts are executable in the MVP AI flow.');
       }
-      if (policy.requiresSecondConfirm && this.clean(body.confirmationPhrase) !== 'CONFIRM') {
+      if (policy.requiresSecondConfirm && clean(body.confirmationPhrase) !== 'CONFIRM') {
         throw new BadRequestException('second confirmation phrase CONFIRM is required.');
       }
       const execution = await this.executeDraft(
@@ -886,7 +888,7 @@ export class AiService {
         userId,
         deviceId,
         String(draft.action),
-        this.asRecord(draft.payload),
+        asRecord(draft.payload),
       );
       const updated = await client.query<QueryResultRow>(
         `
@@ -905,7 +907,7 @@ export class AiService {
         [
           userId,
           draftId,
-          this.clean(body.reviewNote) ?? '用户确认执行',
+          clean(body.reviewNote) ?? '用户确认执行',
           execution.status,
           JSON.stringify(execution.result),
         ],
@@ -1032,7 +1034,7 @@ export class AiService {
     body: Record<string, unknown>,
     firstMessage: string,
   ) {
-    const conversationId = this.clean(body.conversationId);
+    const conversationId = clean(body.conversationId);
     if (conversationId) {
       const existing = await this.database.query<QueryResultRow>(
         `
@@ -1054,11 +1056,11 @@ export class AiService {
       `,
       [
         userId,
-        this.clean(body.source) ?? 'flowplanv2',
-        this.clean(body.title) ?? this.summarize(firstMessage),
-        this.clean(body.providerKey),
-        this.clean(body.model),
-        JSON.stringify(this.asRecord(body.contextScope)),
+        clean(body.source) ?? 'flowplanv2',
+        clean(body.title) ?? this.summarize(firstMessage),
+        clean(body.providerKey),
+        clean(body.model),
+        JSON.stringify(asRecord(body.contextScope)),
       ],
     );
     return inserted.rows[0];
@@ -1101,7 +1103,7 @@ export class AiService {
           FROM sync_objects
           WHERE user_id = $1
             AND deleted_at IS NULL
-            AND object_type IN ('task', 'tasks', 'task_item', 'task_items')
+            AND object_type IN ('task_item')
           ORDER BY updated_at DESC
           LIMIT 10
           `,
@@ -1113,7 +1115,7 @@ export class AiService {
           FROM sync_objects
           WHERE user_id = $1
             AND deleted_at IS NULL
-            AND object_type IN ('calendar_event', 'calendar_events', 'event', 'events', 'time_block')
+            AND object_type IN ('calendar_event')
           ORDER BY updated_at DESC
           LIMIT 10
           `,
@@ -1131,9 +1133,9 @@ export class AiService {
         ),
         this.database.query<QueryResultRow>(
           `
-          SELECT provider, display_name AS "displayName", local_path AS "localPath", remote_id AS "remoteId", updated_at AS "updatedAt"
-          FROM file_items
-          WHERE user_id = $1
+          SELECT node_type AS "nodeType", name AS "displayName", relative_path AS "relativePath", size_bytes AS "sizeBytes", updated_at AS "updatedAt"
+          FROM file_nodes
+          WHERE user_id = $1 AND is_deleted = false
           ORDER BY updated_at DESC
           LIMIT 10
           `,
@@ -1163,18 +1165,18 @@ export class AiService {
   }
 
   private prepareChatDraft(draft: ModelDraft, userMessage: string) {
-    const action = this.clean(draft.proposed_action);
+    const action = clean(draft.proposed_action);
     if (action !== 'create_task') {
       return null;
     }
     const payload = this.normalizeCreateTaskPayload(
-      this.asRecord(draft.proposed_payload),
+      asRecord(draft.proposed_payload),
       userMessage,
     );
     return {
-      title: this.clean(draft.title) ?? `创建任务：${payload.title}`,
+      title: clean(draft.title) ?? `创建任务：${payload.title}`,
       summary:
-        this.clean(draft.summary) ??
+        clean(draft.summary) ??
         `创建任务 "${payload.title}"，截止时间 ${payload.dueAt ?? '未设置'}。`,
       action: 'create_task',
       targetType: 'task',
@@ -1202,15 +1204,15 @@ export class AiService {
     userMessage: string,
   ) {
     const title =
-      this.clean(rawPayload.title) ??
-      this.clean(rawPayload.name) ??
+      clean(rawPayload.title) ??
+      clean(rawPayload.name) ??
       this.extractTaskTitle(userMessage);
     const dueAt =
-      this.clean(rawPayload.dueAt) ??
-      this.clean(rawPayload.due_at) ??
-      this.clean(rawPayload.dueDate) ??
+      clean(rawPayload.dueAt) ??
+      clean(rawPayload.due_at) ??
+      clean(rawPayload.dueDate) ??
       this.inferDueAt(userMessage);
-    const estimatedMinutes = this.readInteger(
+    const estimatedMinutes = readInt(
       rawPayload.estimatedMinutes ?? rawPayload.estimated_minutes ?? rawPayload.durationMinutes,
       60,
     );
@@ -1218,14 +1220,14 @@ export class AiService {
       title,
       dueAt,
       estimatedMinutes,
-      taskBookId: this.clean(rawPayload.taskBookId) ?? this.clean(rawPayload.task_book_id),
+      taskBookId: clean(rawPayload.taskBookId) ?? clean(rawPayload.task_book_id),
       taskBookName:
-        this.clean(rawPayload.taskBookName) ??
-        this.clean(rawPayload.task_book_name) ??
+        clean(rawPayload.taskBookName) ??
+        clean(rawPayload.task_book_name) ??
         '默认任务本',
-      priority: this.clean(rawPayload.priority) ?? 'normal',
-      status: this.clean(rawPayload.status) ?? 'pending',
-      notes: this.clean(rawPayload.notes) ?? this.clean(rawPayload.description),
+      priority: clean(rawPayload.priority) ?? 'normal',
+      status: clean(rawPayload.status) ?? 'pending',
+      notes: clean(rawPayload.notes) ?? clean(rawPayload.description),
       source: 'ai_confirmed',
       createdBy: 'ai_controlled_executor',
       operationDraftSchema: 'OperationDraft.create_task.v1',
@@ -1233,18 +1235,18 @@ export class AiService {
   }
 
   private validateCreateTaskPayload(payload: Record<string, unknown>) {
-    const title = this.clean(payload.title);
+    const title = clean(payload.title);
     if (!title) {
       throw new BadRequestException('create_task draft requires title.');
     }
     return {
       ...payload,
       title,
-      dueAt: this.clean(payload.dueAt) ?? this.clean(payload.due_at),
-      estimatedMinutes: this.readInteger(payload.estimatedMinutes, 60),
-      taskBookName: this.clean(payload.taskBookName) ?? '默认任务本',
-      priority: this.clean(payload.priority) ?? 'normal',
-      status: this.clean(payload.status) ?? 'pending',
+      dueAt: clean(payload.dueAt) ?? clean(payload.due_at),
+      estimatedMinutes: readInt(payload.estimatedMinutes, 60),
+      taskBookName: clean(payload.taskBookName) ?? '默认任务本',
+      priority: clean(payload.priority) ?? 'normal',
+      status: clean(payload.status) ?? 'pending',
       source: 'ai_confirmed',
       createdBy: 'ai_controlled_executor',
     };
@@ -1319,15 +1321,15 @@ export class AiService {
     const parsed = this.parseModelJson(content);
     return {
       assistantContent:
-        this.clean(parsed.assistant_message) ??
-        this.clean(parsed.assistantMessage) ??
+        clean(parsed.assistant_message) ??
+        clean(parsed.assistantMessage) ??
         content,
       drafts: Array.isArray(parsed.operation_drafts)
         ? (parsed.operation_drafts as ModelDraft[])
         : Array.isArray(parsed.operationDrafts)
           ? (parsed.operationDrafts as ModelDraft[])
           : [],
-      usage: this.asRecord(parsed.usage),
+      usage: asRecord(parsed.usage),
     };
   }
 
@@ -1335,36 +1337,63 @@ export class AiService {
     provider: ProviderConfig,
     apiKey: string,
     messages: Array<{ role: string; content: string }>,
+    retries = 3,
   ) {
     if (provider.provider_type !== 'openai_compatible') {
       throw new BadRequestException(`Unsupported AI provider type: ${provider.provider_type}`);
     }
     const endpoint = `${provider.base_url.replace(/\/$/, '')}/chat/completions`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        temperature: this.readNumber(provider.temperature, 0.2),
-        max_tokens: this.readInteger(provider.max_output_tokens, 1600),
-        ...this.asRecord(provider.options),
-      }),
-    });
-    const raw = (await response.text()).trim();
-    if (!response.ok) {
-      throw new Error(`AI API ${response.status}: ${raw.slice(0, 500)}`);
+    const timeoutMs = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 30000);
+
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: provider.model,
+            messages,
+            temperature: readNumber(provider.temperature, 0.2),
+            max_tokens: readInt(provider.max_output_tokens, 1600),
+            ...asRecord(provider.options),
+          }),
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timer));
+
+        const raw = (await response.text()).trim();
+        if (!response.ok) {
+          // Don't retry on 4xx client errors (except 429 rate limit)
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            throw new Error(`AI API ${response.status}: ${raw.slice(0, 500)}`);
+          }
+          throw new Error(`AI API ${response.status} (attempt ${attempt}/${retries}): ${raw.slice(0, 300)}`);
+        }
+        const json = raw ? JSON.parse(raw) : {};
+        const choice = Array.isArray(json.choices) ? json.choices[0] : null;
+        const content = choice?.message?.content;
+        if (typeof content !== 'string' || content.trim().length === 0) {
+          throw new Error('AI API response did not contain message content.');
+        }
+        return content;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          lastError = new Error(`AI API request timed out after ${timeoutMs}ms`);
+        }
+        if (attempt < retries) {
+          // Exponential backoff: 1s, 2s, 4s
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+        }
+      }
     }
-    const json = raw ? JSON.parse(raw) : {};
-    const choice = Array.isArray(json.choices) ? json.choices[0] : null;
-    const content = choice?.message?.content;
-    if (typeof content !== 'string' || content.trim().length === 0) {
-      throw new Error('AI API response did not contain message content.');
-    }
-    return content;
+    throw lastError ?? new Error('AI API request failed after retries');
   }
 
   private async loadProvider(userId: string, providerKey?: string) {
@@ -1398,7 +1427,7 @@ export class AiService {
     if (!provider.api_key_ciphertext) {
       return null;
     }
-    return this.decrypt(provider.api_key_ciphertext);
+    return decrypt(provider.api_key_ciphertext, this.secretKey() as Buffer);
   }
 
   private async executeDraft(
@@ -1412,22 +1441,27 @@ export class AiService {
       const validated = this.validateCreateTaskPayload(payload);
       return this.createSyncObject(client, userId, deviceId, 'task_item', validated);
     }
-    if (action === 'create_calendar_event' || action === 'create_actual_record') {
-      return {
-        status: 'blocked_by_policy',
-        result: {
-          action,
-          note: 'Only create_task is executable in the MVP AI controlled executor.',
-        },
-      };
-    }
     if (action === 'create_calendar_event') {
-      return this.createSyncObject(client, userId, deviceId, 'calendar_event', payload);
+      const title = clean(payload.title) ?? clean(payload.summary) ?? 'AI 日程';
+      const startAt = clean(payload.startAt) ?? clean(payload.dtstart);
+      const endAt = clean(payload.endAt) ?? clean(payload.dtend);
+      if (!startAt || !endAt) {
+        return {
+          status: 'needs_more_information',
+          result: { reason: 'create_calendar_event requires startAt and endAt.' },
+        };
+      }
+      return this.createSyncObject(client, userId, deviceId, 'calendar_event', {
+        title, startAt, endAt,
+        source: 'ai_confirmed',
+        status: 'confirmed',
+        ...payload,
+      });
     }
     if (action === 'create_actual_record') {
-      const title = this.clean(payload.title) ?? 'AI 实际记录';
-      const startAt = this.clean(payload.startAt) ?? this.clean(payload.start_at);
-      const endAt = this.clean(payload.endAt) ?? this.clean(payload.end_at);
+      const title = clean(payload.title) ?? 'AI 实际记录';
+      const startAt = clean(payload.startAt) ?? clean(payload.start_at);
+      const endAt = clean(payload.endAt) ?? clean(payload.end_at);
       if (!startAt || !endAt) {
         return {
           status: 'needs_more_information',
@@ -1552,7 +1586,7 @@ export class AiService {
   }
 
   private sanitizePayload(row: QueryResultRow) {
-    const payload = this.asRecord(row.payload);
+    const payload = asRecord(row.payload);
     return {
       id: row.id,
       uid: row.uid,
@@ -1569,44 +1603,20 @@ export class AiService {
 
   private parseModelJson(content: string) {
     try {
-      return this.asRecord(JSON.parse(content));
+      return asRecord(JSON.parse(content));
     } catch {
       const match = content.match(/\{[\s\S]*\}/);
       if (!match) {
         return { assistant_message: content, operation_drafts: [] };
       }
       try {
-        return this.asRecord(JSON.parse(match[0]));
+        return asRecord(JSON.parse(match[0]));
       } catch {
         return { assistant_message: content, operation_drafts: [] };
       }
     }
   }
 
-  private encrypt(value: string) {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.secretKey(), iv);
-    const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return [iv, tag, encrypted].map((part) => part.toString('base64')).join('.');
-  }
-
-  private decrypt(value: string) {
-    const [ivRaw, tagRaw, encryptedRaw] = value.split('.');
-    if (!ivRaw || !tagRaw || !encryptedRaw) {
-      throw new Error('Invalid encrypted API key format.');
-    }
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      this.secretKey(),
-      Buffer.from(ivRaw, 'base64'),
-    );
-    decipher.setAuthTag(Buffer.from(tagRaw, 'base64'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(encryptedRaw, 'base64')),
-      decipher.final(),
-    ]).toString('utf8');
-  }
 
   private secretKey() {
     const secret =
@@ -1622,36 +1632,4 @@ export class AiService {
     return cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned;
   }
 
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(1, Math.min(200, Math.trunc(parsed))) : fallback;
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  private readInteger(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(1, Math.trunc(parsed)) : fallback;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
 }

@@ -1,7 +1,6 @@
 import type { DatasetDefinition, ModuleKey } from '../types';
 
 export const defaultApiBase = 'http://localhost:3202';
-export const defaultUserId = '00000000-0000-4000-8000-000000000001';
 
 export const modules: Array<{ key: ModuleKey; label: string; description: string }> = [
   { key: 'dashboard', label: '总览', description: '健康、风险、待处理事项和最近审计。' },
@@ -14,6 +13,8 @@ export const modules: Array<{ key: ModuleKey; label: string; description: string
   { key: 'audit', label: '数据操作审计', description: '按人类可读摘要查看关键数据操作和变更详情。' },
   { key: 'settings', label: '系统设置', description: '服务端连接、设备筛选和远程配置。' },
   { key: 'operations', label: '运维操作', description: '执行需要 prepare/confirm 的受控管理动作。' },
+  { key: 'logs', label: '系统日志', description: '查看审计日志、操作记录和变更详情。' },
+  { key: 'jobs', label: '定时任务', description: '管理后台定时任务：查看、触发、暂停、恢复。' },
 ];
 
 export const datasets: Record<string, DatasetDefinition> = {

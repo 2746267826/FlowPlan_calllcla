@@ -58,4 +58,20 @@ export class SyncController {
       readRequestContext(headers),
     );
   }
+
+  @Get('health')
+  health(@Headers() headers: Record<string, unknown>) {
+    return this.syncService.health(readRequestContext(headers));
+  }
+
+  @Post('purge-stale')
+  purgeStale(
+    @Body('olderThanDays') olderThanDays: number | undefined,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.syncService.purgeStaleMutations(
+      readRequestContext(headers),
+      olderThanDays,
+    );
+  }
 }

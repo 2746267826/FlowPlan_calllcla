@@ -3,6 +3,8 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, iso, toNumber, readLimit, readOffset } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
 
 export interface AnalyticsQuery {
   start?: string;
@@ -217,9 +219,9 @@ export class AnalyticsService {
       bucket,
       source: 'server-live-sync-objects',
       buckets: result.rows.map((row) => ({
-        bucketStart: this.iso(row.bucket_start),
-        recordCount: this.toNumber(row.record_count),
-        totalMinutes: this.toNumber(row.total_minutes),
+        bucketStart: iso(row.bucket_start),
+        recordCount: toNumber(row.record_count),
+        totalMinutes: toNumber(row.total_minutes),
       })),
     };
   }
@@ -342,16 +344,16 @@ export class AnalyticsService {
     ]);
 
     const keyCounts = keyResult.rows.reduce<Record<string, number>>((acc, row) => {
-      acc[String(row.key_code)] = this.toNumber(row.event_count);
+      acc[String(row.key_code)] = toNumber(row.event_count);
       return acc;
     }, {});
     const mouseCounts = mouseResult.rows.reduce<Record<string, number>>((acc, row) => {
       const name = row.name ?? 'unknown';
-      acc[name] = this.toNumber(row.event_count);
+      acc[name] = toNumber(row.event_count);
       return acc;
     }, {});
     const keyboardTotal = keyResult.rows.reduce(
-      (sum, row) => sum + this.toNumber(row.event_count),
+      (sum, row) => sum + toNumber(row.event_count),
       0,
     );
 
@@ -360,19 +362,19 @@ export class AnalyticsService {
       bucket,
       source: 'server-live-sync-objects',
       buckets: bucketResult.rows.map((row) => ({
-        bucketStart: this.iso(row.bucket_start),
-        eventCount: this.toNumber(row.event_count),
-        keyboardEventCount: this.toNumber(row.keyboard_event_count),
-        mouseButtonEventCount: this.toNumber(row.mouse_button_event_count),
-        wheelEventCount: this.toNumber(row.wheel_event_count),
-        mouseMoveEventCount: this.toNumber(row.mouse_move_event_count),
-        mouseMoveDistance: this.toNumber(row.mouse_move_distance),
+        bucketStart: iso(row.bucket_start),
+        eventCount: toNumber(row.event_count),
+        keyboardEventCount: toNumber(row.keyboard_event_count),
+        mouseButtonEventCount: toNumber(row.mouse_button_event_count),
+        wheelEventCount: toNumber(row.wheel_event_count),
+        mouseMoveEventCount: toNumber(row.mouse_move_event_count),
+        mouseMoveDistance: toNumber(row.mouse_move_distance),
       })),
       keyCounts,
       topKeys: keyResult.rows.map((row) => {
-        const count = this.toNumber(row.event_count);
+        const count = toNumber(row.event_count);
         return {
-          keyCode: this.toNumber(row.key_code),
+          keyCode: toNumber(row.key_code),
           label: row.label ?? String(row.key_code),
           count,
           share: keyboardTotal > 0 ? count / keyboardTotal : 0,
@@ -381,14 +383,14 @@ export class AnalyticsService {
       mouseCounts,
       processIntensities: processResult.rows.map((row) => ({
         processName: row.process_name ?? 'unknown',
-        totalEvents: this.toNumber(row.event_count),
-        keyEvents: this.toNumber(row.keyboard_event_count),
-        mouseButtonEvents: this.toNumber(row.mouse_button_event_count),
-        wheelEvents: this.toNumber(row.wheel_event_count),
-        mouseMoveEvents: this.toNumber(row.mouse_move_event_count),
-        moveDistance: this.toNumber(row.mouse_move_distance),
-        activeMinutes: this.toNumber(row.active_minutes),
-        intensityScore: this.toNumber(row.intensity_score),
+        totalEvents: toNumber(row.event_count),
+        keyEvents: toNumber(row.keyboard_event_count),
+        mouseButtonEvents: toNumber(row.mouse_button_event_count),
+        wheelEvents: toNumber(row.wheel_event_count),
+        mouseMoveEvents: toNumber(row.mouse_move_event_count),
+        moveDistance: toNumber(row.mouse_move_distance),
+        activeMinutes: toNumber(row.active_minutes),
+        intensityScore: toNumber(row.intensity_score),
       })),
     };
   }
@@ -419,19 +421,19 @@ export class AnalyticsService {
     return {
       range,
       source: 'server-live-sync-objects',
-      recordCount: this.toNumber(row?.record_count),
-      totalMinutes: this.toNumber(row?.total_minutes),
-      keyCount: this.toNumber(row?.key_count),
-      mouseClicks: this.toNumber(row?.mouse_clicks),
-      mouseMovePx: this.toNumber(row?.mouse_move_px),
-      scrollPx: this.toNumber(row?.scroll_px),
+      recordCount: toNumber(row?.record_count),
+      totalMinutes: toNumber(row?.total_minutes),
+      keyCount: toNumber(row?.key_count),
+      mouseClicks: toNumber(row?.mouse_clicks),
+      mouseMovePx: toNumber(row?.mouse_move_px),
+      scrollPx: toNumber(row?.scroll_px),
     };
   }
 
   async topApps(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
-    const limit = this.readLimit(query.limit, 20);
+    const limit = readLimit(query.limit, 20, 1, 200);
     const result = await this.database.query<NamedMetricRow>(
       `
       WITH activity AS (${this.activitySourceSql()})
@@ -453,7 +455,7 @@ export class AnalyticsService {
   async topCategories(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
-    const limit = this.readLimit(query.limit, 20);
+    const limit = readLimit(query.limit, 20, 1, 200);
     const result = await this.database.query<NamedMetricRow>(
       `
       WITH activity AS (${this.activitySourceSql()})
@@ -478,7 +480,7 @@ export class AnalyticsService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
-    const limit = this.readLimit(query.limit, 50);
+    const limit = readLimit(query.limit, 50, 1, 200);
     const taskId = query.taskId?.trim();
     const result = await this.database.query<NamedMetricRow>(
       `
@@ -529,10 +531,10 @@ export class AnalyticsService {
       bucket: 'day',
       source: 'server-live-sync-objects',
       buckets: result.rows.map((row) => {
-        const totalMinutes = this.toNumber(row.total_minutes);
-        const focusMinutes = this.toNumber(row.record_count);
+        const totalMinutes = toNumber(row.total_minutes);
+        const focusMinutes = toNumber(row.record_count);
         return {
-          bucketStart: this.iso(row.bucket_start),
+          bucketStart: iso(row.bucket_start),
           totalMinutes,
           focusMinutes,
           focusRatio: totalMinutes <= 0 ? 0 : focusMinutes / totalMinutes,
@@ -547,8 +549,8 @@ export class AnalyticsService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
     const processName = this.cleanFilter(query.processName);
     const category = this.cleanFilter(query.category);
     const taskId = this.cleanFilter(query.taskId);
@@ -581,8 +583,8 @@ export class AnalyticsService {
   async inputEvents(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const range = this.readRange(query);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
     const processName = this.cleanFilter(query.processName);
     const category = this.cleanFilter(query.category);
     const eventKind = this.cleanFilter(query.eventKind);
@@ -659,14 +661,14 @@ export class AnalyticsService {
     );
     const row = result.rows[0] ?? {};
     return {
-      recordCount: this.toNumber(row.record_count),
-      totalMinutes: this.toNumber(row.total_minutes),
-      focusMinutes: this.toNumber(row.focus_minutes),
-      totalKeys: this.toNumber(row.key_count),
-      totalClicks: this.toNumber(row.mouse_clicks),
-      totalMovePx: this.toNumber(row.mouse_move_px),
-      totalScrollPx: this.toNumber(row.scroll_px),
-      productiveRecordCount: this.toNumber(row.productive_record_count),
+      recordCount: toNumber(row.record_count),
+      totalMinutes: toNumber(row.total_minutes),
+      focusMinutes: toNumber(row.focus_minutes),
+      totalKeys: toNumber(row.key_count),
+      totalClicks: toNumber(row.mouse_clicks),
+      totalMovePx: toNumber(row.mouse_move_px),
+      totalScrollPx: toNumber(row.scroll_px),
+      productiveRecordCount: toNumber(row.productive_record_count),
       sequenceRecordCount: 0,
     };
   }
@@ -700,12 +702,12 @@ export class AnalyticsService {
     );
     return result.rows.map((row) => ({
       label: String(row.label ?? ''),
-      minutes: this.toNumber(row.minutes),
-      keys: this.toNumber(row.keys),
-      clicks: this.toNumber(row.clicks),
-      movePx: this.toNumber(row.move_px),
-      scrollPx: this.toNumber(row.scroll_px),
-      sessions: this.toNumber(row.sessions),
+      minutes: toNumber(row.minutes),
+      keys: toNumber(row.keys),
+      clicks: toNumber(row.clicks),
+      movePx: toNumber(row.move_px),
+      scrollPx: toNumber(row.scroll_px),
+      sessions: toNumber(row.sessions),
     }));
   }
 
@@ -797,19 +799,19 @@ export class AnalyticsService {
       const categories = Array.isArray(row.categories) ? row.categories : [];
       const label = String(categories[0] ?? processNames[0] ?? '未命名工作会话');
       return {
-        startTime: this.iso(row.start_time),
-        endTime: this.iso(row.end_time),
+        startTime: iso(row.start_time),
+        endTime: iso(row.end_time),
         label,
         processName: processNames[0] ?? null,
         category: categories[0] ?? null,
-        durationMinutes: this.toNumber(row.duration_minutes),
-        keyCount: this.toNumber(row.key_count),
-        mouseClicks: this.toNumber(row.mouse_clicks),
-        mouseMovePx: this.toNumber(row.mouse_move_px),
-        scrollPx: this.toNumber(row.scroll_px),
+        durationMinutes: toNumber(row.duration_minutes),
+        keyCount: toNumber(row.key_count),
+        mouseClicks: toNumber(row.mouse_clicks),
+        mouseMovePx: toNumber(row.mouse_move_px),
+        scrollPx: toNumber(row.scroll_px),
         processNames,
         categories,
-        rawRecordCount: this.toNumber(row.raw_record_count),
+        rawRecordCount: toNumber(row.raw_record_count),
         interruptionCount: 0,
       };
     });
@@ -858,6 +860,260 @@ export class AnalyticsService {
     `;
   }
 
+  // ====================================================================
+  // Materialized-view-first query helpers
+  // ====================================================================
+
+  /**
+   * Query the materialized activity summary view.
+   * Falls back to the real-time `activitySourceSql()` if the MV
+   * is empty, not yet populated, or does not cover the requested range.
+   */
+  private async queryActivitySummary(
+    userId: string,
+    range: { start: string; end: string },
+    options: {
+      bucket?: Bucket;
+      processName?: string | null;
+      category?: string | null;
+      taskId?: string | null;
+      limit?: number;
+    } = {},
+  ) {
+    const bucket = options.bucket ?? 'day';
+    try {
+      const result = await this.database.query<BucketRow>(
+        `
+        SELECT
+          date_trunc($4, day_key) AS bucket_start,
+          SUM(record_count)::int AS record_count,
+          SUM(total_minutes)::int AS total_minutes
+        FROM mv_activity_daily_summary
+        WHERE user_id = $1
+          AND day_key >= $2::date AND day_key < $3::date
+          AND ($5::text IS NULL OR process_name = $5)
+          AND ($6::text IS NULL OR category = $6)
+          AND ($7::text IS NULL OR linked_task_id = $7)
+        GROUP BY bucket_start
+        ORDER BY bucket_start ASC
+        `,
+        [
+          userId, range.start, range.end, bucket,
+          options.processName ?? null, options.category ?? null,
+          options.taskId ?? null,
+        ],
+      );
+      if (result.rows.length > 0) {
+        return {
+          source: 'materialized_view',
+          buckets: result.rows.map((row) => ({
+            bucketStart: iso(row.bucket_start),
+            recordCount: toNumber(row.record_count),
+            totalMinutes: toNumber(row.total_minutes),
+          })),
+        };
+      }
+    } catch {
+      // MV query failed (view may not exist or need refresh).
+      // Fall through to real-time query.
+    }
+
+    // Fallback to real-time JSONB query
+    const rtResult = await this.database.query<BucketRow>(
+      `
+      WITH activity AS (${this.activitySourceSql()})
+      SELECT
+        date_trunc($4, occurred_at) AS bucket_start,
+        COUNT(*)::int AS record_count,
+        COALESCE(SUM(duration_minutes), 0)::int AS total_minutes
+      FROM activity
+      WHERE occurred_at >= $2 AND occurred_at < $3
+        AND ($5::text IS NULL OR app_name = $5)
+        AND ($6::text IS NULL OR category = $6)
+        AND ($7::text IS NULL OR linked_task_id = $7)
+      GROUP BY bucket_start
+      ORDER BY bucket_start ASC
+      `,
+      [
+        userId, range.start, range.end, bucket,
+        options.processName ?? null, options.category ?? null,
+        options.taskId ?? null,
+      ],
+    );
+    return {
+      source: 'live_sync_objects',
+      buckets: rtResult.rows.map((row) => ({
+        bucketStart: iso(row.bucket_start),
+        recordCount: toNumber(row.record_count),
+        totalMinutes: toNumber(row.total_minutes),
+      })),
+    };
+  }
+
+  /**
+   * Query the materialized input summary view.
+   */
+  private async queryInputSummary(
+    userId: string,
+    range: { start: string; end: string },
+    options: {
+      bucket?: Bucket;
+      processName?: string | null;
+      category?: string | null;
+      eventKind?: string | null;
+    } = {},
+  ) {
+    try {
+      const result = await this.database.query<BucketRow>(
+        `
+        SELECT
+          bucket_start,
+          COALESCE(SUM(event_count), 0)::int AS event_count,
+          COALESCE(SUM(active_minutes), 0)::int AS total_minutes
+        FROM mv_input_hourly_summary
+        WHERE user_id = $1
+          AND bucket_start >= $2::timestamptz
+          AND bucket_start < $3::timestamptz
+          AND ($4::text IS NULL OR process_name = $4)
+          AND ($5::text IS NULL OR category = $5)
+          AND ($6::text IS NULL OR event_kind = $6)
+        GROUP BY bucket_start
+        ORDER BY bucket_start ASC
+        `,
+        [
+          userId, range.start, range.end,
+          options.processName ?? null, options.category ?? null,
+          options.eventKind ?? null,
+        ],
+      );
+      if (result.rows.length > 0) {
+        return {
+          source: 'materialized_view',
+          buckets: result.rows.map((row) => ({
+            bucketStart: iso(row.bucket_start),
+            eventCount: toNumber(row.event_count),
+            totalMinutes: toNumber(row.total_minutes),
+          })),
+        };
+      }
+    } catch {
+      // Fall through to real-time
+    }
+
+    // Fallback
+    const bucket = options.bucket ?? 'hour';
+    const rtResult = await this.database.query<BucketRow>(
+      `
+      WITH input_events AS (${this.inputSourceSql()})
+      SELECT
+        date_trunc($4, occurred_at) AS bucket_start,
+        COALESCE(SUM(event_count), 0)::int AS event_count
+      FROM input_events
+      WHERE occurred_at >= $2 AND occurred_at < $3
+        AND ($5::text IS NULL OR process_name = $5)
+        AND ($6::text IS NULL OR category = $6)
+        AND ($7::text IS NULL OR event_kind = $7)
+      GROUP BY bucket_start
+      ORDER BY bucket_start ASC
+      `,
+      [
+        userId, range.start, range.end, bucket,
+        options.processName ?? null, options.category ?? null,
+        options.eventKind ?? null,
+      ],
+    );
+    return {
+      source: 'live_sync_objects',
+      buckets: rtResult.rows.map((row) => ({
+        bucketStart: iso(row.bucket_start),
+        eventCount: toNumber(row.event_count),
+      })),
+    };
+  }
+
+  // ====================================================================
+  // CSV / JSON export
+  // ====================================================================
+
+  async exportCSV(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const range = this.readRange(query);
+    const result = await this.database.query<DetailRow>(
+      `
+      WITH activity AS (${this.activityDetailSourceSql()})
+      SELECT server_id, object_type, occurred_at, updated_at, payload
+      FROM activity
+      WHERE occurred_at >= $2 AND occurred_at < $3
+      ORDER BY occurred_at DESC
+      LIMIT 5000
+      `,
+      [userId, range.start, range.end],
+    );
+
+    const headers = [
+      'serverId', 'objectType', 'occurredAt', 'updatedAt',
+      'processName', 'category', 'durationMinutes',
+    ];
+    const rows = result.rows.map((row) => {
+      const p = (row.payload ?? {}) as Record<string, unknown>;
+      return [
+        row.server_id,
+        row.object_type,
+        iso(row.occurred_at) ?? '',
+        iso(row.updated_at) ?? '',
+        clean(p.processName ?? p.process_name) ?? '',
+        clean(p.category) ?? '',
+        String(
+          toNumber(
+            (p as Record<string, unknown>).durationMinutes ??
+              (p as Record<string, unknown>).duration_minutes,
+          ),
+        ),
+      ].join(',');
+    });
+
+    return {
+      format: 'csv',
+      range,
+      headers,
+      rowCount: rows.length,
+      data: [headers.join(','), ...rows].join('\n'),
+    };
+  }
+
+  async exportJSON(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const range = this.readRange(query);
+    const result = await this.database.query<DetailRow>(
+      `
+      WITH activity AS (${this.activityDetailSourceSql()})
+      SELECT server_id, object_type, occurred_at, updated_at, payload
+      FROM activity
+      WHERE occurred_at >= $2 AND occurred_at < $3
+      ORDER BY occurred_at DESC
+      LIMIT 5000
+      `,
+      [userId, range.start, range.end],
+    );
+
+    return {
+      format: 'json',
+      range,
+      rowCount: result.rows.length,
+      items: result.rows.map((row) => ({
+        serverId: row.server_id,
+        objectType: row.object_type,
+        occurredAt: iso(row.occurred_at),
+        updatedAt: iso(row.updated_at),
+        ...Object.fromEntries(
+          Object.entries(row.payload as Record<string, unknown>).filter(
+            ([, v]) => v !== null && v !== undefined,
+          ),
+        ),
+      })),
+    };
+  }
+
   private activitySourceSql() {
     return `
       SELECT
@@ -894,7 +1150,7 @@ export class AnalyticsService {
       FROM sync_objects
       WHERE user_id = $1
         AND deleted_at IS NULL
-        AND object_type IN ('activity_record', 'activity_records', 'actual_record')
+        AND object_type IN ('activity_record')
     `;
   }
 
@@ -918,7 +1174,7 @@ export class AnalyticsService {
       FROM sync_objects
       WHERE user_id = $1
         AND deleted_at IS NULL
-        AND object_type IN ('activity_record', 'activity_records', 'actual_record')
+        AND object_type IN ('activity_record')
     `;
   }
 
@@ -961,7 +1217,7 @@ export class AnalyticsService {
       FROM sync_objects
       WHERE user_id = $1
         AND deleted_at IS NULL
-        AND object_type IN ('tracked_input_event', 'tracked_input_events', 'input_event')
+        AND object_type IN ('tracked_input_event')
     `;
   }
 
@@ -991,7 +1247,7 @@ export class AnalyticsService {
       FROM sync_objects
       WHERE user_id = $1
         AND deleted_at IS NULL
-        AND object_type IN ('tracked_input_event', 'tracked_input_events', 'input_event')
+        AND object_type IN ('tracked_input_event')
     `;
   }
 
@@ -1030,31 +1286,14 @@ export class AnalyticsService {
     throw new BadRequestException('bucket must be one of hour, day, month');
   }
 
-  private readDate(value: string | undefined, fieldName: string) {
-    if (!value) {
-      return undefined;
-    }
+
+  private readDate(value: string | undefined, fieldName: string): Date | undefined {
+    if (!value) return undefined;
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
       throw new BadRequestException(`${fieldName} must be a valid ISO-8601 date`);
     }
     return parsed;
-  }
-
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(1, Math.min(200, Math.trunc(parsed)));
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return 0;
-    }
-    return Math.max(0, Math.trunc(parsed));
   }
 
   private cleanFilter(value: string | undefined) {
@@ -1068,9 +1307,9 @@ export class AnalyticsService {
       source: 'server-live-sync-objects',
       items: rows.map((row) => ({
         name: row.name ?? 'unknown',
-        recordCount: this.toNumber(row.record_count),
-        eventCount: this.toNumber(row.event_count),
-        totalMinutes: this.toNumber(row.total_minutes),
+        recordCount: toNumber(row.record_count),
+        eventCount: toNumber(row.event_count),
+        totalMinutes: toNumber(row.total_minutes),
       })),
     };
   }
@@ -1090,31 +1329,13 @@ export class AnalyticsService {
       items: rows.map((row) => ({
         serverId: row.server_id,
         objectType: row.object_type,
-        occurredAt: this.iso(row.occurred_at),
-        updatedAt: this.iso(row.updated_at),
-        metricCount: this.toNumber(row.metric_count),
-        metricMinutes: this.toNumber(row.metric_minutes),
+        occurredAt: iso(row.occurred_at),
+        updatedAt: iso(row.updated_at),
+        metricCount: toNumber(row.metric_count),
+        metricMinutes: toNumber(row.metric_minutes),
         payload: row.payload,
       })),
     };
   }
 
-  private toNumber(value: string | number | undefined) {
-    if (typeof value === 'number') {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
-  }
-
-  private iso(value: Date | string) {
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
-  }
 }

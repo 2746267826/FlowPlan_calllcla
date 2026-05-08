@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, readInt } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
 import {
   ResolveConflictDto,
   SyncAckDto,
@@ -35,12 +37,20 @@ export class SyncService {
   ): Promise<SyncPushResponseDto> {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
+
+    // Enforce per-push mutation limit to prevent queue overflow
+    const maxMutations = 200;
+    const mutations = dto.mutations ?? [];
+    if (mutations.length > maxMutations) {
+      mutations.splice(maxMutations);
+    }
+
     const accepted: SyncPushResponseDto['accepted'] = [];
     const conflicts: SyncConflictDto[] = [];
     const rejected: SyncPushResponseDto['rejected'] = [];
 
     await this.database.transaction(async (client) => {
-      for (const mutation of dto.mutations ?? []) {
+      for (const mutation of mutations) {
         const replay = await this.findProcessedMutation(client, mutation.mutationUid);
         if (replay) {
           if (replay.result === 'accepted' && replay.server_object_id) {
@@ -119,8 +129,8 @@ export class SyncService {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
     const cursorValue = this.parseCursor(cursor);
-    const objectType = this.clean(options.objectType);
-    const limit = this.readLimit(options.limit);
+    const objectType = clean(options.objectType);
+    const limit = readInt(options.limit, 200, 1, 1000);
 
     const result = await this.database.query<{
       id: string;
@@ -302,6 +312,81 @@ export class SyncService {
     };
   }
 
+  async health(context: FlowPlanV2RequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const [conflictCount, mutationStats, orphanCount, lastSync] =
+      await Promise.all([
+        this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::int AS count FROM sync_conflicts
+           WHERE user_id = $1 AND status = 'open'`,
+          [userId],
+        ),
+        this.database.query<{
+          pending: string;
+          failed: string;
+          rejected: string;
+        }>(
+          `SELECT
+             COUNT(*) FILTER (WHERE result = 'accepted' AND created_at > now() - interval '1 hour')::int AS "recentAccepted",
+             COUNT(*) FILTER (WHERE result = 'failed')::int AS "failed",
+             COUNT(*) FILTER (WHERE result = 'rejected')::int AS "rejected"
+           FROM sync_mutations
+           WHERE user_id = $1 AND created_at > now() - interval '24 hours'`,
+          [userId],
+        ),
+        this.database.query<{ count: string }>(
+          `SELECT COUNT(*)::int AS count
+           FROM sync_mutations m
+           WHERE m.user_id = $1
+             AND m.result IN ('failed', 'rejected')
+             AND NOT EXISTS (
+               SELECT 1 FROM sync_conflicts c
+               WHERE c.mutation_uid = m.mutation_uid
+             )`,
+          [userId],
+        ),
+        this.database.query<{ at: string }>(
+          `SELECT MAX(created_at)::text AS at
+           FROM sync_changes
+           WHERE user_id = $1`,
+          [userId],
+        ),
+      ]);
+
+    return {
+      openConflicts: Number(conflictCount.rows[0]?.count ?? 0),
+      mutationStats: mutationStats.rows[0],
+      orphanedMutations: Number(orphanCount.rows[0]?.count ?? 0),
+      lastChangeAt: lastSync.rows[0]?.at ?? null,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /** Remove stale mutations older than the given days. */
+  async purgeStaleMutations(
+    context: FlowPlanV2RequestContext,
+    olderThanDays = 30,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const result = await this.database.query<{ count: string }>(
+      `WITH deleted AS (
+         DELETE FROM sync_mutations
+         WHERE user_id = $1
+           AND created_at < now() - ($2 || ' days')::interval
+           AND mutation_uid NOT IN (
+             SELECT COALESCE(mutation_uid, '') FROM sync_conflicts WHERE status = 'open'
+           )
+         RETURNING *
+       ) SELECT COUNT(*)::int AS count FROM deleted`,
+      [userId, String(olderThanDays)],
+    );
+    return {
+      ok: true,
+      purgedCount: Number(result.rows[0]?.count ?? 0),
+      olderThanDays,
+    };
+  }
+
   async resolveConflict(
     conflictId: string,
     dto: ResolveConflictDto,
@@ -346,6 +431,71 @@ export class SyncService {
           [row.server_object_id, userId, JSON.stringify(payload), deviceId],
         );
         const object = updated.rows[0];
+        if (object) {
+          await this.recordChange(
+            client,
+            userId,
+            deviceId,
+            object.id,
+            row.object_type,
+            'upsert',
+            object.server_version,
+            object.payload,
+          );
+        }
+      } else if (dto.strategy === 'use_server') {
+        // Keep server version — just bump the version so downstream
+        // devices know to re-pull, but don't change the payload.
+        const updated = await client.query<SyncObjectRow>(
+          `
+          UPDATE sync_objects
+          SET
+            server_version = server_version + 1,
+            last_modified_device_id = $3,
+            updated_at = now()
+          WHERE id = $1 AND user_id = $2
+          RETURNING id::text, uid, payload, deleted_at, server_version
+          `,
+          [row.server_object_id, userId, deviceId],
+        );
+        const object = updated.rows[0];
+        if (object) {
+          await this.recordChange(
+            client,
+            userId,
+            deviceId,
+            object.id,
+            row.object_type,
+            'upsert',
+            object.server_version,
+            object.payload,
+          );
+        }
+      } else if (dto.strategy === 'keep_both') {
+        // Create a new object with the local payload, keep the server
+        // version unchanged.  Mark both with a conflict resolution note.
+        const localPayload = {
+          ...(dto.payload ?? {}),
+          _conflictResolution: 'keep_both_local_copy',
+          _resolvedAt: new Date().toISOString(),
+        };
+        const created = await client.query<SyncObjectRow>(
+          `
+          INSERT INTO sync_objects (
+            user_id, object_type, uid, payload,
+            origin_device_id, last_modified_device_id
+          ) VALUES ($1, $2, $3, $4::jsonb, $5, $5)
+          RETURNING id::text, uid, payload, deleted_at, server_version
+          `,
+          [
+            userId,
+            row.object_type,
+            `${dto.payload?.uid ?? 'keep-both'}-${Date.now()}`,
+            JSON.stringify(localPayload),
+            deviceId,
+          ],
+        );
+        const object = created.rows[0];
         if (object) {
           await this.recordChange(
             client,
@@ -438,13 +588,7 @@ export class SyncService {
       mutation.baseServerVersion != null &&
       existing.server_version !== mutation.baseServerVersion
     ) {
-      const conflict = await this.createConflict(
-        client,
-        userId,
-        deviceId,
-        mutation,
-        existing,
-      );
+      // Record mutation first so the FK reference from sync_conflicts is satisfied
       await this.recordMutation(client, {
         mutation,
         userId,
@@ -452,6 +596,13 @@ export class SyncService {
         serverObjectId: existing.id,
         result: 'conflict',
       });
+      const conflict = await this.createConflict(
+        client,
+        userId,
+        deviceId,
+        mutation,
+        existing,
+      );
       return { kind: 'conflict', conflict };
     }
 
@@ -619,7 +770,7 @@ export class SyncService {
     mutation: SyncMutationDto,
     existing: SyncObjectRow | null,
   ) {
-    if (!['calendar_book', 'calendar_event'].includes(mutation.objectType)) {
+    if (!([ObjectType.CALENDAR_BOOK, ObjectType.CALENDAR_EVENT] as string[]).includes(mutation.objectType)) {
       return false;
     }
     const payload = mutation.payload ?? {};
@@ -910,17 +1061,4 @@ export class SyncService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
-  private readLimit(value?: string) {
-    const parsed = Number.parseInt(value ?? '', 10);
-    if (!Number.isFinite(parsed)) {
-      return 200;
-    }
-    return Math.max(1, Math.min(1000, parsed));
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
 }

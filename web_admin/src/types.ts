@@ -12,7 +12,9 @@ export type ModuleKey =
   | 'outlook'
   | 'audit'
   | 'settings'
-  | 'operations';
+  | 'operations'
+  | 'logs'
+  | 'jobs';
 
 export type DatasetDomain =
   | 'tasks'
@@ -30,7 +32,7 @@ export type DatasetDomain =
 
 export interface AdminContext {
   apiBase: string;
-  userId: string;
+  accessToken: string;
   deviceId: string;
 }
 

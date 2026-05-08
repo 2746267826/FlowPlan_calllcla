@@ -4,6 +4,8 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
+import { clean, asRecord, readDate } from '../common/utils';
+import { ObjectType, TaskTypes, EventTypes } from '../common/constants/object-types';
 
 interface TaskCandidate {
   id: string;
@@ -55,10 +57,10 @@ export class SchedulerService {
       body.rangeStart ?? body.startAt,
       body.rangeEnd ?? body.endAt,
     );
-    const mode = this.clean(body.mode) ?? 'initial_plan';
-    const strategy = this.clean(body.strategy) ?? 'balanced';
+    const mode = clean(body.mode) ?? 'initial_plan';
+    const strategy = clean(body.strategy) ?? 'balanced';
     const activeModel = await this.modelsService.activeProfile(userId, 'scheduler.v1');
-    const profile = this.asRecord(activeModel.ruleProfile);
+    const profile = asRecord(activeModel.ruleProfile);
     const schedulerSettings = await this.readSchedulerSettings(userId);
     const tasks = await this.readTasks(userId);
     const busyBlocks = await this.readBusyBlocks(userId, start, end);
@@ -236,8 +238,8 @@ export class SchedulerService {
       },
       confidence: averageConfidence,
       usedLlm: Boolean(llmFallback.used),
-      llmProviderKey: this.clean(llmFallback.providerKey),
-      llmModel: this.clean(llmFallback.model),
+      llmProviderKey: clean(llmFallback.providerKey),
+      llmModel: clean(llmFallback.model),
     });
 
     return this.run(run, context);
@@ -320,8 +322,8 @@ export class SchedulerService {
         [userId, runId],
       );
       if (!run.rows[0]) throw new BadRequestException('draft schedule run not found');
-      const riskSummary = this.asRecord(run.rows[0].risk_summary_json);
-      const modelRunId = this.clean(riskSummary.modelRunId);
+      const riskSummary = asRecord(run.rows[0].risk_summary_json);
+      const modelRunId = clean(riskSummary.modelRunId);
       const items = await client.query<QueryResultRow>(
         `
         SELECT * FROM schedule_draft_items
@@ -343,8 +345,8 @@ export class SchedulerService {
       const created: string[] = [];
       for (const item of selected) {
         const override = modifiedById.get(String(item.id));
-        const start = this.readDate(override?.start) ?? this.readDate(item.proposed_start);
-        const end = this.readDate(override?.end) ?? this.readDate(item.proposed_end);
+        const start = readDate(override?.start) ?? readDate(item.proposed_start);
+        const end = readDate(override?.end) ?? readDate(item.proposed_end);
         if (!start || !end || start >= end) continue;
         const payload = {
           uid: `schedule:${runId}:${item.id}`,
@@ -408,7 +410,7 @@ export class SchedulerService {
           SET status = 'rejected', user_reject_reason = $4, updated_at = now()
           WHERE user_id = $1 AND schedule_run_id = $2 AND id = ANY($3::uuid[])
           `,
-          [userId, runId, rejectedIds, this.clean(body.note)],
+          [userId, runId, rejectedIds, clean(body.note)],
         );
       }
       await client.query(
@@ -423,7 +425,7 @@ export class SchedulerService {
         runId,
         createdObjectIds: created,
         rejectedIds,
-        note: this.clean(body.note),
+        note: clean(body.note),
         modelRunId,
       });
       await this.modelsService.recordFeedback(client, userId, deviceId, 'scheduler.v1', {
@@ -438,7 +440,7 @@ export class SchedulerService {
           acceptedIds,
           rejectedIds,
           modifiedItems,
-          note: this.clean(body.note),
+          note: clean(body.note),
         },
       });
       return { createdObjectIds: created };
@@ -468,11 +470,11 @@ export class SchedulerService {
         SET status = 'rejected', user_reject_reason = $3, updated_at = now()
         WHERE user_id = $1 AND schedule_run_id = $2 AND status = 'pending'
         `,
-        [userId, runId, this.clean(body.reason)],
+        [userId, runId, clean(body.reason)],
       );
       await this.recordAudit(client, userId, deviceId, 'scheduler.run.rejected', {
         runId,
-        reason: this.clean(body.reason),
+        reason: clean(body.reason),
       });
       await this.modelsService.recordFeedback(client, userId, deviceId, 'scheduler.v1', {
         targetType: 'schedule_run',
@@ -481,7 +483,7 @@ export class SchedulerService {
         outcome: 'rejected',
         source: 'scheduler.rejectRun',
         feedbackPayload: {
-          reason: this.clean(body.reason),
+          reason: clean(body.reason),
         },
       });
     });
@@ -529,21 +531,21 @@ export class SchedulerService {
         payload: Record<string, unknown>;
       }> = [];
       for (const planned of segments.rows) {
-        const payload = this.asRecord(planned.payload);
-        const plannedStart = this.readDate(payload.startAt);
-        const plannedEnd = this.readDate(payload.endAt);
+        const payload = asRecord(planned.payload);
+        const plannedStart = readDate(payload.startAt);
+        const plannedEnd = readDate(payload.endAt);
         if (!plannedStart || !plannedEnd) continue;
         plannedBlocks.push({
           id: String(planned.id),
-          taskId: this.clean(payload.taskId),
+          taskId: clean(payload.taskId),
           title: String(payload.taskTitle ?? ''),
           start: plannedStart,
           end: plannedEnd,
           payload,
         });
         const overlap = actuals.rows.find((actual) => {
-          const actualStart = this.readDate(actual.start_at);
-          const actualEnd = this.readDate(actual.end_at);
+          const actualStart = readDate(actual.start_at);
+          const actualEnd = readDate(actual.end_at);
           return actualStart && actualEnd && actualStart < plannedEnd && actualEnd > plannedStart;
         });
         if (!overlap) {
@@ -567,7 +569,7 @@ export class SchedulerService {
             [
               userId,
               String(planned.id),
-              this.clean(payload.taskId),
+              clean(payload.taskId),
               plannedStart,
               plannedEnd,
               JSON.stringify({ reason: 'no confirmed actual log overlapped this schedule segment' }),
@@ -597,7 +599,7 @@ export class SchedulerService {
             [
               userId,
               String(planned.id),
-              this.clean(payload.taskId),
+              clean(payload.taskId),
               plannedStart,
               plannedEnd,
               overlap.id,
@@ -611,8 +613,8 @@ export class SchedulerService {
         }
       }
       for (const actual of actuals.rows) {
-        const actualStart = this.readDate(actual.start_at);
-        const actualEnd = this.readDate(actual.end_at);
+        const actualStart = readDate(actual.start_at);
+        const actualEnd = readDate(actual.end_at);
         if (!actualStart || !actualEnd) continue;
         const plannedOverlap = plannedBlocks.find((planned) => {
           return actualStart < planned.end && actualEnd > planned.start;
@@ -709,7 +711,7 @@ export class SchedulerService {
           task,
           start,
           end,
-            confidence: Math.min(0.95, 0.78 + Number(this.asRecord(profile.learnedAdjustments).confidenceBonus ?? 0)),
+            confidence: Math.min(0.95, 0.78 + Number(asRecord(profile.learnedAdjustments).confidenceBonus ?? 0)),
             reason: {
             text: `预计剩余 ${task.remainingMinutes} 分钟，已确认投入 ${task.confirmedMinutes} 分钟；按 ${strategy} 策略优先安排。`,
             dueAt: task.dueAt?.toISOString(),
@@ -759,7 +761,7 @@ export class SchedulerService {
       ORDER BY updated_at DESC
       LIMIT 500
       `,
-      [userId, ['task', 'tasks', 'task_item', 'task_items']],
+      [userId, TaskTypes],
     );
     const work = await this.database.query<QueryResultRow>(
       `
@@ -773,7 +775,7 @@ export class SchedulerService {
     const workMap = new Map(work.rows.map((row) => [String(row.task_id), Number(row.minutes)]));
     return tasks.rows
       .map((row) => {
-        const payload = this.asRecord(row.payload);
+        const payload = asRecord(row.payload);
         const status = String(payload.status ?? '').toLowerCase();
         const taskId = String(row.uid ?? row.id);
         const estimatedMinutes = Math.max(15, Number(payload.estimatedMinutes ?? payload.estimated_minutes ?? payload.durationMinutes ?? 60));
@@ -794,7 +796,7 @@ export class SchedulerService {
           confirmedMinutes,
           remainingMinutes: Math.max(0, estimatedMinutes - confirmedMinutes),
           dueAt:
-            this.readDate(this.readString(payload, ['dueAt', 'due_at', 'deadline'])) ??
+            readDate(this.readString(payload, ['dueAt', 'due_at', 'deadline'])) ??
             undefined,
           priority: String(payload.priority ?? 'normal'),
           location: this.readString(payload, ['location', 'place', 'where']),
@@ -805,10 +807,10 @@ export class SchedulerService {
               ? false
               : true,
           earliestStart:
-            this.readDate(this.readString(payload, ['earliestStart', 'availableAfter', 'notBefore', 'startAfter'])) ??
+            readDate(this.readString(payload, ['earliestStart', 'availableAfter', 'notBefore', 'startAfter'])) ??
             undefined,
           latestEnd:
-            this.readDate(this.readString(payload, ['latestEnd', 'availableBefore', 'notAfter', 'endBefore'])) ??
+            readDate(this.readString(payload, ['latestEnd', 'availableBefore', 'notAfter', 'endBefore'])) ??
             undefined,
           canSplit: payload.canSplit === false || payload.splittable === false ? false : true,
           minChunkMinutes,
@@ -831,13 +833,13 @@ export class SchedulerService {
       ORDER BY updated_at DESC
       LIMIT 1000
       `,
-      [userId, ['calendar_event', 'calendar_events', 'event', 'events', 'time_block', 'time_blocks']],
+      [userId, EventTypes],
     );
     const blocks: BusyBlock[] = [];
     for (const row of events.rows) {
-      const payload = this.asRecord(row.payload);
-      const eventStart = this.readDate(this.readString(payload, ['startAt', 'startTime', 'start_at']));
-      const eventEnd = this.readDate(this.readString(payload, ['endAt', 'endTime', 'end_at']));
+      const payload = asRecord(row.payload);
+      const eventStart = readDate(this.readString(payload, ['startAt', 'startTime', 'start_at']));
+      const eventEnd = readDate(this.readString(payload, ['endAt', 'endTime', 'end_at']));
       const blocking = payload.isBlocking === true || payload.blocking === true || payload.kind === 'blocking';
       const recurring = this.isRecurringEvent(payload);
       if (blocking && recurring) {
@@ -885,9 +887,9 @@ export class SchedulerService {
     );
     const merged: Record<string, unknown> = {};
     for (const row of result.rows) {
-      const value = this.asRecord(row.value);
+      const value = asRecord(row.value);
       Object.assign(merged, value);
-      const workHours = this.asRecord(value.workHours ?? value.workingHours ?? value.working_hours);
+      const workHours = asRecord(value.workHours ?? value.workingHours ?? value.working_hours);
       if (Object.keys(workHours).length > 0) merged.workHours = workHours;
     }
     return merged;
@@ -905,7 +907,7 @@ export class SchedulerService {
       settings.working_hours ??
       profile.workHours ??
       profile.workingHours;
-    const workHours = this.asRecord(rawWorkHours);
+    const workHours = asRecord(rawWorkHours);
     if (Object.keys(workHours).length === 0 || workHours.enabled === false) return [{ start, end, source: 'range' }];
 
     const blocks: FreeBlock[] = [];
@@ -921,8 +923,8 @@ export class SchedulerService {
         this.workWindowsForDay(workHours, cursor.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()) ??
         [];
       for (const window of windows) {
-        const windowStart = this.dateAtTime(cursor, this.clean(window.start) ?? this.clean(window.from) ?? '09:00');
-        const windowEnd = this.dateAtTime(cursor, this.clean(window.end) ?? this.clean(window.to) ?? '18:00');
+        const windowStart = this.dateAtTime(cursor, clean(window.start) ?? clean(window.from) ?? '09:00');
+        const windowEnd = this.dateAtTime(cursor, clean(window.end) ?? clean(window.to) ?? '18:00');
         if (windowStart && windowEnd && windowStart < end && windowEnd > start && windowStart < windowEnd) {
           blocks.push({
             start: new Date(Math.max(windowStart.getTime(), start.getTime())),
@@ -993,7 +995,7 @@ export class SchedulerService {
 
   private normalizeUnplannedReasons(items: Array<Record<string, unknown>>, freeBlocks: FreeBlock[]) {
     return items.map((item) => {
-      const reason = this.clean(item.reason);
+      const reason = clean(item.reason);
       if (reason && /^[\x20-\x7E\u4E00-\u9FFF，。；：、（）]+$/.test(reason)) return item;
       return {
         ...item,
@@ -1003,8 +1005,8 @@ export class SchedulerService {
   }
 
   private isRecurringEvent(payload: Record<string, unknown>) {
-    const recurrence = this.asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
-    const repeat = this.clean(payload.repeat ?? payload.repeatType ?? payload.frequency);
+    const recurrence = asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
+    const repeat = clean(payload.repeat ?? payload.repeatType ?? payload.frequency);
     return Object.keys(recurrence).length > 0 || Boolean(repeat);
   }
 
@@ -1016,13 +1018,13 @@ export class SchedulerService {
     rangeEnd: Date,
   ) {
     if (!eventStart || !eventEnd || eventStart >= eventEnd) return [];
-    const recurrence = this.asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
-    const repeat = this.clean(recurrence.frequency ?? recurrence.freq ?? payload.repeat ?? payload.repeatType ?? payload.frequency)?.toLowerCase();
+    const recurrence = asRecord(payload.recurrence ?? payload.repeatRule ?? payload.rrule);
+    const repeat = clean(recurrence.frequency ?? recurrence.freq ?? payload.repeat ?? payload.repeatType ?? payload.frequency)?.toLowerCase();
     if (!repeat) {
       return eventStart < rangeEnd && eventEnd > rangeStart ? [{ start: eventStart, end: eventEnd }] : [];
     }
     const interval = Math.max(1, Number(recurrence.interval ?? payload.repeatInterval ?? 1));
-    const until = this.readDate(recurrence.until ?? payload.repeatUntil) ?? rangeEnd;
+    const until = readDate(recurrence.until ?? payload.repeatUntil) ?? rangeEnd;
     const durationMs = eventEnd.getTime() - eventStart.getTime();
     const occurrences: Array<{ start: Date; end: Date }> = [];
     const cursor = new Date(eventStart);
@@ -1058,10 +1060,10 @@ export class SchedulerService {
 
   private workWindowsForDay(workHours: Record<string, unknown>, dayKey: string) {
     const direct = workHours[dayKey];
-    if (Array.isArray(direct)) return direct.map((item) => this.asRecord(item));
-    const days = this.asRecord(workHours.days ?? workHours.weekly ?? workHours.schedule);
+    if (Array.isArray(direct)) return direct.map((item) => asRecord(item));
+    const days = asRecord(workHours.days ?? workHours.weekly ?? workHours.schedule);
     const nested = days[dayKey];
-    if (Array.isArray(nested)) return nested.map((item) => this.asRecord(item));
+    if (Array.isArray(nested)) return nested.map((item) => asRecord(item));
     return null;
   }
 
@@ -1074,9 +1076,9 @@ export class SchedulerService {
   }
 
   private taskScore(task: TaskCandidate, strategy: string, profile: Record<string, unknown>) {
-    const priorityWeights = this.asRecord(profile.priorityWeights);
-    const dueSoonWeights = this.asRecord(profile.dueSoonWeights);
-    const learned = this.asRecord(profile.learnedAdjustments);
+    const priorityWeights = asRecord(profile.priorityWeights);
+    const dueSoonWeights = asRecord(profile.dueSoonWeights);
+    const learned = asRecord(profile.learnedAdjustments);
     let score = task.remainingMinutes / 10;
     score += Number(priorityWeights[task.priority] ?? 0);
     if (task.dueAt) {
@@ -1097,7 +1099,7 @@ export class SchedulerService {
     unplanned: Array<Record<string, unknown>>,
     profile: Record<string, unknown>,
   ) {
-    const llm = this.asRecord(profile.llmFallback);
+    const llm = asRecord(profile.llmFallback);
     if (body.useLlmFallback === false || llm.enabled === false) return false;
     if (body.useLlmFallback === true) return true;
     const candidates = tasks.filter((task) => task.remainingMinutes > 0);
@@ -1141,12 +1143,12 @@ export class SchedulerService {
       ...existing.map((item) => ({ start: item.start, end: item.end, source: 'rule_plan' })),
     ];
     for (const raw of draftItems) {
-      const item = this.asRecord(raw);
-      const taskId = this.clean(item.taskId) ?? this.clean(item.task_id);
+      const item = asRecord(raw);
+      const taskId = clean(item.taskId) ?? clean(item.task_id);
       const task = taskId ? taskMap.get(taskId) : undefined;
-      const start = this.readDate(item.proposedStart ?? item.proposed_start);
-      const end = this.readDate(item.proposedEnd ?? item.proposed_end);
-      const reason = this.clean(item.reason) ?? 'LLM fallback draft';
+      const start = readDate(item.proposedStart ?? item.proposed_start);
+      const end = readDate(item.proposedEnd ?? item.proposed_end);
+      const reason = clean(item.reason) ?? 'LLM fallback draft';
       if (!task || !start || !end || start >= end) {
         rejected.push({ taskId, reason: 'invalid_task_or_time', raw: item });
         continue;
@@ -1186,24 +1188,24 @@ export class SchedulerService {
           text: reason,
           modelUsed: 'llm_fallback',
           serverValidated: true,
-          explanation: this.clean(fallback.explanation),
+          explanation: clean(fallback.explanation),
         },
         risk: {
-          risk: this.clean(item.risk) ?? 'medium',
+          risk: clean(item.risk) ?? 'medium',
           llmFallback: true,
         },
       });
       occupied.push({ start, end, source: 'llm_fallback' });
     }
     const unplanned = Array.isArray(fallback.unplanned)
-      ? fallback.unplanned.map((item) => this.asRecord(item))
+      ? fallback.unplanned.map((item) => asRecord(item))
       : [];
     return { planned, rejected, unplanned };
   }
 
   private readRange(rawStart: unknown, rawEnd: unknown) {
-    const start = this.readDate(rawStart) ?? new Date();
-    const end = this.readDate(rawEnd) ?? new Date(start.getTime() + 6 * 60 * 60 * 1000);
+    const start = readDate(rawStart) ?? new Date();
+    const end = readDate(rawEnd) ?? new Date(start.getTime() + 6 * 60 * 60 * 1000);
     if (start >= end) throw new BadRequestException('rangeStart must be before rangeEnd');
     return { start, end };
   }
@@ -1257,21 +1259,6 @@ export class SchedulerService {
       : [];
   }
 
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  private readDate(value: unknown) {
-    if (!(typeof value === 'string' || value instanceof Date)) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  }
 
   private readString(payload: Record<string, unknown>, keys: string[]) {
     for (const key of keys) {

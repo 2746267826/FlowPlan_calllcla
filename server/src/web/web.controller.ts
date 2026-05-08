@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
 import { readRequestContext } from '../common/request-context';
 import { WebService } from './web.service';
 
@@ -38,6 +38,25 @@ export class WebController {
   @Post('events')
   createEvent(@Body() body: Record<string, unknown>, @Headers() headers: Record<string, unknown>) {
     return this.webService.createEvent(body, readRequestContext(headers));
+  }
+
+  @Post('tasks/:id/complete')
+  completeTask(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.webService.completeTask(id, body, readRequestContext(headers));
+  }
+
+  @Delete('tasks/:id')
+  deleteTask(@Param('id') id: string, @Headers() headers: Record<string, unknown>) {
+    return this.webService.deleteTask(id, readRequestContext(headers));
+  }
+
+  @Delete('events/:id')
+  deleteEvent(@Param('id') id: string, @Headers() headers: Record<string, unknown>) {
+    return this.webService.deleteEvent(id, readRequestContext(headers));
   }
 
   @Patch('events/:id')

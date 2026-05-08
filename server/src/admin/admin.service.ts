@@ -5,6 +5,8 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { LocalObjectStorageService } from '../files/local-object-storage.service';
+import { clean, asRecord, readDate, readLimit, readOffset, toNumber, searchPattern } from '../common/utils';
+import { LegacyTypeMap } from '../common/constants/object-types';
 
 export interface AdminQuery {
   domain?: string;
@@ -21,41 +23,12 @@ export interface AdminQuery {
 type CountRow = QueryResultRow & { name: string; count: string | number };
 
 const DOMAIN_OBJECT_TYPES: Record<string, string[]> = {
-  schedules: [
-    'calendar_event',
-    'calendar_events',
-    'event',
-    'events',
-    'schedule_event',
-    'time_block',
-    'time_blocks',
-  ],
-  tasks: [
-    'task',
-    'tasks',
-    'task_item',
-    'task_items',
-    'task_list',
-    'task_lists',
-    'task_schedule_segment',
-    'schedule_segment',
-  ],
-  tracking: [
-    'activity_record',
-    'activity_records',
-    'tracked_input_event',
-    'tracked_input_events',
-    'input_event',
-  ],
-  actuals: ['actual_record', 'actual_activity_log', 'task_work_log'],
-  files: [
-    'file_folder',
-    'file_item',
-    'file_context_link',
-    'file_folder_usage',
-    'file_version_record',
-  ],
-  reports: ['report_document', 'diary_entry', 'report_push_delivery'],
+  schedules: ['calendar_event'],
+  tasks: ['task_item', 'task_list', 'task_schedule_segment'],
+  tracking: ['activity_record', 'tracked_input_event', 'raw_activity_log'],
+  actuals: ['actual_activity_log', 'activity_record'],
+  files: ['file_folder', 'file_item', 'file_context_link'],
+  reports: ['report_document', 'diary_entry'],
   ai: ['ai_operation_draft'],
 };
 
@@ -215,7 +188,7 @@ export class AdminService {
 
   async newInfo(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const since = this.readDate(query.since) ?? new Date(Date.now() - 15 * 60 * 1000);
+    const since = readDate(query.since) ?? new Date(Date.now() - 15 * 60 * 1000);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -231,12 +204,12 @@ export class AdminService {
     );
     const row = result.rows[0] ?? {};
     const sections = {
-      syncChanges: this.toNumber(row.syncChanges as string | number | undefined),
-      syncMutations: this.toNumber(row.syncMutations as string | number | undefined),
-      conflicts: this.toNumber(row.conflicts as string | number | undefined),
-      trackingBatches: this.toNumber(row.trackingBatches as string | number | undefined),
-      fileOperations: this.toNumber(row.fileOperations as string | number | undefined),
-      auditLogs: this.toNumber(row.auditLogs as string | number | undefined),
+      syncChanges: toNumber(row.syncChanges as string | number | undefined),
+      syncMutations: toNumber(row.syncMutations as string | number | undefined),
+      conflicts: toNumber(row.conflicts as string | number | undefined),
+      trackingBatches: toNumber(row.trackingBatches as string | number | undefined),
+      fileOperations: toNumber(row.fileOperations as string | number | undefined),
+      auditLogs: toNumber(row.auditLogs as string | number | undefined),
     };
     const total = Object.values(sections).reduce((sum, count) => sum + count, 0);
     return {
@@ -250,10 +223,10 @@ export class AdminService {
 
   async objects(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const offset = this.readOffset(query.offset);
+    const limit = readLimit(query.limit, 80, 1, 200);
+    const offset = readOffset(query.offset);
     const types = this.readObjectTypes(query);
-    const search = this.search(query.q);
+    const search = searchPattern(query.q);
     const includeDeleted = query.includeDeleted === 'true';
     const result = await this.database.query<QueryResultRow>(
       `
@@ -286,7 +259,7 @@ export class AdminService {
       [
         userId,
         types.length > 0 ? types : null,
-        this.clean(query.objectType),
+        clean(query.objectType),
         search,
         includeDeleted,
         limit,
@@ -310,7 +283,7 @@ export class AdminService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const payload = this.asRecord(body.payload);
+    const payload = asRecord(body.payload);
     const replace = body.mode === 'replace';
     const deleted = typeof body.deleted === 'boolean' ? body.deleted : undefined;
     const result = await this.database.transaction(async (client) => {
@@ -357,10 +330,10 @@ export class AdminService {
 
   async actualRecords(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 80, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -396,7 +369,7 @@ export class AdminService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const metadata = this.asRecord(body.metadata);
+    const metadata = asRecord(body.metadata);
     const result = await this.database.transaction(async (client) => {
       const updated = await client.query<QueryResultRow>(
         `
@@ -413,9 +386,9 @@ export class AdminService {
         [
           userId,
           actualId,
-          this.clean(body.title),
-          this.clean(body.status),
-          this.clean(body.note),
+          clean(body.title),
+          clean(body.status),
+          clean(body.note),
           JSON.stringify(metadata),
         ],
       );
@@ -429,9 +402,9 @@ export class AdminService {
 
   async files(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const folders = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -501,9 +474,9 @@ export class AdminService {
         [
           userId,
           fileId,
-          this.clean(body.displayName),
-          this.clean(body.mimeType),
-          this.clean(body.remoteId),
+          clean(body.displayName),
+          clean(body.mimeType),
+          clean(body.remoteId),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'admin', 'admin.file.update', {
@@ -574,9 +547,9 @@ export class AdminService {
 
   async auditLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -607,9 +580,9 @@ export class AdminService {
 
   async reports(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 80, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -636,9 +609,9 @@ export class AdminService {
 
   async pushDeliveries(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -664,9 +637,9 @@ export class AdminService {
 
   async aiDrafts(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 80, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -718,11 +691,11 @@ export class AdminService {
         WHERE user_id = $1 AND id = $2
         RETURNING id::text AS id, status, review_note AS "reviewNote", reviewed_at AS "reviewedAt"
         `,
-        [userId, draftId, this.clean(body.status), this.clean(body.reviewNote)],
+        [userId, draftId, clean(body.status), clean(body.reviewNote)],
       );
       await this.recordAudit(client, userId, deviceId, 'admin', 'admin.ai_draft.review', {
         draftId,
-        status: this.clean(body.status),
+        status: clean(body.status),
       });
       return updated.rows[0] ?? null;
     });
@@ -761,7 +734,7 @@ export class AdminService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const metadata = this.asRecord(body.metadata);
+    const metadata = asRecord(body.metadata);
     const result = await this.database.transaction(async (client) => {
       const upserted = await client.query<QueryResultRow>(
         `
@@ -788,10 +761,10 @@ export class AdminService {
         [
           userId,
           jobKey,
-          this.clean(body.jobType) ?? 'manual',
-          this.clean(body.status) ?? 'idle',
-          this.readDate(body.nextRunAt),
-          this.clean(body.lastError),
+          clean(body.jobType) ?? 'manual',
+          clean(body.status) ?? 'idle',
+          readDate(body.nextRunAt),
+          clean(body.lastError),
           JSON.stringify(metadata),
         ],
       );
@@ -833,7 +806,7 @@ export class AdminService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const value = this.asRecord(body.configValue ?? body.value);
+    const value = asRecord(body.configValue ?? body.value);
     const result = await this.database.transaction(async (client) => {
       const upserted = await client.query<QueryResultRow>(
         `
@@ -860,8 +833,8 @@ export class AdminService {
           userId,
           configKey,
           JSON.stringify(value),
-          this.clean(body.scope) ?? 'user.preference',
-          this.clean(body.description),
+          clean(body.scope) ?? 'user.preference',
+          clean(body.description),
           Boolean(body.isSensitive),
         ],
       );
@@ -1133,7 +1106,7 @@ export class AdminService {
       targetId: operationKey,
       dryRun: body.dryRun !== false,
       confirmationToken: token,
-      payload: this.asRecord(body),
+      payload: asRecord(body),
     });
     return {
       operationKey,
@@ -1149,7 +1122,7 @@ export class AdminService {
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
-    const token = this.clean(body.confirmationToken);
+    const token = clean(body.confirmationToken);
     if (!token) {
       return {
         ok: false,
@@ -1162,8 +1135,8 @@ export class AdminService {
       targetType: 'admin_operation',
       targetId: operationKey,
       confirmationToken: token,
-      reason: this.clean(body.reason),
-      payload: this.asRecord(body),
+      reason: clean(body.reason),
+      payload: asRecord(body),
     });
     return {
       ok: true,
@@ -1206,9 +1179,9 @@ export class AdminService {
 
   private async adminDevices(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1250,9 +1223,9 @@ export class AdminService {
 
   private async syncChanges(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const objectType = this.clean(query.objectType);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const objectType = clean(query.objectType);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1281,10 +1254,10 @@ export class AdminService {
 
   private async syncMutations(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1317,10 +1290,10 @@ export class AdminService {
 
   private async trackingIngestBatches(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1364,10 +1337,10 @@ export class AdminService {
 
   private async activitySegments(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1408,10 +1381,10 @@ export class AdminService {
 
   private async taskWorkLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1447,16 +1420,16 @@ export class AdminService {
       ORDER BY w.start_at DESC
       LIMIT $4 OFFSET $5
       `,
-      [userId, status, search, limit, offset, ['task', 'tasks', 'task_item', 'task_items']],
+      [userId, status, search, limit, offset, ['task_item']],
     );
     return { domain: 'task-work-logs', limit, offset, hasMore: result.rows.length >= limit, items: result.rows };
   }
 
   private async scheduleRuns(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1489,10 +1462,10 @@ export class AdminService {
 
   private async scheduleDraftItems(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1526,10 +1499,10 @@ export class AdminService {
 
   private async planDeviations(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1569,9 +1542,9 @@ export class AdminService {
 
   private async reportEntries(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1596,9 +1569,9 @@ export class AdminService {
 
   private async reportEvidence(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1629,10 +1602,10 @@ export class AdminService {
 
   private async fileOperationLogs(query: AdminQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1679,10 +1652,10 @@ export class AdminService {
     if (!table) {
       return { domain, items: [], error: 'Unknown admin data domain' };
     }
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 100, 1, 200);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const search = searchPattern(query.q);
     const deviceId = this.readDeviceId(query.deviceId);
     const result = await this.database.query<QueryResultRow>(
       `
@@ -1850,7 +1823,7 @@ export class AdminService {
       `SELECT COUNT(*)::int AS count FROM ${tableName} WHERE user_id = $1`,
       [userId],
     );
-    return this.toNumber(result.rows[0]?.count);
+    return toNumber(result.rows[0]?.count);
   }
 
   private async fileCounts(userId: string) {
@@ -1869,19 +1842,19 @@ export class AdminService {
     );
     const row = result.rows[0] ?? {};
     return {
-      folders: this.toNumber(row.folders as string | number | undefined),
-      files: this.toNumber(row.files as string | number | undefined),
-      links: this.toNumber(row.links as string | number | undefined),
-      versions: this.toNumber(row.versions as string | number | undefined),
-      roots: this.toNumber(row.roots as string | number | undefined),
-      nodes: this.toNumber(row.nodes as string | number | undefined),
-      transfers: this.toNumber(row.transfers as string | number | undefined),
+      folders: toNumber(row.folders as string | number | undefined),
+      files: toNumber(row.files as string | number | undefined),
+      links: toNumber(row.links as string | number | undefined),
+      versions: toNumber(row.versions as string | number | undefined),
+      roots: toNumber(row.roots as string | number | undefined),
+      nodes: toNumber(row.nodes as string | number | undefined),
+      transfers: toNumber(row.transfers as string | number | undefined),
     };
   }
 
   private countMap(rows: CountRow[]) {
     return Object.fromEntries(
-      rows.map((row) => [row.name ?? 'unknown', this.toNumber(row.count)]),
+      rows.map((row) => [row.name ?? 'unknown', toNumber(row.count)]),
     );
   }
 
@@ -1947,59 +1920,27 @@ export class AdminService {
 
   private readObjectTypes(query: AdminQuery) {
     const domainTypes = query.domain ? DOMAIN_OBJECT_TYPES[query.domain] ?? [] : [];
-    const explicitTypes = this.clean(query.objectType)
+    const explicitTypes = clean(query.objectType)
       ?.split(',')
       .map((item) => item.trim())
       .filter(Boolean);
-    return explicitTypes && explicitTypes.length > 0 ? explicitTypes : domainTypes;
+    const selected = explicitTypes && explicitTypes.length > 0 ? explicitTypes : domainTypes;
+    // Expand with legacy aliases for backward compatibility
+    const expanded = new Set(selected);
+    for (const key of Object.keys(LegacyTypeMap)) {
+      if (expanded.has(LegacyTypeMap[key])) {
+        expanded.add(key);
+      }
+    }
+    return [...expanded];
   }
 
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(1, Math.min(200, Math.trunc(parsed)));
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return 0;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readDate(value: unknown) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-      return null;
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
 
   private readDeviceId(value: unknown) {
-    const cleaned = this.clean(value);
+    const cleaned = clean(value);
     return cleaned && cleaned !== 'all' ? cleaned : null;
   }
 
-  private search(value: string | undefined) {
-    const cleaned = this.clean(value);
-    return cleaned ? `%${cleaned}%` : null;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
 
   private async safeStorageStatus() {
     try {
@@ -2013,11 +1954,4 @@ export class AdminService {
     }
   }
 
-  private toNumber(value: string | number | undefined) {
-    if (typeof value === 'number') {
-      return value;
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
 }

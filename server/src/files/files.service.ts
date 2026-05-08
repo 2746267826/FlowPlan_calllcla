@@ -10,6 +10,7 @@ import { FileTreeService } from './file-tree.service';
 import { FileTransferService } from './file-transfer.service';
 import { FileVersionService } from './file-version.service';
 import { LocalObjectStorageService } from './local-object-storage.service';
+import { clean, asRecord, readDate, readInt, readLimit, readOffset, toNumber, readNullableNumber, sha256, errorMessage, searchPattern, basename } from '../common/utils';
 
 export interface FilesQuery {
   providerKey?: string;
@@ -270,17 +271,17 @@ export class FilesService {
         [
           userId,
           providerKey,
-          this.clean(body.providerType) ?? providerKey,
-          this.clean(body.displayName) ?? providerKey,
-          this.readNumber(body.priority, 100),
-          this.clean(body.status) ?? 'enabled',
-          this.clean(body.rootRemoteId),
-          this.clean(body.localMirrorPath),
-          this.clean(body.mobileDownloadRoot),
-          this.clean(body.syncMode) ?? 'manual',
-          JSON.stringify(this.asRecord(body.capabilities)),
-          JSON.stringify(this.asRecord(body.config)),
-          this.clean(body.lastError),
+          clean(body.providerType) ?? providerKey,
+          clean(body.displayName) ?? providerKey,
+          readInt(body.priority, 100),
+          clean(body.status) ?? 'enabled',
+          clean(body.rootRemoteId),
+          clean(body.localMirrorPath),
+          clean(body.mobileDownloadRoot),
+          clean(body.syncMode) ?? 'manual',
+          JSON.stringify(asRecord(body.capabilities)),
+          JSON.stringify(asRecord(body.config)),
+          clean(body.lastError),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'files.provider.upsert', {
@@ -297,8 +298,8 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const providerKey = this.clean(body.providerKey) ?? 'onedrive';
-    const treeRevision = this.clean(body.treeRevision) ?? randomUUID();
+    const providerKey = clean(body.providerKey) ?? 'onedrive';
+    const treeRevision = clean(body.treeRevision) ?? randomUUID();
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const markMissing = body.markMissing === true;
 
@@ -306,9 +307,9 @@ export class FilesService {
     await this.database.transaction(async (client) => {
       await this.ensureProvider(client, userId, providerKey);
       for (const nodeValue of nodes) {
-        const node = this.asRecord(nodeValue);
-        const remoteId = this.clean(node.remoteId);
-        const path = this.clean(node.path);
+        const node = asRecord(nodeValue);
+        const remoteId = clean(node.remoteId);
+        const path = clean(node.path);
         if (!remoteId || !path) {
           continue;
         }
@@ -356,19 +357,19 @@ export class FilesService {
             userId,
             providerKey,
             remoteId,
-            this.clean(node.parentRemoteId),
+            clean(node.parentRemoteId),
             path,
-            this.clean(node.displayName) ?? this.basename(path),
-            this.clean(node.itemType) ?? 'file',
-            this.clean(node.mimeType),
-            this.readNullableNumber(node.sizeBytes),
-            this.clean(node.etag),
-            this.clean(node.ctag),
-            this.clean(node.checksum),
-            this.clean(node.localPath),
-            this.clean(node.availability) ?? 'remote_only',
-            this.readDate(node.modifiedAt),
-            JSON.stringify(this.asRecord(node.metadata)),
+            clean(node.displayName) ?? basename(path),
+            clean(node.itemType) ?? 'file',
+            clean(node.mimeType),
+            readNullableNumber(node.sizeBytes),
+            clean(node.etag),
+            clean(node.ctag),
+            clean(node.checksum),
+            clean(node.localPath),
+            clean(node.availability) ?? 'remote_only',
+            readDate(node.modifiedAt),
+            JSON.stringify(asRecord(node.metadata)),
             treeRevision,
           ],
         );
@@ -408,11 +409,11 @@ export class FilesService {
 
   async tree(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 300);
-    const offset = this.readOffset(query.offset);
-    const providerKey = this.clean(query.providerKey);
-    const parentRemoteId = this.clean(query.parentRemoteId);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 300);
+    const offset = readOffset(query.offset);
+    const providerKey = clean(query.providerKey);
+    const parentRemoteId = clean(query.parentRemoteId);
+    const search = searchPattern(query.q);
     const result = await this.database.query(
       `
       SELECT
@@ -452,13 +453,13 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const providerKey = this.clean(body.providerKey) ?? 'server_storage';
-    const fileName = this.clean(body.fileName) ?? 'unnamed';
-    const totalBytes = this.readNumber(body.totalBytes, 0);
-    const chunkSize = this.readNumber(body.chunkSize, 5 * 1024 * 1024);
+    const providerKey = clean(body.providerKey) ?? 'server_storage';
+    const fileName = clean(body.fileName) ?? 'unnamed';
+    const totalBytes = readInt(body.totalBytes, 0);
+    const chunkSize = readInt(body.chunkSize, 5 * 1024 * 1024);
     const expectedChunks =
       totalBytes <= 0 ? 0 : Math.ceil(totalBytes / Math.max(chunkSize, 1));
-    const objectKey = this.clean(body.objectKey) ?? randomUUID();
+    const objectKey = clean(body.objectKey) ?? randomUUID();
     await this.ensureDefaultProviders(userId);
     const uploadSession = await this.database.transaction(async (client) => {
       const result = await client.query(
@@ -491,14 +492,14 @@ export class FilesService {
           userId,
           providerKey,
           fileName,
-          this.clean(body.remoteId),
-          this.clean(body.localPath),
+          clean(body.remoteId),
+          clean(body.localPath),
           objectKey,
           totalBytes,
           chunkSize,
           expectedChunks,
-          this.clean(body.checksum),
-          JSON.stringify(this.asRecord(body.metadata)),
+          clean(body.checksum),
+          JSON.stringify(asRecord(body.metadata)),
         ],
       );
       const session = result.rows[0];
@@ -522,15 +523,15 @@ export class FilesService {
     context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const index = this.readNumber(chunkIndex, -1);
-    const payloadBase64 = this.clean(body.payloadBase64);
+    const index = readInt(chunkIndex, -1);
+    const payloadBase64 = clean(body.payloadBase64);
     if (index < 0 || !payloadBase64) {
       return { ok: false, reason: 'chunkIndex and payloadBase64 are required' };
     }
     const sizeBytes = Buffer.from(payloadBase64, 'base64').length;
-    const startByte = this.readNumber(body.startByte, 0);
-    const endByte = this.readNumber(body.endByte, startByte + sizeBytes - 1);
-    const checksum = this.clean(body.checksum) ?? this.sha256(Buffer.from(payloadBase64, 'base64'));
+    const startByte = readInt(body.startByte, 0);
+    const endByte = readInt(body.endByte, startByte + sizeBytes - 1);
+    const checksum = clean(body.checksum) ?? sha256(Buffer.from(payloadBase64, 'base64'));
 
     const result = await this.database.transaction(async (client) => {
       const session = await this.findSession(client, userId, sessionId, 'upload');
@@ -699,10 +700,10 @@ export class FilesService {
       );
       const storageObjectId = storage.rows[0]?.storageObjectId as string | undefined;
       let fileNodeId: string | undefined;
-      const sessionMetadata = this.asRecord(session.metadata);
-      const rootId = this.clean(sessionMetadata.rootId);
+      const sessionMetadata = asRecord(session.metadata);
+      const rootId = clean(sessionMetadata.rootId);
       if (rootId) {
-        const parentId = this.clean(sessionMetadata.parentId);
+        const parentId = clean(sessionMetadata.parentId);
         const parent = parentId
           ? await client.query<QueryResultRow>(
               `
@@ -714,13 +715,13 @@ export class FilesService {
               [userId, parentId, rootId],
             )
           : null;
-        const parentPath = this.clean(parent?.rows[0]?.relative_path) ?? '';
-        const fileName = this.clean(sessionMetadata.nodeName) ?? session.file_name;
-        const relativePath = this.clean(sessionMetadata.relativePath) ??
+        const parentPath = clean(parent?.rows[0]?.relative_path) ?? '';
+        const fileName = clean(sessionMetadata.nodeName) ?? session.file_name;
+        const relativePath = clean(sessionMetadata.relativePath) ??
           [parentPath, fileName].filter(Boolean).join('/');
         const extension = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : null;
         const mimeType =
-          this.clean(sessionMetadata.mimeType) ?? this.guessMimeType(fileName) ?? 'application/octet-stream';
+          clean(sessionMetadata.mimeType) ?? this.guessMimeType(fileName) ?? 'application/octet-stream';
         const node = await client.query<QueryResultRow>(
           `
           INSERT INTO file_nodes (
@@ -851,7 +852,7 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const storageObjectId = this.clean(body.storageObjectId);
+    const storageObjectId = clean(body.storageObjectId);
     const storage = storageObjectId
       ? await this.database.query<QueryResultRow>(
           `
@@ -864,9 +865,9 @@ export class FilesService {
         )
       : null;
     const storageRow = storage?.rows[0];
-    const fileName = this.clean(body.fileName) ?? String(storageRow?.display_name ?? 'download');
-    const totalBytes = this.readNumber(body.totalBytes, this.toNumber(storageRow?.size_bytes));
-    const chunkSize = this.readNumber(body.chunkSize, this.toNumber(storageRow?.chunk_size) || 5 * 1024 * 1024);
+    const fileName = clean(body.fileName) ?? String(storageRow?.display_name ?? 'download');
+    const totalBytes = readInt(body.totalBytes, toNumber(storageRow?.size_bytes));
+    const chunkSize = readInt(body.chunkSize, toNumber(storageRow?.chunk_size) || 5 * 1024 * 1024);
     const expectedChunks =
       totalBytes <= 0 ? 0 : Math.ceil(totalBytes / Math.max(chunkSize, 1));
     const downloadSession = await this.database.transaction(async (client) => {
@@ -901,17 +902,17 @@ export class FilesService {
         `,
         [
           userId,
-          this.clean(body.providerKey) ?? String(storageRow?.provider_key ?? 'server_storage'),
+          clean(body.providerKey) ?? String(storageRow?.provider_key ?? 'server_storage'),
           fileName,
-          this.clean(body.remoteId),
-          this.clean(body.localPath),
-          this.clean(body.objectKey) ?? String(storageRow?.object_key ?? ''),
+          clean(body.remoteId),
+          clean(body.localPath),
+          clean(body.objectKey) ?? String(storageRow?.object_key ?? ''),
           storageObjectId,
           totalBytes,
           chunkSize,
           expectedChunks,
-          this.clean(body.checksum) ?? (storageRow?.checksum as string | undefined) ?? null,
-          JSON.stringify(this.asRecord(body.metadata)),
+          clean(body.checksum) ?? (storageRow?.checksum as string | undefined) ?? null,
+          JSON.stringify(asRecord(body.metadata)),
         ],
       );
       const session = result.rows[0];
@@ -938,8 +939,8 @@ export class FilesService {
     if (!session) {
       return { ok: false, reason: 'download_session_missing' };
     }
-    const start = this.readNumber(query.start, 0);
-    const end = this.readNumber(query.end, Math.max(start, start + session.chunk_size - 1));
+    const start = readInt(query.start, 0);
+    const end = readInt(query.end, Math.max(start, start + session.chunk_size - 1));
     if (!session.storage_object_id) {
       const sharedPath = await this.resolveSharedDownloadPath(userId, session);
       if (!sharedPath) {
@@ -957,7 +958,7 @@ export class FilesService {
               startByte: start,
               endByte: start + payload.length - 1,
               sizeBytes: payload.length,
-              checksum: this.sha256(payload),
+              checksum: sha256(payload),
               payloadBase64: payload.toString('base64'),
             },
           ],
@@ -967,7 +968,7 @@ export class FilesService {
         return {
           ok: false,
           reason: 'shared_source_read_failed',
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         };
       }
     }
@@ -980,8 +981,8 @@ export class FilesService {
       `,
       [userId, session.storage_object_id],
     );
-    const storageMetadata = this.asRecord(storage.rows[0]?.metadata);
-    const storedPath = this.clean(storageMetadata.storagePath);
+    const storageMetadata = asRecord(storage.rows[0]?.metadata);
+    const storedPath = clean(storageMetadata.storagePath);
     if (storedPath) {
       const payload = await this.objectStorage.readRange(storedPath, start, end);
       return {
@@ -994,7 +995,7 @@ export class FilesService {
             startByte: start,
             endByte: start + payload.length - 1,
             sizeBytes: payload.length,
-            checksum: this.sha256(payload),
+            checksum: sha256(payload),
             payloadBase64: payload.toString('base64'),
           },
         ],
@@ -1054,14 +1055,14 @@ export class FilesService {
     if (!row) {
       return { ok: false, reason: 'storage_object_not_found' };
     }
-    const metadata = this.asRecord(row.metadata);
-    const storedPath = this.clean(metadata.storagePath);
+    const metadata = asRecord(row.metadata);
+    const storedPath = clean(metadata.storagePath);
     if (!storedPath) {
       return { ok: false, reason: 'storage_path_missing' };
     }
-    const start = this.readNumber(query.start, 0);
-    const defaultEnd = Math.max(start, start + this.readNumber(query.limit, 5 * 1024 * 1024) - 1);
-    const end = this.readNumber(query.end, defaultEnd);
+    const start = readInt(query.start, 0);
+    const defaultEnd = Math.max(start, start + readInt(query.limit, 5 * 1024 * 1024) - 1);
+    const end = readInt(query.end, defaultEnd);
     const payload = await this.objectStorage.readRange(storedPath, start, end);
     await this.recordFileOperation(this.database, userId, deviceId, 'file.storage.download_range', null, {
       storageObjectId: objectId,
@@ -1073,7 +1074,7 @@ export class FilesService {
       ok: true,
       storageObjectId: objectId,
       fileName: row.displayName,
-      totalBytes: this.toNumber(row.sizeBytes),
+      totalBytes: toNumber(row.sizeBytes),
       checksum: row.checksum,
       range: { start, end: start + payload.length - 1 },
       sizeBytes: payload.length,
@@ -1083,8 +1084,8 @@ export class FilesService {
 
   async transfers(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
+    const limit = readLimit(query.limit, 100);
+    const offset = readOffset(query.offset);
     const result = await this.database.query(
       `
       SELECT
@@ -1111,7 +1112,7 @@ export class FilesService {
       ORDER BY updated_at DESC
       LIMIT $4 OFFSET $5
       `,
-      [userId, this.clean(query.direction), this.clean(query.status), limit, offset],
+      [userId, clean(query.direction), clean(query.status), limit, offset],
     );
     return { limit, offset, hasMore: result.rows.length >= limit, transfers: result.rows };
   }
@@ -1174,8 +1175,8 @@ export class FilesService {
       return { ok: false, reason: 'transfer_not_found', sessionId };
     }
 
-    const totalBytes = this.toNumber(row.totalBytes);
-    const receivedBytes = this.toNumber(row.receivedBytes);
+    const totalBytes = toNumber(row.totalBytes);
+    const receivedBytes = toNumber(row.receivedBytes);
     const progress =
       totalBytes > 0 ? Math.max(0, Math.min(1, receivedBytes / totalBytes)) : 0;
     const startedAt = row.firstChunkAt ?? row.createdAt;
@@ -1299,7 +1300,7 @@ export class FilesService {
 
   async roots(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const search = this.search(query.q);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1372,7 +1373,7 @@ export class FilesService {
   async upsertRoot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const providerType = this.clean(body.providerType) ?? 'server_storage';
+    const providerType = clean(body.providerType) ?? 'server_storage';
     const providerTypeKey = providerType.toLowerCase();
     if (providerTypeKey === 'local' || providerTypeKey === 'client_local') {
       return {
@@ -1383,7 +1384,7 @@ export class FilesService {
       };
     }
     const requestedRootUri =
-      this.clean(body.rootUri) ?? this.clean(body.localPath);
+      clean(body.rootUri) ?? clean(body.localPath);
     const normalizedRootUri = this.normalizeServerRootUri(requestedRootUri);
     if (!normalizedRootUri) {
       return {
@@ -1393,7 +1394,7 @@ export class FilesService {
       };
     }
     const rootUid =
-      this.clean(body.rootUid) ?? `server-root:${normalizedRootUri}`;
+      clean(body.rootUid) ?? `server-root:${normalizedRootUri}`;
     const result = await this.database.transaction(async (client) => {
       const row = await client.query<QueryResultRow>(
         `
@@ -1424,14 +1425,14 @@ export class FilesService {
         [
           userId,
           rootUid,
-          this.clean(body.name) ?? this.basename(String(body.rootUri ?? rootUid)),
+          clean(body.name) ?? basename(String(body.rootUri ?? rootUid)),
           providerType,
           normalizedRootUri,
-          this.clean(body.rootDisplayPath) ?? normalizedRootUri,
+          clean(body.rootDisplayPath) ?? normalizedRootUri,
           deviceId,
           Boolean(body.isManaged),
-          this.clean(body.syncPolicy) ?? 'metadata_only',
-          JSON.stringify(this.asRecord(body.metadata)),
+          clean(body.syncPolicy) ?? 'metadata_only',
+          JSON.stringify(asRecord(body.metadata)),
         ],
       );
       await this.recordFileOperation(client, userId, deviceId, 'file.root.upsert', null, {
@@ -1502,10 +1503,10 @@ export class FilesService {
         [userId, rootId],
       );
       const deletedCounts = {
-        nodes: this.toNumber(root.nodeCount),
-        files: this.toNumber(root.fileCount),
-        folders: this.toNumber(root.folderCount),
-        totalBytes: this.toNumber(root.totalBytes),
+        nodes: toNumber(root.nodeCount),
+        files: toNumber(root.fileCount),
+        folders: toNumber(root.folderCount),
+        totalBytes: toNumber(root.totalBytes),
       };
       await this.recordFileOperation(client, userId, deviceId, 'file.drive.root.delete', null, {
         rootId,
@@ -1514,8 +1515,8 @@ export class FilesService {
         rootUri: root.rootUri,
         rootDisplayPath: root.rootDisplayPath,
         deletedCounts,
-        storageObjectCount: this.toNumber(root.storageObjectCount),
-        storageTotalBytes: this.toNumber(root.storageTotalBytes),
+        storageObjectCount: toNumber(root.storageObjectCount),
+        storageTotalBytes: toNumber(root.storageTotalBytes),
         storageObjectsRetained: true,
         physicalFilesDeleted: false,
         status: 'success',
@@ -1542,9 +1543,9 @@ export class FilesService {
 
   async fileNodes(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 300);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
+    const limit = readLimit(query.limit, 300);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1580,8 +1581,8 @@ export class FilesService {
       `,
       [
         userId,
-        this.clean(query.rootId),
-        this.clean(query.parentId),
+        clean(query.rootId),
+        clean(query.parentId),
         search,
         limit,
         offset,
@@ -1602,11 +1603,11 @@ export class FilesService {
   async driveNodes(query: FilesQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const limit = this.readLimit(query.limit, 300);
-    const offset = this.readOffset(query.offset);
-    const search = this.search(query.q);
-    const rootId = this.clean(query.rootId);
-    const parentId = this.clean(query.parentId);
+    const limit = readLimit(query.limit, 300);
+    const offset = readOffset(query.offset);
+    const search = searchPattern(query.q);
+    const rootId = clean(query.rootId);
+    const parentId = clean(query.parentId);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -1778,10 +1779,10 @@ export class FilesService {
     if (!node) {
       return { ok: false, reason: 'node_not_found' };
     }
-    const localIdentity = this.asRecord(body.localIdentity);
+    const localIdentity = asRecord(body.localIdentity);
     const sameContent = this.compareIdentity(node, localIdentity);
     const verifiedLocalPath =
-      this.clean(localIdentity.localPath) ?? this.clean(node.currentDevice?.localPath);
+      clean(localIdentity.localPath) ?? clean(node.currentDevice?.localPath);
     const verifiedIdentity =
       sameContent.matched &&
       (sameContent.confidence === 'hash' || sameContent.confidence === 'provider_id');
@@ -1795,7 +1796,7 @@ export class FilesService {
       ? 'open_local'
       : comparableLocalCopy
         ? 'conflict_or_download_required'
-      : node.storage?.storageObjectId || this.clean(node.serverPath)
+      : node.storage?.storageObjectId || clean(node.serverPath)
         ? 'download_then_open'
         : 'needs_upload_or_relink';
     await this.recordFileOperation(this.database, userId, deviceId, 'file.drive.open_plan', nodeId, {
@@ -1820,8 +1821,8 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const localPath = this.clean(body.localPath);
-    const availability = this.clean(body.availability) ?? 'available';
+    const localPath = clean(body.localPath);
+    const availability = clean(body.availability) ?? 'available';
     const result = await this.database.transaction(async (client) => {
       const row = await client.query<QueryResultRow>(
         `
@@ -1847,7 +1848,7 @@ export class FilesService {
           deviceId,
           localPath,
           availability,
-          JSON.stringify(this.asRecord(body.metadata)),
+          JSON.stringify(asRecord(body.metadata)),
         ],
       );
       await this.recordFileOperation(client, userId, deviceId, 'file.drive.device_location.upsert', nodeId, {
@@ -1873,7 +1874,7 @@ export class FilesService {
     if (node.nodeType !== 'file') {
       return { ok: false, reason: 'node_is_not_file', node };
     }
-    const serverPath = this.clean(node.serverPath);
+    const serverPath = clean(node.serverPath);
     if (!node.storage?.storageObjectId && !serverPath) {
       return { ok: false, reason: 'download_source_missing', node };
     }
@@ -1890,7 +1891,7 @@ export class FilesService {
           sourceType: node.storage?.storageObjectId
             ? 'storage_object'
             : 'shared_server_path',
-          targetPath: this.clean(body.targetPath),
+          targetPath: clean(body.targetPath),
           requestSource: 'drive_download_request',
         },
       },
@@ -1914,7 +1915,7 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const localPath = this.clean(body.localPath);
+    const localPath = clean(body.localPath);
     if (!localPath) {
       return { ok: false, reason: 'localPath_required' };
     }
@@ -1936,7 +1937,7 @@ export class FilesService {
           localPath,
           JSON.stringify({
             relinkedAt: new Date().toISOString(),
-            relinkReason: this.clean(body.reason),
+            relinkReason: clean(body.reason),
           }),
         ],
       );
@@ -1956,12 +1957,12 @@ export class FilesService {
           nodeId,
           deviceId,
           localPath,
-          JSON.stringify(this.asRecord(body.identity)),
+          JSON.stringify(asRecord(body.identity)),
         ],
       );
       await this.recordFileOperation(client, userId, deviceId, 'file.drive.node.relink', nodeId, {
         localPath,
-        identity: this.asRecord(body.identity),
+        identity: asRecord(body.identity),
       });
       return node.rows[0] ?? null;
     });
@@ -1979,12 +1980,12 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    await this.recordFileOperation(this.database, userId, deviceId, this.clean(body.operation) ?? 'file.open', nodeId, {
-      sourcePath: this.clean(body.sourcePath),
-      targetPath: this.clean(body.targetPath),
-      status: this.clean(body.status) ?? 'success',
-      errorMessage: this.clean(body.errorMessage),
-      metadata: this.asRecord(body.metadata),
+    await this.recordFileOperation(this.database, userId, deviceId, clean(body.operation) ?? 'file.open', nodeId, {
+      sourcePath: clean(body.sourcePath),
+      targetPath: clean(body.targetPath),
+      status: clean(body.status) ?? 'success',
+      errorMessage: clean(body.errorMessage),
+      metadata: asRecord(body.metadata),
     });
     return { ok: true };
   }
@@ -1992,9 +1993,9 @@ export class FilesService {
   async linkNodeToEntity(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const nodeId = this.clean(body.nodeId);
-    const entityType = this.clean(body.entityType);
-    const entityId = this.clean(body.entityId);
+    const nodeId = clean(body.nodeId);
+    const entityType = clean(body.entityType);
+    const entityId = clean(body.entityId);
     if (!nodeId || !entityType || !entityId) {
       return { ok: false, error: 'nodeId, entityType and entityId are required' };
     }
@@ -2025,14 +2026,14 @@ export class FilesService {
         `,
         [
           userId,
-          this.clean(body.linkUid) ?? `file-link:${entityType}:${entityId}:${nodeId}`,
+          clean(body.linkUid) ?? `file-link:${entityType}:${entityId}:${nodeId}`,
           entityType,
           entityId,
           nodeId,
-          this.clean(body.relationType) ?? 'manual',
-          this.readNumber(body.confidence, 1),
-          this.clean(body.reason),
-          this.clean(body.status) ?? 'confirmed',
+          clean(body.relationType) ?? 'manual',
+          readInt(body.confidence, 1),
+          clean(body.reason),
+          clean(body.status) ?? 'confirmed',
         ],
       );
       await this.recordFileOperation(client, userId, deviceId, 'file.context.link', nodeId, {
@@ -2072,7 +2073,7 @@ export class FilesService {
       ORDER BY l.updated_at DESC
       LIMIT 200
       `,
-      [userId, this.clean(query.entityType), this.clean(query.entityId)],
+      [userId, clean(query.entityType), clean(query.entityId)],
     );
     return { links: result.rows };
   }
@@ -2101,7 +2102,7 @@ export class FilesService {
       ORDER BY r.score DESC, r.updated_at DESC
       LIMIT 100
       `,
-      [userId, this.clean(query.entityType), this.clean(query.entityId)],
+      [userId, clean(query.entityType), clean(query.entityId)],
     );
     return { recommendations: result.rows };
   }
@@ -2113,7 +2114,7 @@ export class FilesService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const status = this.clean(body.status) ?? 'accepted';
+    const status = clean(body.status) ?? 'accepted';
     const result = await this.database.transaction(async (client) => {
       const updated = await client.query<QueryResultRow>(
         `
@@ -2180,11 +2181,11 @@ export class FilesService {
   }
 
   private driveNodeDto(row: QueryResultRow) {
-    const deviceLocalPath = this.clean(row.deviceLocalPath);
-    const deviceAvailability = this.clean(row.deviceAvailability);
-    const storageObjectId = this.clean(row.storageObjectId);
-    const serverPath = this.clean(row.localPath);
-    const metadata = this.asRecord(row.metadata);
+    const deviceLocalPath = clean(row.deviceLocalPath);
+    const deviceAvailability = clean(row.deviceAvailability);
+    const storageObjectId = clean(row.storageObjectId);
+    const serverPath = clean(row.localPath);
+    const metadata = asRecord(row.metadata);
     const availability = row.isMissing
       ? 'missing'
       : deviceAvailability === 'available' || deviceAvailability === 'local'
@@ -2207,7 +2208,7 @@ export class FilesService {
       providerFileId: row.providerFileId,
       mimeType: row.mimeType,
       extension: row.extension,
-      sizeBytes: this.toNumber(row.sizeBytes),
+      sizeBytes: toNumber(row.sizeBytes),
       mtime: row.mtime,
       hashSha256: row.hashSha256,
       previewStatus: row.previewStatus,
@@ -2239,7 +2240,7 @@ export class FilesService {
             lastSeenAt: row.deviceLastSeenAt,
           }
         : null,
-      knownDeviceLocationCount: this.toNumber(row.knownDeviceLocationCount),
+      knownDeviceLocationCount: toNumber(row.knownDeviceLocationCount),
       identity: {
         hashSha256: row.hashSha256,
         storageChecksum: row.storageChecksum,
@@ -2255,15 +2256,15 @@ export class FilesService {
     node: Record<string, unknown>,
     localIdentity: Record<string, unknown>,
   ) {
-    const identity = this.asRecord(node.identity);
+    const identity = asRecord(node.identity);
     const nodeHash =
-      this.clean(identity.hashSha256) ??
-      this.clean(identity.storageChecksum) ??
-      this.clean(identity.contentHash);
+      clean(identity.hashSha256) ??
+      clean(identity.storageChecksum) ??
+      clean(identity.contentHash);
     const localHash =
-      this.clean(localIdentity.hashSha256) ??
-      this.clean(localIdentity.checksum) ??
-      this.clean(localIdentity.contentHash);
+      clean(localIdentity.hashSha256) ??
+      clean(localIdentity.checksum) ??
+      clean(localIdentity.contentHash);
     if (nodeHash && localHash) {
       return {
         matched: nodeHash === localHash,
@@ -2271,8 +2272,8 @@ export class FilesService {
         reason: nodeHash === localHash ? 'sha256/content hash matches' : 'hash differs',
       };
     }
-    const providerId = this.clean(identity.providerFileId);
-    const localProviderId = this.clean(localIdentity.providerFileId);
+    const providerId = clean(identity.providerFileId);
+    const localProviderId = clean(localIdentity.providerFileId);
     if (providerId && localProviderId) {
       return {
         matched: providerId === localProviderId,
@@ -2280,10 +2281,10 @@ export class FilesService {
         reason: providerId === localProviderId ? 'provider file id matches' : 'provider file id differs',
       };
     }
-    const nodeSize = this.toNumber(node.sizeBytes);
-    const localSize = this.toNumber(localIdentity.sizeBytes);
-    const nodeMtime = this.clean(node.mtime);
-    const localMtime = this.clean(localIdentity.modifiedAt) ?? this.clean(localIdentity.mtime);
+    const nodeSize = toNumber(node.sizeBytes);
+    const localSize = toNumber(localIdentity.sizeBytes);
+    const nodeMtime = clean(node.mtime);
+    const localMtime = clean(localIdentity.modifiedAt) ?? clean(localIdentity.mtime);
     if (nodeSize > 0 && localSize > 0 && nodeSize === localSize) {
       return {
         matched: !nodeMtime || !localMtime || nodeMtime === localMtime,
@@ -2302,12 +2303,12 @@ export class FilesService {
     userId: string,
     session: SessionRow,
   ): Promise<string | null> {
-    const metadata = this.asRecord(session.metadata);
-    const sourcePath = this.clean(metadata.sourcePath);
+    const metadata = asRecord(session.metadata);
+    const sourcePath = clean(metadata.sourcePath);
     if (!sourcePath) {
       return null;
     }
-    const rootId = this.clean(metadata.rootId);
+    const rootId = clean(metadata.rootId);
     if (!rootId) {
       return null;
     }
@@ -2320,7 +2321,7 @@ export class FilesService {
       `,
       [userId, rootId],
     );
-    const rootUri = this.clean(rootResult.rows[0]?.rootUri);
+    const rootUri = clean(rootResult.rows[0]?.rootUri);
     if (!rootUri) {
       return null;
     }
@@ -2487,10 +2488,10 @@ export class FilesService {
         deviceId,
         operation,
         nodeId,
-        this.clean(details.sourcePath),
-        this.clean(details.targetPath),
-        this.clean(details.status) ?? 'success',
-        this.clean(details.errorMessage),
+        clean(details.sourcePath),
+        clean(details.targetPath),
+        clean(details.status) ?? 'success',
+        clean(details.errorMessage),
         JSON.stringify(details),
       ],
     );
@@ -2510,11 +2511,11 @@ export class FilesService {
       direction: session.direction,
       fileName: session.file_name,
       storageObjectId: session.storage_object_id,
-      totalBytes: this.toNumber(session.total_bytes),
+      totalBytes: toNumber(session.total_bytes),
       chunkSize: session.chunk_size,
       expectedChunks: session.expected_chunks,
       receivedChunks: session.received_chunks,
-      receivedBytes: this.toNumber(session.received_bytes),
+      receivedBytes: toNumber(session.received_bytes),
       status: session.status,
       checksum: session.checksum,
     };
@@ -2555,11 +2556,6 @@ export class FilesService {
     );
   }
 
-  private basename(path: string) {
-    const normalized = path.replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).pop() ?? path;
-  }
-
   private normalizeServerRootUri(path: string | null) {
     if (!path) {
       return null;
@@ -2576,71 +2572,4 @@ export class FilesService {
     return null;
   }
 
-  private sha256(buffer: Buffer) {
-    return createHash('sha256').update(buffer).digest('hex');
-  }
-
-  private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
-
-  private search(value: string | undefined) {
-    const cleaned = this.clean(value);
-    return cleaned ? `%${cleaned}%` : null;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
-
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(1, Math.min(1000, Math.trunc(parsed)));
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return 0;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readNullableNumber(value: unknown) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
-  }
-
-  private readDate(value: unknown) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-      return null;
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private toNumber(value: unknown) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
 }

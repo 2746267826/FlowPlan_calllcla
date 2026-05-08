@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { errorMessage } from '../common/utils';
 
 @Controller('health')
 export class HealthController {
@@ -60,7 +61,7 @@ export class HealthController {
       checks.database = {
         ok: false,
         connected: false,
-        error: this.errorMessage(error),
+        error: errorMessage(error),
         message:
           'Check FLOWPLANV2_DATABASE_URL/DATABASE_URL, PostgreSQL availability, and run: cd server; npm run db:schema',
       };
@@ -145,9 +146,6 @@ export class HealthController {
     };
   }
 
-  private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
 }
 
 interface DatabaseHealthRow {

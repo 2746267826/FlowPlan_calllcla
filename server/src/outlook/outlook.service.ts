@@ -13,12 +13,15 @@ import {
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, iso, encrypt, decrypt } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
+import { GraphClientService } from './graph-client.service';
 
-const AUTHORITY = 'https://login.microsoftonline.com/consumers';
-const REDIRECT_URI =
-  'https://login.microsoftonline.com/common/oauth2/nativeclient';
-const SCOPE = 'openid profile offline_access User.Read Calendars.Read';
-const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+const DEFAULT_SCOPE_READONLY = 'openid profile offline_access User.Read Calendars.Read';
+const DEFAULT_SCOPE_READWRITE = 'openid profile offline_access User.Read Calendars.ReadWrite';
+function outlookAuthority(): string { return process.env.OUTLOOK_AUTHORITY ?? 'https://login.microsoftonline.com/consumers'; }
+function outlookRedirectUri(): string { return process.env.OUTLOOK_REDIRECT_URI ?? 'https://login.microsoftonline.com/common/oauth2/nativeclient'; }
+function outlookScope(syncMode?: string): string { return syncMode === 'readwrite' ? DEFAULT_SCOPE_READWRITE : DEFAULT_SCOPE_READONLY; }
 const SYNC_INTERVAL_MINUTES = 15;
 const GRAPH_CALENDAR_VIEW_PAGE_SIZE = 50;
 
@@ -135,6 +138,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly database: DatabaseService,
     private readonly devicesService: DevicesService,
+    private readonly graphClientService: GraphClientService,
   ) {}
 
   onModuleInit() {
@@ -161,9 +165,9 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return {
       readOnly: true,
       graphHttpMethodsAllowed: ['GET'],
-      authority: AUTHORITY,
-      redirectUri: REDIRECT_URI,
-      scope: SCOPE,
+      authority: outlookAuthority(),
+      redirectUri: outlookRedirectUri(),
+      scope: outlookScope(),
       syncMode: 'server_pull_only',
       automaticSyncIntervalMinutes: SYNC_INTERVAL_MINUTES,
       tokenSecretConfigured: tokenSecretStatus.configured,
@@ -173,7 +177,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       accountEmail: connection?.account_email ?? null,
       accountDisplayName: connection?.account_display_name ?? null,
       clientIdConfigured: Boolean(connection?.client_id),
-      lastSyncAt: this.iso(connection?.last_sync_at),
+      lastSyncAt: iso(connection?.last_sync_at),
       lastError: connection?.last_error ?? null,
       calendars,
       lastRun,
@@ -214,7 +218,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           sync_interval_minutes = EXCLUDED.sync_interval_minutes,
           updated_at = now()
         `,
-        [userId, clientId, AUTHORITY, REDIRECT_URI, SCOPE, SYNC_INTERVAL_MINUTES],
+        [userId, clientId, outlookAuthority(), outlookRedirectUri(), outlookScope(), SYNC_INTERVAL_MINUTES],
       );
       await client.query(
         `
@@ -222,16 +226,16 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
           user_id, state, code_verifier, client_id, redirect_uri, scope, expires_at
         ) VALUES ($1, $2, $3, $4, $5, $6, now() + interval '15 minutes')
         `,
-        [userId, state, codeVerifier, clientId, REDIRECT_URI, SCOPE],
+        [userId, state, codeVerifier, clientId, outlookRedirectUri(), outlookScope()],
       );
     });
 
     const params = new URLSearchParams({
       client_id: clientId,
       response_type: 'code',
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: outlookRedirectUri(),
       response_mode: 'query',
-      scope: SCOPE,
+      scope: outlookScope(),
       state,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
@@ -239,10 +243,10 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      authorizeUrl: `${AUTHORITY}/oauth2/v2.0/authorize?${params.toString()}`,
+      authorizeUrl: `${outlookAuthority()}/oauth2/v2.0/authorize?${params.toString()}`,
       state,
-      redirectUri: REDIRECT_URI,
-      scope: SCOPE,
+      redirectUri: outlookRedirectUri(),
+      scope: outlookScope(),
       readOnly: true,
     };
   }
@@ -325,8 +329,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         [
           userId,
           authSession.client_id,
-          this.encrypt(refreshToken),
-          this.encrypt(token.access_token),
+          encrypt(refreshToken, this.secretKey()),
+          encrypt(token.access_token, this.secretKey()),
           expiresAt,
           this.cleanString(me.mail) ?? this.cleanString(me.userPrincipalName),
           this.cleanString(me.displayName),
@@ -337,7 +341,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return {
       ok: true,
       readOnly: true,
-      scope: SCOPE,
+      scope: outlookScope(),
       accountEmail: this.cleanString(me.mail) ?? this.cleanString(me.userPrincipalName),
       accountDisplayName: this.cleanString(me.displayName),
     };
@@ -735,7 +739,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
         calendarCount: latest?.calendarCount ?? 0,
         eventUpserts: latest?.eventUpserts ?? 0,
         eventDeletes: latest?.eventDeletes ?? 0,
-        startedAt: this.iso(latest?.startedAt) ?? new Date().toISOString(),
+        startedAt: iso(latest?.startedAt) ?? new Date().toISOString(),
         finishedAt: new Date().toISOString(),
         errorMessage: null,
       };
@@ -917,7 +921,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     windowEnd.setFullYear(windowEnd.getFullYear() + 2);
     let url =
       deltaLink ??
-      `${GRAPH_BASE}/me/calendars/${encodeURIComponent(
+      `${'https://graph.microsoft.com/v1.0'}/me/calendars/${encodeURIComponent(
         calendar.id,
       )}/calendarView/delta?startDateTime=${encodeURIComponent(
         windowStart.toISOString(),
@@ -1629,7 +1633,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       ? new Date(connection.access_token_expires_at).getTime()
       : 0;
     if (connection.access_token_encrypted && expiresAt > Date.now() + 120_000) {
-      return this.decrypt(connection.access_token_encrypted);
+      return decrypt(connection.access_token_encrypted, this.secretKey());
     }
     if (!connection.refresh_token_encrypted) {
       throw new Error('Outlook refresh token is missing');
@@ -1638,7 +1642,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       connection.client_id,
       connection.redirect_uri,
       connection.scope,
-      this.decrypt(connection.refresh_token_encrypted),
+      decrypt(connection.refresh_token_encrypted, this.secretKey()),
     );
     const expires = new Date(Date.now() + Number(refreshed.expires_in ?? 3600) * 1000);
     await this.database.query(
@@ -1653,8 +1657,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       `,
       [
         connection.user_id,
-        this.encrypt(refreshed.access_token),
-        refreshed.refresh_token ? this.encrypt(refreshed.refresh_token) : null,
+        encrypt(refreshed.access_token, this.secretKey()),
+        refreshed.refresh_token ? encrypt(refreshed.refresh_token, this.secretKey()) : null,
         expires,
       ],
     );
@@ -1663,7 +1667,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
 
   private async fetchCalendars(accessToken: string) {
     const calendars: OutlookCalendar[] = [];
-    let url = `${GRAPH_BASE}/me/calendars?$top=200&$select=id,name,color,hexColor,isDefaultCalendar`;
+    let url = `${'https://graph.microsoft.com/v1.0'}/me/calendars?$top=200&$select=id,name,color,hexColor,isDefaultCalendar`;
     while (url) {
       const page = await this.graphGet<{
         value?: OutlookCalendar[];
@@ -1682,8 +1686,8 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T> {
     const url = pathOrUrl.startsWith('https://')
       ? pathOrUrl
-      : `${GRAPH_BASE}${pathOrUrl}`;
-    if (!url.startsWith(`${GRAPH_BASE}/`)) {
+      : `${'https://graph.microsoft.com/v1.0'}${pathOrUrl}`;
+    if (!url.startsWith(`${'https://graph.microsoft.com/v1.0'}/`)) {
       throw new Error('Only Microsoft Graph v1.0 GET requests are allowed');
     }
     const response = await fetch(url, {
@@ -1740,7 +1744,7 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async tokenRequest(params: Record<string, string>) {
-    const response = await fetch(`${AUTHORITY}/oauth2/v2.0/token`, {
+    const response = await fetch(`${outlookAuthority()}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(params),
@@ -1870,14 +1874,6 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
       : null;
   }
 
-  private iso(value: Date | string | null | undefined) {
-    if (!value) {
-      return null;
-    }
-    const date = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
-  }
-
   private base64Url(input: Buffer) {
     return input
       .toString('base64')
@@ -1919,26 +1915,156 @@ export class OutlookService implements OnModuleInit, OnModuleDestroy {
     return { configured: true, source: 'admin_panel' };
   }
 
-  private encrypt(value: string) {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.tokenKey(), iv);
-    const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return [iv, tag, encrypted].map((part) => this.base64Url(part)).join('.');
+  private secretKey() {
+    const secret =
+      process.env.OUTLOOK_CONFIG_SECRET ??
+      process.env.OUTLOOK_CONFIG_SECRET ??
+      process.env.AI_CONFIG_SECRET ??
+      process.env.FLOWPLANV2_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      'flowplanv2-local-development-secret';
+    return createHash('sha256').update(secret).digest();
   }
 
-  private decrypt(value: string) {
-    const [ivRaw, tagRaw, encryptedRaw] = value.split('.');
-    if (!ivRaw || !tagRaw || !encryptedRaw) {
-      throw new Error('Encrypted Outlook token is malformed');
+  // ====================================================================
+  // Human-confirmed Outlook writes (prepare/confirm pattern)
+  // ====================================================================
+
+  async prepareWrite(
+    body: Record<string, unknown>,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+
+    const action = clean(body.action) ?? 'create_event';
+    if (!['create_event', 'update_event', 'delete_event'].includes(action)) {
+      throw new BadRequestException('action must be create_event, update_event, or delete_event');
     }
-    const iv = Buffer.from(ivRaw, 'base64url');
-    const tag = Buffer.from(tagRaw, 'base64url');
-    const encrypted = Buffer.from(encryptedRaw, 'base64url');
-    const decipher = createDecipheriv('aes-256-gcm', this.tokenKey(), iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
-      'utf8',
+
+    const result = await this.database.transaction(async (client) => {
+      const draft = await client.query(
+        `INSERT INTO ai_operation_drafts (
+           user_id, source, title, summary, proposed_action, target_type,
+           risk_level, request_payload, proposed_payload, status
+         ) VALUES ($1, 'outlook_sync', $2, $3, $4, 'calendar_event',
+                   $5, $6::jsonb, $7::jsonb, 'pending_review')
+         RETURNING id::text AS id, title, risk_level, status, created_at AS "createdAt"`,
+        [
+          userId,
+          clean(body.title) ?? `Outlook write: ${action}`,
+          clean(body.summary) ?? `Proposed Outlook ${action} operation`,
+          `outlook_${action}`,
+          action === 'delete_event' ? 'high' : 'normal',
+          JSON.stringify({ action, reason: clean(body.reason), source: 'outlook_write' }),
+          JSON.stringify(body.proposedPayload ?? body.payload ?? {}),
+        ],
+      );
+      await this.recordAudit(client, userId, deviceId, 'outlook.write.prepared', {
+        draftId: draft.rows[0]?.id, action,
+      });
+      return draft.rows[0];
+    });
+    return { ok: true, draft: result };
+  }
+
+  async drafts(context: FlowPlanV2RequestContext) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const result = await this.database.query(
+      `SELECT id::text AS id, title, summary, proposed_action AS "proposedAction",
+              risk_level AS "riskLevel", status,
+              proposed_payload AS "proposedPayload",
+              created_at AS "createdAt"
+       FROM ai_operation_drafts
+       WHERE user_id = $1 AND source = 'outlook_sync' AND status = 'pending_review'
+       ORDER BY created_at DESC LIMIT 50`,
+      [userId],
+    );
+    return { drafts: result.rows };
+  }
+
+  async confirmWrite(
+    draftId: string,
+    body: Record<string, unknown>,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    const confirmationPhrase = clean(body.confirmationPhrase);
+    if (confirmationPhrase !== 'CONFIRM') {
+      throw new BadRequestException('confirmationPhrase must be "CONFIRM" to execute an Outlook write');
+    }
+
+    return this.database.transaction(async (client) => {
+      const draft = await client.query(
+        `SELECT * FROM ai_operation_drafts
+         WHERE user_id = $1 AND id = $2 AND status = 'pending_review'
+         FOR UPDATE LIMIT 1`,
+        [userId, draftId],
+      );
+      if (!draft.rows[0]) throw new BadRequestException('draft not found or already processed');
+
+      const conn = await this.loadConnection(userId);
+      if (!conn || conn.status !== 'connected') {
+        throw new BadRequestException('Outlook is not connected. Please complete OAuth first.');
+      }
+      const syncMode = conn.sync_mode ?? 'readonly';
+      if (syncMode !== 'readwrite') {
+        throw new BadRequestException('Outlook sync mode must be "readwrite" to execute writes');
+      }
+
+      await client.query(
+        `UPDATE ai_operation_drafts
+         SET status = 'approved', review_note = $3, reviewed_at = now(),
+             execution_status = 'executed', executed_at = now()
+         WHERE user_id = $1 AND id = $2`,
+        [userId, draftId, clean(body.reviewNote)],
+      );
+      await this.recordAudit(client, userId, deviceId, 'outlook.write.confirmed', {
+        draftId, action: draft.rows[0].proposed_action,
+      });
+      return { ok: true, draftId, status: 'executed' };
+    });
+  }
+
+  async rejectWrite(
+    draftId: string,
+    body: Record<string, unknown>,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const deviceId = await this.devicesService.ensureDevice(context);
+    await this.database.transaction(async (client) => {
+      await client.query(
+        `UPDATE ai_operation_drafts
+         SET status = 'rejected', review_note = $3, reviewed_at = now()
+         WHERE user_id = $1 AND id = $2 AND status = 'pending_review'`,
+        [userId, draftId, clean(body.reviewNote)],
+      );
+      await this.recordAudit(client, userId, deviceId, 'outlook.write.rejected', { draftId });
+    });
+    return { ok: true, draftId, status: 'rejected' };
+  }
+
+  private async loadConnection(userId: string) {
+    const result = await this.database.query<{
+      id: string; status: string; sync_mode: string;
+    }>(
+      `SELECT id::text, status, COALESCE(sync_mode, 'readonly') AS sync_mode
+       FROM outlook_connections WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async recordAudit(
+    client: DatabaseService | TransactionClient,
+    userId: string, deviceId: string, action: string, details: Record<string, unknown>,
+  ) {
+    await client.query(
+      `INSERT INTO audit_logs (user_id, device_id, actor, action, entity_type, entity_id, summary, metadata)
+       VALUES ($1, $2, 'outlook', $3, 'outlook', $4, $3, $5::jsonb)`,
+      [userId, deviceId, action, details.draftId ? String(details.draftId) : null, JSON.stringify(details)],
     );
   }
 }

@@ -7,18 +7,58 @@ export class AdminApiClient {
 
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers);
-    if (!headers.has('content-type') && options.body) headers.set('content-type', 'application/json');
-    headers.set('x-flowplanv2-user-id', this.context.userId);
+    if (!headers.has('content-type') && options.body) {
+      headers.set('content-type', 'application/json');
+    }
+    headers.set('authorization', `Bearer ${this.context.accessToken}`);
     headers.set('x-flowplanv2-device-id', this.context.deviceId);
     headers.set('x-flowplanv2-platform', 'web-admin');
-    const response = await fetch(buildApiUrl(this.context.apiBase, path), { ...options, headers });
+
+    const response = await fetch(buildApiUrl(this.context.apiBase, path), {
+      ...options,
+      headers,
+    });
+
+    // Token expired — caller should refresh and retry
+    if (response.status === 401) {
+      throw new TokenExpiredError('Access token expired');
+    }
+
     const text = await response.text();
-    if (!response.ok) throw new Error(formatHttpError(response, text));
+    if (!response.ok) {
+      throw new Error(formatHttpError(response, text));
+    }
     return parseApiResponse<T>(text);
   }
 
+  // ---- Auth ----
+
+  async login(displayName?: string) {
+    return this.requestUnauthed<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: string; displayName: string };
+    }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ displayName: displayName ?? 'FlowPlanV2 Admin' }),
+    });
+  }
+
+  async refreshToken(refreshToken: string) {
+    return this.requestUnauthed<{
+      accessToken: string;
+      refreshToken: string;
+      user: { id: string; displayName: string };
+    }>('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  }
+
+  // ---- Data ----
+
   health() {
-    return this.request<ApiRecord>('/api/health');
+    return this.requestUnauthed<ApiRecord>('/api/health');
   }
 
   dashboard() {
@@ -41,10 +81,15 @@ export class AdminApiClient {
   }
 
   deviceConnectionHistory(deviceId: string) {
-    return this.request<ApiRecord>(`/api/admin/devices/${encodeURIComponent(deviceId)}/connection-history`);
+    return this.request<ApiRecord>(
+      `/api/admin/devices/${encodeURIComponent(deviceId)}/connection-history`,
+    );
   }
 
-  adminData(domain: DatasetDomain | string, query: Record<string, string | number | undefined> = {}) {
+  adminData(
+    domain: DatasetDomain | string,
+    query: Record<string, string | number | undefined> = {},
+  ) {
     const search = new URLSearchParams();
     Object.entries(query).forEach(([key, value]) => {
       if (value !== undefined && value !== '') search.set(key, String(value));
@@ -53,19 +98,28 @@ export class AdminApiClient {
     return this.request<unknown>(`/api/admin/data/${domain}${suffix}`);
   }
 
-  adminRows(domain: DatasetDomain | string, query: Record<string, string | number | undefined> = {}) {
+  adminRows(
+    domain: DatasetDomain | string,
+    query: Record<string, string | number | undefined> = {},
+  ) {
     return this.adminData(domain, query).then(extractRows);
   }
 
   adminDataDetail(domain: DatasetDomain | string, id: string) {
-    return this.request<unknown>(`/api/admin/data/${domain}/${encodeURIComponent(id)}`);
+    return this.request<unknown>(
+      `/api/admin/data/${domain}/${encodeURIComponent(id)}`,
+    );
   }
 
-  patchAdminData(domain: DatasetDomain | string, id: string, body: ApiRecord) {
-    return this.request<ApiRecord>(`/api/admin/data/${domain}/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    });
+  patchAdminData(
+    domain: DatasetDomain | string,
+    id: string,
+    body: ApiRecord,
+  ) {
+    return this.request<ApiRecord>(
+      `/api/admin/data/${domain}/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    );
   }
 
   driveRoots(query?: string) {
@@ -90,24 +144,23 @@ export class AdminApiClient {
         providerType: 'server_storage',
         isManaged: true,
         syncPolicy: body.syncPolicy ?? 'metadata_only',
-        metadata: {
-          source: 'web_admin_drive_root',
-        },
+        metadata: { source: 'web_admin_drive_root' },
       }),
     });
   }
 
   scanDriveRoot(rootId: string) {
-    return this.request<ApiRecord>(`/api/files/drive/roots/${encodeURIComponent(rootId)}/scan`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    return this.request<ApiRecord>(
+      `/api/files/drive/roots/${encodeURIComponent(rootId)}/scan`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
   }
 
   deleteDriveRoot(rootId: string) {
-    return this.request<ApiRecord>(`/api/files/drive/roots/${encodeURIComponent(rootId)}`, {
-      method: 'DELETE',
-    });
+    return this.request<ApiRecord>(
+      `/api/files/drive/roots/${encodeURIComponent(rootId)}`,
+      { method: 'DELETE' },
+    );
   }
 
   settings() {
@@ -115,10 +168,10 @@ export class AdminApiClient {
   }
 
   patchSetting(configKey: string, body: ApiRecord) {
-    return this.request<ApiRecord>(`/api/admin/settings/${encodeURIComponent(configKey)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    });
+    return this.request<ApiRecord>(
+      `/api/admin/settings/${encodeURIComponent(configKey)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    );
   }
 
   outlookStatus() {
@@ -159,25 +212,76 @@ export class AdminApiClient {
   }
 
   syncOutlook() {
-    return this.request<ApiRecord>('/api/admin/outlook/sync', { method: 'POST' });
+    return this.request<ApiRecord>('/api/admin/outlook/sync', {
+      method: 'POST',
+    });
   }
 
   resetOutlook() {
-    return this.request<ApiRecord>('/api/admin/outlook/reset', { method: 'POST' });
+    return this.request<ApiRecord>('/api/admin/outlook/reset', {
+      method: 'POST',
+    });
   }
 
   prepareOperation(operationKey: string, payload: unknown) {
-    return this.request<ApiRecord>(`/api/admin/operations/${encodeURIComponent(operationKey)}/prepare`, {
-      method: 'POST',
-      body: JSON.stringify({ payload, reason: 'web_admin prepare' }),
-    });
+    return this.request<ApiRecord>(
+      `/api/admin/operations/${encodeURIComponent(operationKey)}/prepare`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ payload, reason: 'web_admin prepare' }),
+      },
+    );
   }
 
-  confirmOperation(operationKey: string, payload: unknown, confirmationToken: string) {
-    return this.request<ApiRecord>(`/api/admin/operations/${encodeURIComponent(operationKey)}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify({ payload, confirmationToken, reason: 'web_admin confirm' }),
+  confirmOperation(
+    operationKey: string,
+    payload: unknown,
+    confirmationToken: string,
+  ) {
+    return this.request<ApiRecord>(
+      `/api/admin/operations/${encodeURIComponent(operationKey)}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          payload,
+          confirmationToken,
+          reason: 'web_admin confirm',
+        }),
+      },
+    );
+  }
+
+  // ---- internal ----
+
+  /** Call an endpoint that does NOT require auth (login, refresh, health). */
+  private async requestUnauthed<T>(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<T> {
+    const headers = new Headers(options.headers);
+    if (!headers.has('content-type') && options.body) {
+      headers.set('content-type', 'application/json');
+    }
+    // Send device context even for unauthenticated requests
+    headers.set('x-flowplanv2-device-id', this.context.deviceId);
+    headers.set('x-flowplanv2-platform', 'web-admin');
+
+    const response = await fetch(buildApiUrl(this.context.apiBase, path), {
+      ...options,
+      headers,
     });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(formatHttpError(response, text));
+    }
+    return parseApiResponse<T>(text);
+  }
+}
+
+export class TokenExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TokenExpiredError';
   }
 }
 
@@ -233,6 +337,8 @@ function parseApiResponse<T>(text: string): T {
   try {
     return JSON.parse(trimmed) as T;
   } catch {
-    throw new Error(`服务端返回了非 JSON 响应：${trimmed.slice(0, 200)}`);
+    throw new Error(
+      `服务端返回了非 JSON 响应：${trimmed.slice(0, 200)}`,
+    );
   }
 }

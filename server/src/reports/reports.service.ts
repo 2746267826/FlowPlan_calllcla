@@ -5,6 +5,7 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { ModelsService } from '../models/models.service';
+import { clean, asRecord, asArray, readDate, readNumber, readInt, readLimit } from '../common/utils';
 
 export interface ReportsQuery {
   reportType?: string;
@@ -48,7 +49,7 @@ export class ReportsService {
 
   async reports(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
+    const limit = readLimit(query.limit, 80, 1, 200);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -71,7 +72,7 @@ export class ReportsService {
       ORDER BY period_start DESC
       LIMIT $4
       `,
-      [userId, this.clean(query.reportType), this.clean(query.status), limit],
+      [userId, clean(query.reportType), clean(query.status), limit],
     );
     return { items: result.rows };
   }
@@ -140,7 +141,7 @@ export class ReportsService {
   async generateReport(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const type = this.clean(body.reportType) ?? 'daily';
+    const type = clean(body.reportType) ?? 'daily';
     const { start, end } = this.period(type, body.date, body.periodStart, body.periodEnd);
     const activeModel = await this.modelsService.activeProfile(userId, 'report_template.v1');
     const modelRun = await this.modelsService.startRun(userId, 'report_template.v1', {
@@ -242,9 +243,9 @@ export class ReportsService {
           updated_at = now()
         WHERE user_id = $1 AND id = $2
           `,
-          [userId, reportId, this.clean(body.title), this.clean(body.contentMarkdown)],
+          [userId, reportId, clean(body.title), clean(body.contentMarkdown)],
         );
-        const userNote = this.clean(body.userNote);
+        const userNote = clean(body.userNote);
         if (userNote) {
           const entryId = await this.insertReportEntry(client, userId, reportId, {
             type: 'user_note',
@@ -274,8 +275,8 @@ export class ReportsService {
             source: 'reports.updateReport',
             feedbackPayload: {
               hasUserNote: Boolean(userNote),
-              titleChanged: Boolean(this.clean(body.title)),
-              contentChanged: Boolean(this.clean(body.contentMarkdown)),
+              titleChanged: Boolean(clean(body.title)),
+              contentChanged: Boolean(clean(body.contentMarkdown)),
             },
           });
         });
@@ -379,7 +380,7 @@ export class ReportsService {
 
   async diary(query: ReportsQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 80);
+    const limit = readLimit(query.limit, 80, 1, 200);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
@@ -397,7 +398,7 @@ export class ReportsService {
       ORDER BY entry_date DESC
       LIMIT $3
       `,
-      [userId, this.clean(query.status), limit],
+      [userId, clean(query.status), limit],
     );
     return { items: result.rows };
   }
@@ -487,7 +488,7 @@ export class ReportsService {
         SET title = COALESCE($3, title), body_markdown = COALESCE($4, body_markdown), updated_at = now()
         WHERE user_id = $1 AND id = $2
         `,
-        [userId, diaryId, this.clean(body.title), this.clean(body.contentMarkdown)],
+        [userId, diaryId, clean(body.title), clean(body.contentMarkdown)],
       );
         await this.recordAudit(client, userId, deviceId, 'diary.updated', {
           diaryId,
@@ -500,8 +501,8 @@ export class ReportsService {
           outcome: 'modified',
           source: 'reports.updateDiary',
           feedbackPayload: {
-            titleChanged: Boolean(this.clean(body.title)),
-            contentChanged: Boolean(this.clean(body.contentMarkdown)),
+            titleChanged: Boolean(clean(body.title)),
+            contentChanged: Boolean(clean(body.contentMarkdown)),
           },
         });
       });
@@ -618,9 +619,9 @@ export class ReportsService {
   async upsertTemplate(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const name = this.clean(body.name) ?? '默认模板';
-    const templateType = this.clean(body.templateType) ?? 'daily_report';
-    const content = this.clean(body.contentTemplate) ?? '# {{date}}\n\n{{actual_logs}}';
+    const name = clean(body.name) ?? '默认模板';
+    const templateType = clean(body.templateType) ?? 'daily_report';
+    const content = clean(body.contentTemplate) ?? '# {{date}}\n\n{{actual_logs}}';
     const isDefault = body.isDefault === true;
     const result = await this.database.transaction(async (client) => {
       if (isDefault) {
@@ -640,7 +641,7 @@ export class ReportsService {
           updated_at = now()
         RETURNING id::text AS id
         `,
-        [userId, name, templateType, content, JSON.stringify(this.asArray(body.variables)), isDefault],
+        [userId, name, templateType, content, JSON.stringify(asArray(body.variables)), isDefault],
       );
       await this.recordAudit(client, userId, deviceId, 'report.template.upserted', {
         templateId: row.rows[0]?.id,
@@ -676,8 +677,8 @@ export class ReportsService {
   async upsertPushChannel(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const channelType = this.clean(body.channelType) ?? 'webhook';
-    const name = this.clean(body.name) ?? channelType;
+    const channelType = clean(body.channelType) ?? 'webhook';
+    const name = clean(body.name) ?? channelType;
     const result = await this.database.transaction(async (client) => {
       const row = await client.query<QueryResultRow>(
         `
@@ -685,7 +686,7 @@ export class ReportsService {
         VALUES ($1, $2, $3, $4, $5::jsonb)
         RETURNING id::text AS id
         `,
-        [userId, channelType, name, this.clean(body.status) ?? 'enabled', JSON.stringify(this.asRecord(body.config))],
+        [userId, channelType, name, clean(body.status) ?? 'enabled', JSON.stringify(asRecord(body.config))],
       );
       await this.recordAudit(client, userId, deviceId, 'push.channel.created', {
         channelId: row.rows[0]?.id,
@@ -703,7 +704,7 @@ export class ReportsService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const channelId = this.clean(body.channelId);
+    const channelId = clean(body.channelId);
     const report = await this.report(reportId, context);
     const channels = await this.database.query<QueryResultRow>(
       `
@@ -738,7 +739,7 @@ export class ReportsService {
             deliveryUid,
             reportId,
             String(channel.channel_type),
-            this.targetForChannel(this.asRecord(channel.config_json)),
+            this.targetForChannel(asRecord(channel.config_json)),
             JSON.stringify(payload),
           ],
         );
@@ -775,7 +776,7 @@ export class ReportsService {
       ORDER BY created_at DESC
       LIMIT $3
       `,
-      [userId, this.clean(query.status), this.readLimit(query.limit, 100)],
+      [userId, clean(query.status), readLimit(query.limit, 100, 1, 200)],
     );
     return { items: result.rows };
   }
@@ -819,10 +820,10 @@ export class ReportsService {
         `,
         [
           userId,
-          this.clean(body.name) ?? '默认地点',
+          clean(body.name) ?? '默认地点',
           latitude,
           longitude,
-          this.clean(body.timezone) ?? 'auto',
+          clean(body.timezone) ?? 'auto',
           isDefault,
         ],
       );
@@ -899,7 +900,7 @@ export class ReportsService {
       ORDER BY c.created_at DESC
       LIMIT 20
       `,
-      [userId, this.clean(query.locationId)],
+      [userId, clean(query.locationId)],
     );
     return { items: result.rows };
   }
@@ -918,8 +919,8 @@ export class ReportsService {
     );
     const row = delivery.rows[0];
     if (!row) throw new BadRequestException('delivery not found');
-    const config = this.asRecord(row.config_json);
-    const payload = this.asRecord(row.payload);
+    const config = asRecord(row.config_json);
+    const payload = asRecord(row.payload);
     try {
       let response: Response;
       if (row.channel === 'webhook' && typeof config.url === 'string') {
@@ -1076,12 +1077,12 @@ export class ReportsService {
     snapshot: ReportSnapshot,
   ) {
     let index = 0;
-    const actuals = this.asArray(snapshot.actuals);
-    const taskWork = this.asArray(snapshot.taskWork);
-    const segments = this.asArray(snapshot.activitySegments);
-    const deviations = this.asArray(snapshot.deviations);
-    const files = this.asArray(snapshot.files);
-    const weather = this.asRecord(snapshot.weather);
+    const actuals = asArray(snapshot.actuals);
+    const taskWork = asArray(snapshot.taskWork);
+    const segments = asArray(snapshot.activitySegments);
+    const deviations = asArray(snapshot.deviations);
+    const files = asArray(snapshot.files);
+    const weather = asRecord(snapshot.weather);
 
     if (actuals.length === 0) {
       const entryId = await this.insertReportEntry(client, userId, reportId, {
@@ -1098,7 +1099,7 @@ export class ReportsService {
       });
     } else {
       for (const item of actuals.slice(0, 8)) {
-        const record = this.asRecord(item);
+        const record = asRecord(item);
         const entryId = await this.insertReportEntry(client, userId, reportId, {
           type: 'fact',
           title: String(record.title ?? '实际记录'),
@@ -1108,7 +1109,7 @@ export class ReportsService {
         });
         await this.insertEvidence(client, userId, reportId, entryId, {
           sourceType: 'actual_activity_log',
-          sourceId: this.clean(record.id),
+          sourceId: clean(record.id),
           evidenceType: 'fact',
           summary: String(record.title ?? '实际记录'),
           payload: record,
@@ -1117,7 +1118,7 @@ export class ReportsService {
     }
 
     for (const item of taskWork.slice(0, 8)) {
-      const record = this.asRecord(item);
+      const record = asRecord(item);
       const entryId = await this.insertReportEntry(client, userId, reportId, {
         type: 'fact',
         title: `任务投入 ${record.taskId ?? '未知任务'}`,
@@ -1127,15 +1128,15 @@ export class ReportsService {
       });
       await this.insertEvidence(client, userId, reportId, entryId, {
         sourceType: 'task_work_log',
-        sourceId: this.clean(record.taskId),
+        sourceId: clean(record.taskId),
         evidenceType: 'fact',
         summary: `${record.minutes ?? 0} 分钟已确认任务投入`,
         payload: record,
       });
     }
 
-    for (const item of segments.filter((value) => this.asRecord(value).status !== 'confirmed').slice(0, 8)) {
-      const record = this.asRecord(item);
+    for (const item of segments.filter((value) => asRecord(value).status !== 'confirmed').slice(0, 8)) {
+      const record = asRecord(item);
       const entryId = await this.insertReportEntry(client, userId, reportId, {
         type: 'inferred',
         title: String(record.title ?? '待确认活动片段'),
@@ -1145,7 +1146,7 @@ export class ReportsService {
       });
       await this.insertEvidence(client, userId, reportId, entryId, {
         sourceType: 'activity_segment',
-        sourceId: this.clean(record.id),
+        sourceId: clean(record.id),
         evidenceType: 'inferred',
         summary: String(record.title ?? '活动片段候选'),
         payload: record,
@@ -1153,7 +1154,7 @@ export class ReportsService {
     }
 
     for (const item of deviations.slice(0, 8)) {
-      const record = this.asRecord(item);
+      const record = asRecord(item);
       const entryId = await this.insertReportEntry(client, userId, reportId, {
         type: 'inferred',
         title: `计划偏差 ${record.deviationType ?? 'detected'}`,
@@ -1163,7 +1164,7 @@ export class ReportsService {
       });
       await this.insertEvidence(client, userId, reportId, entryId, {
         sourceType: 'plan_deviation',
-        sourceId: this.clean(record.id),
+        sourceId: clean(record.id),
         evidenceType: 'inferred',
         summary: String(record.deviationType ?? 'plan deviation'),
         payload: record,
@@ -1195,7 +1196,7 @@ export class ReportsService {
     });
     await this.insertEvidence(client, userId, reportId, weatherEntryId, {
       sourceType: 'weather_cache',
-      sourceId: this.clean(weather.id),
+      sourceId: clean(weather.id),
       evidenceType: 'external',
       summary: String(weather.summary ?? '暂无天气缓存。'),
       payload: weather,
@@ -1277,7 +1278,7 @@ export class ReportsService {
       `,
       [userId, templateType],
     );
-    return this.clean(result.rows[0]?.content_template);
+    return clean(result.rows[0]?.content_template);
   }
 
   private async ensureDefaultTemplates(userId: string) {
@@ -1301,14 +1302,14 @@ export class ReportsService {
   }
 
   private templateVariables(type: string, start: Date, snapshot: ReportSnapshot) {
-    const actuals = this.asArray(snapshot.actuals);
-    const taskWork = this.asArray(snapshot.taskWork);
-    const segments = this.asArray(snapshot.activitySegments);
-    const deviations = this.asArray(snapshot.deviations);
-    const schedules = this.asArray(snapshot.schedules);
-    const tasks = this.asArray(snapshot.tasks);
-    const files = this.asArray(snapshot.files);
-    const weather = this.asRecord(snapshot.weather);
+    const actuals = asArray(snapshot.actuals);
+    const taskWork = asArray(snapshot.taskWork);
+    const segments = asArray(snapshot.activitySegments);
+    const deviations = asArray(snapshot.deviations);
+    const schedules = asArray(snapshot.schedules);
+    const tasks = asArray(snapshot.tasks);
+    const files = asArray(snapshot.files);
+    const weather = asRecord(snapshot.weather);
     return {
       date: start.toISOString().slice(0, 10),
       report_type: this.reportName(type),
@@ -1320,7 +1321,7 @@ export class ReportsService {
           ? '- 暂无已确认任务投入。'
           : taskWork
               .map((item) => {
-                const record = this.asRecord(item);
+                const record = asRecord(item);
                 return `- 任务 ${record.taskId ?? '未知'}：${record.minutes ?? 0} 分钟`;
               })
               .join('\n'),
@@ -1330,7 +1331,7 @@ export class ReportsService {
           : segments
               .slice(0, 12)
               .map((item) => {
-                const record = this.asRecord(item);
+                const record = asRecord(item);
                 return `- ${record.title ?? '活动片段'}（状态：${record.status ?? 'candidate'}，置信度：${Math.round(Number(record.confidence ?? 0) * 100)}%）`;
               })
               .join('\n'),
@@ -1340,7 +1341,7 @@ export class ReportsService {
           : deviations
               .slice(0, 12)
               .map((item) => {
-                const record = this.asRecord(item);
+                const record = asRecord(item);
                 return `- ${record.deviationType ?? 'deviation'}：${record.actualTitle ?? record.plannedTaskId ?? '需要复核'}`;
               })
               .join('\n'),
@@ -1350,7 +1351,7 @@ export class ReportsService {
           : files
               .slice(0, 10)
               .map((item) => {
-                const record = this.asRecord(item);
+                const record = asRecord(item);
                 return `- ${record.operation ?? 'file'} ${record.sourcePath ?? record.targetPath ?? ''}`;
               })
               .join('\n'),
@@ -1467,7 +1468,7 @@ export class ReportsService {
     return items
       .slice(0, 12)
       .map((item) => {
-        const record = this.asRecord(item);
+        const record = asRecord(item);
         const value = key === 'payload' ? this.payloadTitle(record.payload) : record[key];
         return `- ${String(value ?? '未命名')}`;
       })
@@ -1475,7 +1476,7 @@ export class ReportsService {
   }
 
   private payloadTitle(payload: unknown) {
-    const record = this.asRecord(payload);
+    const record = asRecord(payload);
     return record.title ?? record.summary ?? record.name ?? record.uid ?? JSON.stringify(record).slice(0, 80);
   }
 
@@ -1501,8 +1502,8 @@ export class ReportsService {
       },
       body: JSON.stringify({
         model: provider.model,
-        temperature: this.readNumber(provider.temperature, 0.2),
-        max_tokens: this.readInteger(provider.max_output_tokens, 1200),
+        temperature: readNumber(provider.temperature, 0.2),
+        max_tokens: readInt(provider.max_output_tokens, 1200),
         messages: [
           {
             role: 'system',
@@ -1519,7 +1520,7 @@ export class ReportsService {
             }),
           },
         ],
-        ...this.asRecord(provider.options),
+        ...asRecord(provider.options),
       }),
     });
     const raw = await response.text();
@@ -1576,11 +1577,11 @@ export class ReportsService {
   }
 
   private weatherSummaryFromPayload(payload: Record<string, unknown>) {
-    const daily = this.asRecord(payload.daily);
-    const time = this.asArray(daily.time);
-    const max = this.asArray(daily.temperature_2m_max);
-    const min = this.asArray(daily.temperature_2m_min);
-    const rain = this.asArray(daily.precipitation_probability_max);
+    const daily = asRecord(payload.daily);
+    const time = asArray(daily.time);
+    const max = asArray(daily.temperature_2m_max);
+    const min = asArray(daily.temperature_2m_min);
+    const rain = asArray(daily.precipitation_probability_max);
     if (time.length === 0) {
       return 'Open-Meteo 已刷新，但返回中没有 daily 预报。';
     }
@@ -1591,8 +1592,8 @@ export class ReportsService {
   }
 
   private period(type: string, rawDate: unknown, rawStart: unknown, rawEnd: unknown) {
-    const explicitStart = this.readDate(rawStart);
-    const explicitEnd = this.readDate(rawEnd);
+    const explicitStart = readDate(rawStart);
+    const explicitEnd = readDate(rawEnd);
     if (explicitStart && explicitEnd && explicitStart < explicitEnd) return { start: explicitStart, end: explicitEnd };
     const dateText = typeof rawDate === 'string' && rawDate.trim() ? rawDate.trim().slice(0, 10) : new Date().toISOString().slice(0, 10);
     const start = new Date(`${dateText}T00:00:00.000Z`);
@@ -1602,11 +1603,11 @@ export class ReportsService {
 
   private metrics(snapshot: ReportSnapshot) {
     return {
-      actualCount: this.asArray(snapshot.actuals).length,
-      taskWorkCount: this.asArray(snapshot.taskWork).length,
-      segmentCount: this.asArray(snapshot.activitySegments).length,
-      deviationCount: this.asArray(snapshot.deviations).length,
-      fileContextCount: this.asArray(snapshot.files).length,
+      actualCount: asArray(snapshot.actuals).length,
+      taskWorkCount: asArray(snapshot.taskWork).length,
+      segmentCount: asArray(snapshot.activitySegments).length,
+      deviationCount: asArray(snapshot.deviations).length,
+      fileContextCount: asArray(snapshot.files).length,
       hasWeather: Boolean(snapshot.weather),
     };
   }
@@ -1627,40 +1628,6 @@ export class ReportsService {
     return ['daily_report', 'weekly_report', 'monthly_report', 'diary', 'project_report', 'course_report', 'push_summary'];
   }
 
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(1, Math.min(200, Math.trunc(parsed))) : fallback;
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-
-  private readInteger(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(1, Math.trunc(parsed)) : fallback;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  private readDate(value: unknown) {
-    if (!(typeof value === 'string' || value instanceof Date)) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  }
-
-  private asArray(value: unknown): unknown[] {
-    return Array.isArray(value) ? value : [];
-  }
 
   private async recordAudit(
     client: Pick<DatabaseService | TransactionClient, 'query'>,
@@ -1683,5 +1650,136 @@ export class ReportsService {
         JSON.stringify(details),
       ],
     );
+  }
+
+  // ====================================================================
+  // Quality scoring
+  // ====================================================================
+
+  async reportQualityScore(
+    reportId: string,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const detail = await this.report(reportId, context);
+
+    const entries = (detail.entries as Array<Record<string, unknown>>) ?? [];
+    const evidence = (detail.evidence as Array<Record<string, unknown>>) ?? [];
+    const report = detail.report as Record<string, unknown>;
+
+    // Completeness: fact + inferred + external entries exist
+    const factCount = entries.filter((e) => e.entryType === 'fact').length;
+    const inferredCount = entries.filter((e) => e.entryType === 'inferred').length;
+    const externalCount = entries.filter((e) => e.entryType === 'external').length;
+    const completeness = Math.min(100, (factCount > 0 ? 50 : 0) + (inferredCount > 0 ? 30 : 0) + (externalCount > 0 ? 20 : 0));
+
+    // Evidence coverage: what percentage of entries have linked evidence
+    const entriesWithEvidence = new Set(evidence.map((e) => String(e.entryId ?? '')));
+    const evidenceCoverage = entries.length > 0
+      ? Math.round((entriesWithEvidence.size / entries.length) * 100)
+      : 0;
+
+    // Content richness: total markdown length as a proxy
+    const markdown = String(report.contentMarkdown ?? report.summary_markdown ?? '');
+    const contentRichness = Math.min(100, Math.round(markdown.length / 10));
+
+    // Factual accuracy: confirmed vs candidate segments
+    const segments = (entries.filter(
+      (e) => e.entryType === 'inferred',
+    ) as Array<Record<string, unknown>>);
+    const confirmedSegments = segments.filter(
+      (s) => String(s.status ?? '').toLowerCase() === 'confirmed',
+    ).length;
+    const factualAccuracy = segments.length > 0
+      ? Math.round((confirmedSegments / segments.length) * 100)
+      : 100;
+
+    const overall = Math.round(
+      completeness * 0.3 + evidenceCoverage * 0.25 + contentRichness * 0.2 + factualAccuracy * 0.25,
+    );
+
+    return {
+      reportId,
+      overall,
+      dimensions: {
+        completeness: { score: completeness, weight: 0.3 },
+        evidenceCoverage: { score: evidenceCoverage, weight: 0.25 },
+        contentRichness: { score: contentRichness, weight: 0.2 },
+        factualAccuracy: { score: factualAccuracy, weight: 0.25 },
+      },
+      entryStats: { factCount, inferredCount, externalCount, total: entries.length },
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // ====================================================================
+  // History comparison
+  // ====================================================================
+
+  async compareReports(
+    reportId: string,
+    compareWithId: string,
+    context: FlowPlanV2RequestContext,
+  ) {
+    const userId = await this.devicesService.ensureUser(context.userId);
+    const [a, b] = await Promise.all([
+      this.report(reportId, context),
+      this.report(compareWithId, context),
+    ]);
+
+    const aReport = a.report as Record<string, unknown>;
+    const bReport = b.report as Record<string, unknown>;
+    const aEntries = (a.entries as Array<Record<string, unknown>>) ?? [];
+    const bEntries = (b.entries as Array<Record<string, unknown>>) ?? [];
+
+    // Entry count delta
+    const entryDelta = bEntries.length - aEntries.length;
+
+    // Fact count delta
+    const aFacts = aEntries.filter((e) => e.entryType === 'fact').length;
+    const bFacts = bEntries.filter((e) => e.entryType === 'fact').length;
+
+    // Content length delta
+    const aLength = String(aReport.contentMarkdown ?? aReport.summary_markdown ?? '').length;
+    const bLength = String(bReport.contentMarkdown ?? bReport.summary_markdown ?? '').length;
+
+    // New entries in B that are not in A
+    const aTitles = new Set(aEntries.map((e) => String(e.title ?? '')));
+    const newEntries = bEntries.filter((e) => !aTitles.has(String(e.title ?? '')));
+
+    // Removed entries that were in A but not in B
+    const bTitles = new Set(bEntries.map((e) => String(e.title ?? '')));
+    const removedEntries = aEntries.filter((e) => !bTitles.has(String(e.title ?? '')));
+
+    return {
+      baseline: {
+        reportId,
+        period: aReport.periodStart,
+        entryCount: aEntries.length,
+        factCount: aFacts,
+        contentLength: aLength,
+      },
+      comparison: {
+        reportId: compareWithId,
+        period: bReport.periodStart,
+        entryCount: bEntries.length,
+        factCount: bFacts,
+        contentLength: bLength,
+      },
+      delta: {
+        entryCount: entryDelta,
+        factCount: bFacts - aFacts,
+        contentLength: bLength - aLength,
+      },
+      newEntries: newEntries.slice(0, 20).map((e) => ({
+        type: e.entryType,
+        title: e.title,
+      })),
+      removedEntries: removedEntries.slice(0, 20).map((e) => ({
+        type: e.entryType,
+        title: e.title,
+      })),
+      generatedAt: new Date().toISOString(),
+    };
   }
 }

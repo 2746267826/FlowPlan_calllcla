@@ -1,3 +1,7 @@
+/// @deprecated Since Phase 6.1 (2026-05), all Microsoft Graph interactions
+/// are handled exclusively by the server. This client-side service is fully
+/// stubbed — all real methods return empty data or throw StateError.
+/// See: server/src/outlook/outlook.service.ts
 import 'outlook_auth_service.dart';
 
 class MsGraphService {

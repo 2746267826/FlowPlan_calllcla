@@ -1,4 +1,4 @@
-export type SyncAction = 'create' | 'update' | 'delete';
+export type SyncAction = 'create' | 'update' | 'delete' | 'upsert';
 
 export interface SyncMutationDto {
   mutationUid: string;
@@ -83,7 +83,7 @@ export interface SyncAckDto {
 }
 
 export interface ResolveConflictDto {
-  strategy: 'use_local' | 'use_server' | 'merge' | 'ignore';
+  strategy: 'use_local' | 'use_server' | 'merge' | 'keep_both' | 'ignore';
   payload?: Record<string, unknown>;
   note?: string;
 }

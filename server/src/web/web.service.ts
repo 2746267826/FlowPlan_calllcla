@@ -4,9 +4,13 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord, readDate, readInt, searchPattern } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
+import { normalizeTaskPayload } from '../common/schemas/task.schema';
+import { normalizeEventPayload } from '../common/schemas/event.schema';
 
-const TASK_TYPES = ['task', 'tasks', 'task_item', 'task_items'];
-const EVENT_TYPES = ['event', 'events', 'calendar_event', 'calendar_events'];
+const TASK_TYPES = [ObjectType.TASK];
+const EVENT_TYPES = [ObjectType.CALENDAR_EVENT];
 
 @Injectable()
 export class WebService {
@@ -94,22 +98,23 @@ export class WebService {
   }
 
   async createTask(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
-    return this.createObject('task_item', this.normalizeTaskPayload(body), context);
+    return this.createObject('task_item', normalizeTaskPayload(body) as unknown as Record<string, unknown>, context);
   }
 
   async updateTask(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
-    return this.updateObject(id, this.normalizeTaskPayload(body), context, this.taskVm, this.numberValue(body.baseServerVersion));
+    return this.updateObject(id, normalizeTaskPayload(body) as unknown as Record<string, unknown>, context, this.taskVm, this.numberValue(body.baseServerVersion));
   }
 
   async completeTask(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
+    const payload = {
+      status: 'done',
+      completedAt: clean(body.completedAt) ?? new Date().toISOString(),
+      updatedFrom: 'client',
+      ...asRecord(body.payload),
+    };
     return this.updateObject(
       id,
-      this.cleanRecord({
-        status: this.clean(body.status) ?? 'done',
-        completedAt: this.clean(body.completedAt) ?? new Date().toISOString(),
-        updatedFrom: 'client',
-        ...this.asRecord(body.payload),
-      }),
+      payload,
       context,
       this.taskVm,
       this.numberValue(body.baseServerVersion),
@@ -121,13 +126,13 @@ export class WebService {
   }
 
   async createEvent(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
-    return this.createObject('calendar_event', this.normalizeEventPayload(body), context);
+    return this.createObject('calendar_event', normalizeEventPayload(body) as unknown as Record<string, unknown>, context);
   }
 
   async updateEvent(id: string, body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     return this.updateObject(
       id,
-      this.normalizeEventPayload(body),
+      normalizeEventPayload(body) as unknown as Record<string, unknown>,
       context,
       this.eventVm,
       this.numberValue(body.baseServerVersion),
@@ -140,9 +145,9 @@ export class WebService {
 
   async actualRecords(query: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit);
-    const from = this.readDate(query.from);
-    const to = this.readDate(query.to);
+    const limit = readInt(query.limit, 20, 1);
+    const from = readDate(query.from);
+    const to = readDate(query.to);
     const result = await this.database.query(
       `
       SELECT
@@ -183,7 +188,7 @@ export class WebService {
       [userId, [...TASK_TYPES, ...EVENT_TYPES]],
     );
     const items = result.rows.map((row) =>
-      EVENT_TYPES.includes(String(row.objectType)) ? this.eventVm(row) : this.taskVm(row),
+      (EVENT_TYPES as readonly string[]).includes(String(row.objectType)) ? this.eventVm(row) : this.taskVm(row),
     ) as Array<Record<string, unknown>>;
     return {
       items: items.filter((item) => item.dueAt || item.startAt),
@@ -221,7 +226,7 @@ export class WebService {
     const deviceId = await this.devicesService.ensureDevice(context);
     await this.recordAudit(this.database, userId, deviceId, `web.operation.${operationKey}.confirm`, {
       operationKey,
-      confirmationToken: this.clean(body.confirmationToken),
+      confirmationToken: clean(body.confirmationToken),
       body,
     });
     return {
@@ -239,10 +244,10 @@ export class WebService {
     mapper: (row: QueryResultRow) => Record<string, unknown>,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit);
-    const q = this.search(query.q);
-    const from = this.readDate(query.from);
-    const to = this.readDate(query.to);
+    const limit = readInt(query.limit, 20, 1);
+    const q = searchPattern(query.q as string | undefined);
+    const from = readDate(query.from);
+    const to = readDate(query.to);
     const result = await this.database.query(
       `
       SELECT id::text, object_type AS "objectType", uid, payload, server_version AS "serverVersion",
@@ -265,11 +270,7 @@ export class WebService {
           $4::text IS NULL
           OR COALESCE(
             NULLIF(payload->>'startAt', ''),
-            NULLIF(payload->>'start_at', ''),
-            NULLIF(payload->>'startTime', ''),
-            NULLIF(payload->>'dtstart', ''),
             NULLIF(payload->>'dueAt', ''),
-            NULLIF(payload->>'dueDate', ''),
             updated_at::text
           ) >= $4::text
         )
@@ -277,21 +278,13 @@ export class WebService {
           $5::text IS NULL
           OR COALESCE(
             NULLIF(payload->>'startAt', ''),
-            NULLIF(payload->>'start_at', ''),
-            NULLIF(payload->>'startTime', ''),
-            NULLIF(payload->>'dtstart', ''),
             NULLIF(payload->>'dueAt', ''),
-            NULLIF(payload->>'dueDate', ''),
             updated_at::text
           ) < $5::text
         )
       ORDER BY COALESCE(
         NULLIF(payload->>'startAt', ''),
-        NULLIF(payload->>'start_at', ''),
-        NULLIF(payload->>'startTime', ''),
-        NULLIF(payload->>'dtstart', ''),
         NULLIF(payload->>'dueAt', ''),
-        NULLIF(payload->>'dueDate', ''),
         updated_at::text
       ) ASC, updated_at DESC
       LIMIT $6
@@ -311,7 +304,7 @@ export class WebService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const uid = this.clean(payload.uid) ?? `${objectType}:${randomUUID()}`;
+    const uid = clean(payload.uid) ?? `${objectType}:${randomUUID()}`;
     const result = await this.database.transaction(async (client) => {
       const existing = await client.query(
         `
@@ -517,7 +510,7 @@ export class WebService {
         userId,
         deviceId,
         action,
-        this.clean(metadata.objectId) ?? this.clean(metadata.operationKey),
+        clean(metadata.objectId) ?? clean(metadata.operationKey),
         action,
         JSON.stringify(metadata),
       ],
@@ -526,138 +519,41 @@ export class WebService {
   }
 
   private taskVm(row: QueryResultRow) {
-    const payload = this.asRecord(row.payload);
+    const normalized = normalizeTaskPayload(asRecord(row.payload));
     return {
       id: row.id,
       uid: row.uid,
       objectType: row.objectType,
-      title: this.clean(payload.title) ?? this.clean(payload.summary) ?? this.clean(payload.name) ?? '未命名任务',
-      status: this.clean(payload.status) ?? 'todo',
-      dueAt: this.clean(payload.dueAt) ?? this.clean(payload.due_date) ?? this.clean(payload.dueDate),
-      location: this.clean(payload.location) ?? '',
+      title: normalized.title,
+      status: normalized.status,
+      dueAt: normalized.dueAt,
+      location: normalized.location ?? '',
       syncStatus: 'server',
       serverVersion: row.serverVersion,
       updatedAt: row.updatedAt,
-      payload,
+      payload: normalized as unknown as Record<string, unknown>,
     };
   }
 
   private eventVm(row: QueryResultRow) {
-    const payload = this.asRecord(row.payload);
-    const startAt =
-      this.clean(payload.startAt) ??
-      this.clean(payload.start_at) ??
-      this.clean(payload.startTime) ??
-      this.clean(payload.dtstart);
-    const endAt =
-      this.clean(payload.endAt) ??
-      this.clean(payload.end_at) ??
-      this.clean(payload.endTime) ??
-      this.clean(payload.dtend);
-    const notes =
-      this.clean(payload.notes) ??
-      this.clean(payload.note) ??
-      this.clean(payload.description) ??
-      '';
+    const normalized = normalizeEventPayload(asRecord(row.payload));
     return {
       id: row.id,
       uid: row.uid,
       objectType: row.objectType,
-      title: this.clean(payload.title) ?? this.clean(payload.summary) ?? this.clean(payload.name) ?? '未命名日程',
-      startAt,
-      endAt,
-      dtstart: startAt,
-      dtend: endAt,
-      status: this.clean(payload.status) ?? 'confirmed',
-      location: this.clean(payload.location) ?? '',
-      notes,
-      description: notes,
-      isBlock: payload.isBlock === true || payload.blocking === true || payload.isBlocking === true,
+      title: normalized.title,
+      startAt: normalized.startAt,
+      endAt: normalized.endAt,
+      status: normalized.status,
+      location: normalized.location ?? '',
+      notes: normalized.notes ?? '',
+      description: normalized.description ?? normalized.notes ?? '',
+      isBlock: normalized.isBlock,
       syncStatus: 'server',
       serverVersion: row.serverVersion,
       updatedAt: row.updatedAt,
-      payload,
+      payload: normalized as unknown as Record<string, unknown>,
     };
-  }
-
-  private normalizeTaskPayload(body: Record<string, unknown>) {
-    return this.cleanRecord({
-      uid: this.clean(body.uid),
-      title: this.clean(body.title) ?? this.clean(body.summary) ?? '未命名任务',
-      summary: this.clean(body.summary) ?? this.clean(body.title),
-      description: this.clean(body.description),
-      status: this.clean(body.status) ?? 'todo',
-      dueAt: this.clean(body.dueAt) ?? this.clean(body.due),
-      dtstart: this.clean(body.dtstart) ?? this.clean(body.startAt),
-      durationMinutes: this.numberValue(body.durationMinutes),
-      priorityLocal: this.numberValue(body.priorityLocal),
-      isSplittable: this.boolValue(body.isSplittable),
-      isAutoScheduled: this.boolValue(body.isAutoScheduled),
-      isLocked: this.boolValue(body.isLocked),
-      rrule: this.clean(body.rrule),
-      reminderMinutesBefore: this.numberValue(body.reminderMinutesBefore),
-      taskListId: this.numberValue(body.taskListId),
-      location: this.clean(body.location),
-      notes: this.clean(body.notes),
-      updatedFrom: 'web',
-      ...this.asRecord(body.payload),
-    });
-  }
-
-  private normalizeEventPayload(body: Record<string, unknown>) {
-    const payload = this.asRecord(body.payload);
-    const startAt =
-      this.clean(body.startAt) ??
-      this.clean(body.dtstart) ??
-      this.clean(payload.startAt) ??
-      this.clean(payload.dtstart);
-    const endAt =
-      this.clean(body.endAt) ??
-      this.clean(body.dtend) ??
-      this.clean(payload.endAt) ??
-      this.clean(payload.dtend);
-    const notes =
-      this.clean(body.notes) ??
-      this.clean(body.note) ??
-      this.clean(body.description) ??
-      this.clean(payload.notes) ??
-      this.clean(payload.note) ??
-      this.clean(payload.description);
-    return this.cleanRecord({
-      ...payload,
-      uid: this.clean(body.uid) ?? this.clean(payload.uid),
-      title: this.clean(body.title) ?? this.clean(body.summary) ?? '未命名日程',
-      summary: this.clean(body.summary) ?? this.clean(body.title) ?? this.clean(payload.summary) ?? this.clean(payload.title),
-      description: notes,
-      startAt,
-      dtstart: startAt,
-      endAt,
-      dtend: endAt,
-      status: this.clean(body.status) ?? this.clean(payload.status) ?? 'confirmed',
-      rrule: this.clean(body.rrule) ?? this.clean(payload.rrule),
-      colorHex: this.clean(body.colorHex) ?? this.clean(payload.colorHex),
-      isBlock: this.boolValue(body.isBlock) ?? this.boolValue(payload.isBlock),
-      eventCalendarId: this.numberValue(body.eventCalendarId) ?? this.numberValue(payload.eventCalendarId),
-      location: this.clean(body.location) ?? this.clean(payload.location),
-      notes,
-      updatedFrom: 'web',
-    });
-  }
-
-  private cleanRecord(value: Record<string, unknown>) {
-    return Object.fromEntries(
-      Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== ''),
-    );
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
   private numberValue(value: unknown) {
@@ -665,34 +561,8 @@ export class WebService {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
 
-  private boolValue(value: unknown) {
-    return typeof value === 'boolean' ? value : undefined;
-  }
-
-  private search(value: unknown) {
-    const text = this.clean(value);
-    return text ? `%${text}%` : null;
-  }
-
-  private readDate(value: unknown) {
-    const text = this.clean(value);
-    if (!text) {
-      return null;
-    }
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-
-  private readLimit(value: unknown) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return 100;
-    }
-    return Math.min(Math.floor(parsed), 500);
-  }
-
   private isTodayLike(value: unknown) {
-    const text = this.clean(value);
+    const text = clean(value);
     if (!text) {
       return false;
     }
@@ -704,7 +574,7 @@ export class WebService {
   }
 
   private futureTime(value: unknown) {
-    const text = this.clean(value);
+    const text = clean(value);
     if (!text) {
       return null;
     }

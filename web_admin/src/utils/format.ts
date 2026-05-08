@@ -109,11 +109,17 @@ export function timeRangeLabel(start?: Date, end?: Date): string {
 export function statusLabel(value: unknown): string {
   const raw = displayValue(value);
   const labels: Record<string, string> = {
+    todo: '待处理',
     'NEEDS-ACTION': '待处理',
+    in_progress: '进行中',
     'IN-PROCESS': '进行中',
+    done: '已完成',
     COMPLETED: '已完成',
+    confirmed: '已确认',
     CONFIRMED: '已确认',
+    tentative: '暂定',
     TENTATIVE: '暂定',
+    cancelled: '已取消',
     CANCELLED: '已取消',
     online: '在线',
     offline: '离线',
@@ -237,7 +243,7 @@ export function toCount(value: unknown): number {
 export function toManagementItem(row: ApiRecord, domain: 'tasks' | 'schedules'): ManagementItem {
   const payload = asRecord(row.payload);
   const source = displayValue(row.source ?? payload.source ?? (domain === 'schedules' && String(row.uid ?? '').includes('outlook') ? 'outlook' : 'local'));
-  const status = displayValue(row.status ?? payload.status ?? (domain === 'tasks' ? 'NEEDS-ACTION' : 'CONFIRMED'));
+  const status = displayValue(row.status ?? payload.status ?? (domain === 'tasks' ? 'todo' : 'confirmed'));
   const primary = firstDate(row.dueAt, row.dtstart, row.startAt, payload.due, payload.dtstart, payload.startAt, payload.dueAt);
   const end = firstDate(row.dtend, row.endAt, payload.dtend, payload.endAt);
   const title = displayValue(row.title ?? row.summary ?? row.name ?? payload.title ?? payload.summary ?? payload.name ?? row.uid);

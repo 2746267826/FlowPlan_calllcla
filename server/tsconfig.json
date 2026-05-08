@@ -13,5 +13,11 @@
     "incremental": true,
     "strict": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "src/test-setup.ts"
+  ]
 }

@@ -77,7 +77,7 @@ export function TasksSchedulesPage(props: {
       content: '会把所选任务标记为已完成，并写入管理审计。日程不会被完成操作影响。',
       okText: '确认完成',
       cancelText: '取消',
-      onOk: () => patchSelected({ payload: { status: 'COMPLETED', completedAt: new Date().toISOString() }, reason: 'admin batch complete' }, '批量完成已提交'),
+      onOk: () => patchSelected({ payload: { status: 'done', completedAt: new Date().toISOString() }, reason: 'admin batch complete' }, '批量完成已提交'),
     });
   };
 

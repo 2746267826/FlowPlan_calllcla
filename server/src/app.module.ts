@@ -1,11 +1,24 @@
-import { Module } from '@nestjs/common';
+import { Module, ValidationPipe } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { loadConfig } from './common/config/app-config';
 import { AuthController } from './auth/auth.controller';
+import { AuthService } from './auth/auth.service';
+import { JwtStrategy } from './auth/jwt.strategy';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { JwtInterceptor } from './auth/jwt.interceptor';
+import { AppLogger } from './common/logger/app-logger.service';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { RequestLogInterceptor } from './common/interceptors/request-log.interceptor';
 import { HealthController } from './health/health.controller';
 import { SyncController } from './sync/sync.controller';
 import { SyncService } from './sync/sync.service';
 import { DevicesController } from './devices/devices.controller';
 import { DatabaseService } from './database/database.service';
-import { AuthService } from './auth/auth.service';
 import { DevicesService } from './devices/devices.service';
 import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
@@ -29,6 +42,10 @@ import { ReportsController } from './reports/reports.controller';
 import { ReportsService } from './reports/reports.service';
 import { SchedulerController } from './scheduler/scheduler.controller';
 import { SchedulerService } from './scheduler/scheduler.service';
+import { GeneticSchedulerService } from './scheduler/genetic-scheduler.service';
+import { DependencyGraphService } from './scheduler/dependency-graph.service';
+import { CronJobsService } from './scheduler/cron-jobs.service';
+import { CronJobsController } from './scheduler/cron-jobs.controller';
 import { TrackingController } from './tracking/tracking.controller';
 import { TrackingService } from './tracking/tracking.service';
 import { WebController } from './web/web.controller';
@@ -36,8 +53,33 @@ import { WebService } from './web/web.service';
 import { ModelsController } from './models/models.controller';
 import { ModelsService } from './models/models.service';
 import { OutlookService } from './outlook/outlook.service';
+import { GraphClientService } from './outlook/graph-client.service';
+import { AuditService } from './common/audit/audit.service';
+import { SyncObjectRepository } from './common/repositories/sync-object.repository';
+import { VectorService } from './common/utils/vector.service';
+
+const appConfig = loadConfig();
 
 @Module({
+  imports: [
+    ScheduleModule.forRoot(),
+    ConfigModule.forRoot({ isGlobal: true, load: [loadConfig] }),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get('jwtAccessSecret', appConfig.jwtAccessSecret),
+        signOptions: { expiresIn: config.get('jwtAccessExpires', '24h') },
+      }),
+    }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
+  ],
   controllers: [
     HealthController,
     AuthController,
@@ -55,10 +97,36 @@ import { OutlookService } from './outlook/outlook.service';
     TrackingController,
     WebController,
     ModelsController,
+    CronJobsController,
   ],
   providers: [
+    AppLogger,
     DatabaseService,
     AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    JwtInterceptor,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: JwtInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestLogInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
+    },
+    {
+      provide: APP_PIPE,
+      useFactory: () =>
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+          forbidNonWhitelisted: false,
+        }),
+    },
     DevicesService,
     SyncService,
     AnalyticsService,
@@ -72,12 +140,19 @@ import { OutlookService } from './outlook/outlook.service';
     AiService,
     ActivityUnderstandingService,
     SchedulerService,
+    GeneticSchedulerService,
+    DependencyGraphService,
+    CronJobsService,
     ReportsService,
     ClientService,
     TrackingService,
     WebService,
     ModelsService,
     OutlookService,
+    GraphClientService,
+    AuditService,
+    SyncObjectRepository,
+    VectorService,
   ],
 })
 export class AppModule {}

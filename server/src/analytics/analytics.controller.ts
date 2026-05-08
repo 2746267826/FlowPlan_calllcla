@@ -133,4 +133,20 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.inputEvents(query, readRequestContext(headers));
   }
+
+  @Get('export/csv')
+  exportCSV(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.exportCSV(query, readRequestContext(headers));
+  }
+
+  @Get('export/json')
+  exportJSON(
+    @Query() query: AnalyticsQuery,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.analyticsService.exportJSON(query, readRequestContext(headers));
+  }
 }

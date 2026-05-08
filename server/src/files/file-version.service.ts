@@ -6,6 +6,7 @@ import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
 import { KopiaService, type KopiaSnapshotVersion } from './kopia.service';
+import { clean, asRecord, readDate, sha256, errorMessage, toNumber, readInt } from '../common/utils';
 
 @Injectable()
 export class FileVersionService {
@@ -64,7 +65,7 @@ export class FileVersionService {
       if (!row) {
         return null;
       }
-      const targetMode = this.clean(body.targetMode) ?? 'download_copy';
+      const targetMode = clean(body.targetMode) ?? 'download_copy';
       const request = await client.query(
         `
         INSERT INTO file_version_download_requests (
@@ -86,8 +87,8 @@ export class FileVersionService {
           row.provider,
           row.version_ref,
           targetMode,
-          this.clean(body.targetPath),
-          this.clean(body.auditNote),
+          clean(body.targetPath),
+          clean(body.auditNote),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'files.version.download_request', {
@@ -105,7 +106,7 @@ export class FileVersionService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const rootPath = this.clean(body.rootPath);
+    const rootPath = clean(body.rootPath);
     if (!rootPath) {
       return { ok: false, reason: 'rootPath_required' };
     }
@@ -114,7 +115,7 @@ export class FileVersionService {
       await this.database.transaction(async (client) => {
         await this.recordAudit(client, userId, deviceId, 'files.kopia.snapshot.create', {
           rootPath,
-          rootId: this.clean(body.rootId),
+          rootId: clean(body.rootId),
           snapshotCount: snapshot.snapshots.length,
         });
       });
@@ -123,10 +124,10 @@ export class FileVersionService {
       await this.database.transaction(async (client) => {
         await this.recordAudit(client, userId, deviceId, 'files.kopia.snapshot.failed', {
           rootPath,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         });
       });
-      return { ok: false, reason: this.errorMessage(error) };
+      return { ok: false, reason: errorMessage(error) };
     }
   }
 
@@ -136,14 +137,14 @@ export class FileVersionService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const fileId = this.clean(body.fileId);
-    const filePath = this.clean(body.filePath);
+    const fileId = clean(body.fileId);
+    const filePath = clean(body.filePath);
     if (!fileId || !filePath) {
       return { ok: false, reason: 'fileId_and_filePath_required' };
     }
     try {
       const listed = await this.kopiaService.listSnapshots(filePath);
-      const displayName = this.clean(body.displayName) ?? basename(filePath);
+      const displayName = clean(body.displayName) ?? basename(filePath);
       const versions = await this.database.transaction(async (client) => {
         const saved: QueryResultRow[] = [];
         for (const snapshot of listed.snapshots) {
@@ -152,7 +153,7 @@ export class FileVersionService {
             filePath,
             displayName,
             context,
-            this.clean(body.rootId),
+            clean(body.rootId),
           );
           const versionUid = this.buildKopiaVersionUid(
             fileId,
@@ -208,7 +209,7 @@ export class FileVersionService {
               snapshot.versionRef,
               snapshot.displayName,
               snapshot.sizeBytes,
-              this.readDate(snapshot.modifiedAt),
+              readDate(snapshot.modifiedAt),
               snapshot.checksum,
               context.deviceId,
               `Kopia snapshot ${snapshot.snapshotId}`,
@@ -230,10 +231,10 @@ export class FileVersionService {
         await this.recordAudit(client, userId, deviceId, 'files.kopia.versions.failed', {
           fileId,
           filePath,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         });
       });
-      return { ok: false, reason: this.errorMessage(error), versions: [] };
+      return { ok: false, reason: errorMessage(error), versions: [] };
     }
   }
 
@@ -244,7 +245,7 @@ export class FileVersionService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const targetPath = this.clean(body.targetPath);
+    const targetPath = clean(body.targetPath);
     if (!targetPath) {
       return { ok: false, reason: 'targetPath_required' };
     }
@@ -262,7 +263,7 @@ export class FileVersionService {
       if (!row) {
         return { ok: false, reason: 'version_not_found' };
       }
-      const metadata = this.asRecord(row.metadata);
+      const metadata = asRecord(row.metadata);
       const objectPath = this.resolveKopiaRestoreObjectPath(metadata);
       const request = await client.query(
         `
@@ -287,7 +288,7 @@ export class FileVersionService {
           row.provider,
           row.version_ref,
           targetPath,
-          this.clean(body.auditNote),
+          clean(body.auditNote),
         ],
       );
       try {
@@ -324,9 +325,9 @@ export class FileVersionService {
           versionId,
           requestId: request.rows[0].id,
           targetPath,
-          error: this.errorMessage(error),
+          error: errorMessage(error),
         });
-        return { ok: false, reason: this.errorMessage(error), request: request.rows[0] };
+        return { ok: false, reason: errorMessage(error), request: request.rows[0] };
       }
     });
     return result;
@@ -352,16 +353,16 @@ export class FileVersionService {
     if (!row) {
       return { ok: false, reason: 'version_not_found' };
     }
-    const metadata = this.asRecord(row.metadata);
+    const metadata = asRecord(row.metadata);
     const prepare = await this.kopiaService.prepareRestore(
       String(row.version_ref),
       this.resolveKopiaRestoreObjectPath(metadata),
-      this.clean(body.targetPath),
+      clean(body.targetPath),
     );
     await this.database.transaction(async (client) => {
       await this.recordAudit(client, userId, deviceId, 'files.kopia.restore.prepare', {
         versionId,
-        targetPath: this.clean(body.targetPath),
+        targetPath: clean(body.targetPath),
       });
     });
     return { ok: true, prepare };
@@ -416,13 +417,13 @@ export class FileVersionService {
       `,
       [
         userId,
-        this.clean(body.fileUid),
-        this.clean(body.path) ?? '/',
-        this.clean(body.providerA) ?? 'server_storage',
-        this.clean(body.providerB) ?? 'onedrive',
-        JSON.stringify(this.asRecord(body.versionA)),
-        JSON.stringify(this.asRecord(body.versionB)),
-        this.clean(body.reason) ?? 'provider_version_mismatch',
+        clean(body.fileUid),
+        clean(body.path) ?? '/',
+        clean(body.providerA) ?? 'server_storage',
+        clean(body.providerB) ?? 'onedrive',
+        JSON.stringify(asRecord(body.versionA)),
+        JSON.stringify(asRecord(body.versionB)),
+        clean(body.reason) ?? 'provider_version_mismatch',
       ],
     );
     return { ok: true, conflict: result.rows[0] };
@@ -446,11 +447,11 @@ export class FileVersionService {
         WHERE user_id = $1 AND id = $2 AND status = 'open'
         RETURNING id::text AS id, status, resolution
         `,
-        [userId, conflictId, JSON.stringify(this.asRecord(body.resolution ?? body))],
+        [userId, conflictId, JSON.stringify(asRecord(body.resolution ?? body))],
       );
       await this.recordAudit(client, userId, deviceId, 'files.conflict.resolve', {
         conflictId,
-        resolution: this.asRecord(body.resolution ?? body),
+        resolution: asRecord(body.resolution ?? body),
       });
       return resolved.rows[0] ?? null;
     });
@@ -463,7 +464,7 @@ export class FileVersionService {
     sourcePath: string,
   ) {
     const normalizedPath = sourcePath.replace(/\\/g, '/');
-    const sourceHash = this.sha256(Buffer.from(normalizedPath)).slice(0, 16);
+    const sourceHash = sha256(Buffer.from(normalizedPath)).slice(0, 16);
     return ['kopia', fileId, snapshotId, sourceHash].join(':');
   }
 
@@ -489,11 +490,11 @@ export class FileVersionService {
 
   private resolveKopiaRestoreObjectPath(metadata: Record<string, unknown>) {
     return (
-      this.clean(metadata.objectPath) ??
-      this.clean(metadata.targetPath) ??
-      this.clean(metadata.sourcePath) ??
-      this.clean(metadata.filePath) ??
-      this.clean(metadata.relativePath)
+      clean(metadata.objectPath) ??
+      clean(metadata.targetPath) ??
+      clean(metadata.sourcePath) ??
+      clean(metadata.filePath) ??
+      clean(metadata.relativePath)
     );
   }
 
@@ -527,32 +528,4 @@ export class FileVersionService {
     );
   }
 
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
-
-  private readDate(value: unknown) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-      return null;
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private sha256(buffer: Buffer) {
-    return createHash('sha256').update(buffer).digest('hex');
-  }
-
-  private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
 }

@@ -160,4 +160,21 @@ export class ReportsController {
   weatherSummary(@Query() query: ReportsQuery, @Headers() headers: Record<string, unknown>) {
     return this.reportsService.weatherSummary(query, readRequestContext(headers));
   }
+
+  @Get('reports/:reportId/quality')
+  reportQuality(
+    @Param('reportId') reportId: string,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.reportsService.reportQualityScore(reportId, readRequestContext(headers));
+  }
+
+  @Get('reports/:reportId/compare')
+  compareReports(
+    @Param('reportId') reportId: string,
+    @Query('with') compareWithId: string,
+    @Headers() headers: Record<string, unknown>,
+  ) {
+    return this.reportsService.compareReports(reportId, compareWithId, readRequestContext(headers));
+  }
 }

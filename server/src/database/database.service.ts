@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { errorMessage } from '../common/utils';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy, OnModuleInit {
@@ -32,7 +33,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
       throw new Error(
         [
           'FlowPlanV2 could not connect to PostgreSQL with FLOWPLANV2_DATABASE_URL/DATABASE_URL.',
-          this.errorMessage(error),
+          errorMessage(error),
           'Check that PostgreSQL is running, the database exists, credentials are correct, and the schema has been applied with: cd server; npm run db:schema',
         ].join(' '),
       );
@@ -65,10 +66,6 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
 
   async onModuleDestroy() {
     await this.pool.end();
-  }
-
-  private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
   }
 }
 

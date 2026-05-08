@@ -5,6 +5,8 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord, readIsoDate, readInt, readLimit, readOffset, iso, toNumber, hashJson } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
 
 export interface TrackingIngestQuery {
   status?: string;
@@ -15,11 +17,28 @@ export interface TrackingIngestQuery {
   offset?: string;
 }
 
+/**
+ * Batch lifecycle states:
+ *   open       → batch created, no chunks yet (or still receiving)
+ *   receiving  → at least one chunk received
+ *   processing → completeBatch was called, normalization in progress
+ *   completed  → all records accepted
+ *   completed_with_rejections → some records rejected during normalization
+ *   failed     → chunk decode failure or other fatal error
+ */
+type BatchStatus =
+  | 'open'
+  | 'receiving'
+  | 'processing'
+  | 'completed'
+  | 'completed_with_rejections'
+  | 'failed';
+
 type BatchRow = QueryResultRow & {
   id: string;
   batch_uid: string;
   data_kind: string;
-  status: string;
+  status: BatchStatus;
   compression: string;
 };
 
@@ -32,6 +51,7 @@ type NormalizedTrackingEvent = {
 };
 
 const MAX_SYNC_UID_BYTES = 180;
+const DEFAULT_CHUNK_INDEX = 0;
 
 @Injectable()
 export class TrackingService {
@@ -40,36 +60,32 @@ export class TrackingService {
     private readonly devicesService: DevicesService,
   ) {}
 
+  // ====================================================================
+  // createBatch
+  // ====================================================================
+
   async createBatch(
     body: Record<string, unknown>,
     context: FlowPlanV2RequestContext,
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const batchUid = this.clean(body.batchUid) ?? randomUUID();
-    const dataKind = this.clean(body.dataKind) ?? 'mixed';
-    const compression = this.clean(body.compression) ?? 'none';
+    const batchUid = clean(body.batchUid) ?? randomUUID();
+    const dataKind = clean(body.dataKind) ?? 'mixed';
+    const compression = clean(body.compression) ?? 'none';
     const records = this.readRecords(body);
     const payloadHash =
-      this.clean(body.payloadHash) ?? (records.length > 0 ? this.hashJson(records) : null);
-    const startAt = this.readDate(body.startAt);
-    const endAt = this.readDate(body.endAt);
+      clean(body.payloadHash) ??
+      (records.length > 0 ? hashJson(records) : null);
+    const startAt = readIsoDate(body.startAt);
+    const endAt = readIsoDate(body.endAt);
 
     const batch = await this.database.transaction(async (client) => {
       const result = await client.query<QueryResultRow>(
         `
         INSERT INTO tracking_ingest_batches (
-          user_id,
-          device_id,
-          batch_uid,
-          data_kind,
-          status,
-          compression,
-          payload_hash,
-          start_at,
-          end_at,
-          raw_event_count,
-          metadata
+          user_id, device_id, batch_uid, data_kind, status, compression,
+          payload_hash, start_at, end_at, raw_event_count, metadata
         ) VALUES ($1, $2, $3, $4, 'open', $5, $6, $7, $8, $9, $10::jsonb)
         ON CONFLICT (user_id, device_id, batch_uid) DO UPDATE SET
           data_kind = EXCLUDED.data_kind,
@@ -80,48 +96,28 @@ export class TrackingService {
           raw_event_count = GREATEST(tracking_ingest_batches.raw_event_count, EXCLUDED.raw_event_count),
           metadata = tracking_ingest_batches.metadata || EXCLUDED.metadata,
           updated_at = now()
-        RETURNING
-          id::text AS "batchId",
-          batch_uid AS "batchUid",
-          data_kind AS "dataKind",
-          status,
-          compression,
-          raw_event_count AS "rawEventCount",
-          accepted_event_count AS "acceptedEventCount",
-          rejected_event_count AS "rejectedEventCount",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
+        RETURNING id::text AS "batchId", batch_uid AS "batchUid", data_kind AS "dataKind",
+                  status, compression, raw_event_count AS "rawEventCount",
+                  accepted_event_count AS "acceptedEventCount",
+                  rejected_event_count AS "rejectedEventCount",
+                  created_at AS "createdAt", updated_at AS "updatedAt"
         `,
         [
-          userId,
-          deviceId,
-          batchUid,
-          dataKind,
-          compression,
-          payloadHash,
-          startAt,
-          endAt,
-          records.length,
-          JSON.stringify(this.asRecord(body.metadata)),
+          userId, deviceId, batchUid, dataKind, compression,
+          payloadHash, startAt, endAt, records.length,
+          JSON.stringify(asRecord(body.metadata)),
         ],
       );
-      const row = result.rows[0];
-      await this.recordAudit(client, userId, deviceId, 'tracking.ingest.batch.create', {
-        batchId: row?.batchId,
-        batchUid,
-        dataKind,
-        rawEventCount: records.length,
-      });
-      return row;
+      return result.rows[0];
     });
 
     if (records.length > 0) {
       await this.appendChunk(
         String(batch.batchId),
         {
-          chunkIndex: 0,
+          chunkIndex: DEFAULT_CHUNK_INDEX,
           payload: { records },
-          checksum: this.hashJson(records),
+          checksum: hashJson(records),
         },
         context,
       );
@@ -130,6 +126,10 @@ export class TrackingService {
     return { ok: true, batch };
   }
 
+  // ====================================================================
+  // appendChunk
+  // ====================================================================
+
   async appendChunk(
     batchId: string,
     body: Record<string, unknown>,
@@ -137,7 +137,7 @@ export class TrackingService {
   ) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const chunkIndex = this.readNumber(body.chunkIndex, -1);
+    const chunkIndex = readInt(body.chunkIndex, -1);
     if (chunkIndex < 0) {
       throw new BadRequestException('chunkIndex is required');
     }
@@ -145,13 +145,21 @@ export class TrackingService {
     if (!batch) {
       throw new BadRequestException('tracking ingest batch not found');
     }
-    const payload = this.asRecord(body.payload);
-    const payloadBase64 = this.clean(body.payloadBase64);
+    // Cannot append chunks to a batch that is already processing/completed/failed
+    if (batch.status === 'processing' || batch.status === 'completed' ||
+        batch.status === 'completed_with_rejections' || batch.status === 'failed') {
+      throw new BadRequestException(
+        `batch status '${batch.status}' does not accept new chunks`,
+      );
+    }
+
+    const payload = asRecord(body.payload);
+    const payloadBase64 = clean(body.payloadBase64);
     const sizeBytes = payloadBase64
       ? Buffer.from(payloadBase64, 'base64').length
       : Buffer.byteLength(JSON.stringify(payload));
     const checksum =
-      this.clean(body.checksum) ??
+      clean(body.checksum) ??
       createHash('sha256')
         .update(payloadBase64 ?? JSON.stringify(payload))
         .digest('hex');
@@ -160,14 +168,8 @@ export class TrackingService {
       const result = await client.query<QueryResultRow>(
         `
         INSERT INTO tracking_ingest_chunks (
-          user_id,
-          batch_id,
-          chunk_index,
-          payload,
-          payload_base64,
-          checksum,
-          size_bytes,
-          status
+          user_id, batch_id, chunk_index, payload, payload_base64,
+          checksum, size_bytes, status
         ) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, 'received')
         ON CONFLICT (user_id, batch_id, chunk_index) DO UPDATE SET
           payload = EXCLUDED.payload,
@@ -178,15 +180,7 @@ export class TrackingService {
           created_at = now()
         RETURNING id::text AS id, chunk_index AS "chunkIndex", size_bytes AS "sizeBytes", checksum, status
         `,
-        [
-          userId,
-          batchId,
-          chunkIndex,
-          JSON.stringify(payload),
-          payloadBase64,
-          checksum,
-          sizeBytes,
-        ],
+        [userId, batchId, chunkIndex, JSON.stringify(payload), payloadBase64, checksum, sizeBytes],
       );
       await client.query(
         `
@@ -196,15 +190,14 @@ export class TrackingService {
         `,
         [userId, batchId],
       );
-      await this.recordAudit(client, userId, deviceId, 'tracking.ingest.chunk.receive', {
-        batchId,
-        chunkIndex,
-        sizeBytes,
-      });
       return result.rows[0];
     });
     return { ok: true, chunk };
   }
+
+  // ====================================================================
+  // completeBatch
+  // ====================================================================
 
   async completeBatch(
     batchId: string,
@@ -217,6 +210,28 @@ export class TrackingService {
     if (!batch) {
       throw new BadRequestException('tracking ingest batch not found');
     }
+    // Prevent double-processing
+    if (batch.status === 'completed' || batch.status === 'completed_with_rejections') {
+      return {
+        ok: true,
+        batchId,
+        message: `batch already completed (status: ${batch.status})`,
+      };
+    }
+    if (batch.status === 'processing') {
+      return { ok: false, batchId, reason: 'batch is already being processed' };
+    }
+    if (batch.status === 'failed') {
+      return { ok: false, batchId, reason: 'batch previously failed' };
+    }
+
+    // Mark as processing to prevent concurrent completion
+    await this.database.query(
+      `UPDATE tracking_ingest_batches
+       SET status = 'processing', updated_at = now()
+       WHERE user_id = $1 AND id = $2 AND status IN ('open', 'receiving')`,
+      [userId, batchId],
+    );
 
     const directRecords = this.readRecords(body);
     let chunkRecords: unknown[];
@@ -226,23 +241,22 @@ export class TrackingService {
       const message = error instanceof Error ? error.message : String(error);
       await this.database.transaction(async (client) => {
         await client.query(
-          `
-          UPDATE tracking_ingest_batches
-          SET status = 'failed', error_message = $3, updated_at = now()
-          WHERE user_id = $1 AND id = $2
-          `,
+          `UPDATE tracking_ingest_batches
+           SET status = 'failed', error_message = $3, updated_at = now()
+           WHERE user_id = $1 AND id = $2`,
           [userId, batchId, message],
         );
         await this.recordAudit(client, userId, deviceId, 'tracking.ingest.batch.failed', {
-          batchId,
-          errorMessage: message,
+          batchId, errorMessage: message,
         });
       });
       return { ok: false, batchId, reason: 'chunk_decode_failed', error: message };
     }
+
     const records = [...chunkRecords, ...directRecords];
     let accepted = 0;
     let rejected = 0;
+    let deduplicated = 0;
     const rejectedSamples: Array<Record<string, unknown>> = [];
 
     await this.database.transaction(async (client) => {
@@ -256,21 +270,29 @@ export class TrackingService {
         if (!normalized) {
           rejected += 1;
           if (rejectedSamples.length < 10) {
-            rejectedSamples.push(this.asRecord(records[index]));
+            rejectedSamples.push(asRecord(records[index]));
           }
           continue;
         }
+
+        // Check for existing object to count deduplication
+        const existing = await client.query<QueryResultRow>(
+          `SELECT id, server_version FROM sync_objects
+           WHERE user_id = $1 AND object_type = $2 AND uid = $3 AND deleted_at IS NULL
+           LIMIT 1`,
+          [userId, normalized.objectType, normalized.uid],
+        );
+
+        const isDuplicate = existing.rows.length > 0;
+
         const row = await client.query<QueryResultRow>(
           `
           INSERT INTO sync_objects (
-            user_id,
-            object_type,
-            uid,
-            payload,
-            origin_device_id,
-            last_modified_device_id
+            user_id, object_type, uid, payload,
+            origin_device_id, last_modified_device_id
           ) VALUES ($1, $2, $3, $4::jsonb, $5, $5)
-          ON CONFLICT (user_id, object_type, uid) WHERE uid IS NOT NULL AND deleted_at IS NULL DO UPDATE SET
+          ON CONFLICT (user_id, object_type, uid) WHERE uid IS NOT NULL AND deleted_at IS NULL
+          DO UPDATE SET
             payload = sync_objects.payload || EXCLUDED.payload,
             server_version = sync_objects.server_version + 1,
             last_modified_device_id = EXCLUDED.last_modified_device_id,
@@ -290,47 +312,46 @@ export class TrackingService {
             deviceId,
           ],
         );
+
         const syncObject = row.rows[0];
         await this.recordChange(
-          client,
-          userId,
-          deviceId,
-          String(syncObject.id),
-          String(syncObject.object_type),
+          client, userId, deviceId,
+          String(syncObject.id), String(syncObject.object_type),
           Number(syncObject.server_version ?? 1),
-          this.asRecord(syncObject.payload),
+          asRecord(syncObject.payload),
         );
+
+        if (isDuplicate) {
+          deduplicated += 1;
+        }
         accepted += 1;
       }
+
+      const finalStatus: BatchStatus =
+        rejected === 0 && deduplicated === 0 ? 'completed' : 'completed_with_rejections';
 
       await client.query(
         `
         UPDATE tracking_ingest_batches
-        SET
-          status = CASE WHEN $5::int = 0 THEN 'completed' ELSE 'completed_with_rejections' END,
-          raw_event_count = $3,
-          accepted_event_count = $4,
-          rejected_event_count = $5,
-          error_message = CASE WHEN $5::int = 0 THEN NULL ELSE 'Some tracking records were rejected during normalization' END,
-          metadata = metadata || $6::jsonb,
-          updated_at = now(),
-          completed_at = now()
+        SET status = $6,
+            raw_event_count = $3,
+            accepted_event_count = $4,
+            rejected_event_count = $5,
+            error_message = CASE WHEN $5::int = 0 THEN NULL
+                                 ELSE 'Some tracking records were rejected during normalization' END,
+            metadata = metadata || $7::jsonb,
+            updated_at = now(),
+            completed_at = now()
         WHERE user_id = $1 AND id = $2
         `,
         [
-          userId,
-          batchId,
-          records.length,
-          accepted,
-          rejected,
-          JSON.stringify({ rejectedSamples }),
+          userId, batchId, records.length, accepted, rejected,
+          finalStatus,
+          JSON.stringify({ rejectedSamples, deduplicatedCount: deduplicated }),
         ],
       );
       await this.recordAudit(client, userId, deviceId, 'tracking.ingest.batch.complete', {
-        batchId,
-        rawEventCount: records.length,
-        accepted,
-        rejected,
+        batchId, rawEventCount: records.length, accepted, rejected, deduplicated,
       });
     });
 
@@ -340,35 +361,32 @@ export class TrackingService {
       rawEventCount: records.length,
       accepted,
       rejected,
+      deduplicated,
       rejectedSamples,
     };
   }
 
+  // ====================================================================
+  // batches / summary
+  // ====================================================================
+
   async batches(query: TrackingIngestQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const limit = this.readLimit(query.limit, 100);
-    const offset = this.readOffset(query.offset);
-    const status = this.clean(query.status);
-    const dataKind = this.clean(query.dataKind);
+    const limit = readLimit(query.limit, 100);
+    const offset = readOffset(query.offset);
+    const status = clean(query.status);
+    const dataKind = clean(query.dataKind);
     const result = await this.database.query<QueryResultRow>(
       `
       SELECT
-        b.id::text AS id,
-        b.batch_uid AS "batchUid",
-        b.data_kind AS "dataKind",
-        b.status,
-        b.compression,
-        b.raw_event_count AS "rawEventCount",
+        b.id::text AS id, b.batch_uid AS "batchUid", b.data_kind AS "dataKind",
+        b.status, b.compression, b.raw_event_count AS "rawEventCount",
         b.accepted_event_count AS "acceptedEventCount",
         b.rejected_event_count AS "rejectedEventCount",
-        b.error_message AS "errorMessage",
-        b.start_at AS "startAt",
-        b.end_at AS "endAt",
-        b.created_at AS "createdAt",
-        b.updated_at AS "updatedAt",
-        b.completed_at AS "completedAt",
-        d.device_name AS "deviceName",
-        d.platform
+        b.error_message AS "errorMessage", b.start_at AS "startAt",
+        b.end_at AS "endAt", b.created_at AS "createdAt",
+        b.updated_at AS "updatedAt", b.completed_at AS "completedAt",
+        d.device_name AS "deviceName", d.platform
       FROM tracking_ingest_batches b
       LEFT JOIN devices d ON d.id = b.device_id
       WHERE b.user_id = $1
@@ -384,75 +402,45 @@ export class TrackingService {
 
   async summary(query: TrackingIngestQuery, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
-    const start = this.readDate(query.start);
-    const end = this.readDate(query.end);
+    const start = readIsoDate(query.start);
+    const end = readIsoDate(query.end);
     const trackingObjectTypes = [
-      'raw_activity_log',
-      'activity_record',
-      'tracked_input_event',
-      'activity_records',
-      'tracked_input_events',
+      ObjectType.RAW_ACTIVITY_LOG,
+      ObjectType.ACTIVITY_RECORD,
+      ObjectType.TRACKED_INPUT_EVENT,
     ];
     const [batches, objects, latestObjects, recentError, recent] = await Promise.all([
       this.database.query<QueryResultRow>(
-        `
-        SELECT status AS name, COUNT(*)::int AS count
-        FROM tracking_ingest_batches
-        WHERE user_id = $1
-        GROUP BY status
-        ORDER BY status ASC
-        `,
+        `SELECT status AS name, COUNT(*)::int AS count
+         FROM tracking_ingest_batches WHERE user_id = $1
+         GROUP BY status ORDER BY status ASC`,
         [userId],
       ),
       this.database.query<QueryResultRow>(
-        `
-        SELECT object_type AS name, COUNT(*)::int AS count
-        FROM sync_objects
-        WHERE user_id = $1
-          AND deleted_at IS NULL
-          AND object_type = ANY($2::text[])
-          AND ($3::timestamptz IS NULL OR updated_at >= $3)
-          AND ($4::timestamptz IS NULL OR updated_at < $4)
-        GROUP BY object_type
-        ORDER BY count DESC
-        `,
-        [
-          userId,
-          trackingObjectTypes,
-          start,
-          end,
-        ],
+        `SELECT object_type AS name, COUNT(*)::int AS count
+         FROM sync_objects
+         WHERE user_id = $1 AND deleted_at IS NULL
+           AND object_type = ANY($2::text[])
+           AND ($3::timestamptz IS NULL OR updated_at >= $3)
+           AND ($4::timestamptz IS NULL OR updated_at < $4)
+         GROUP BY object_type ORDER BY count DESC`,
+        [userId, trackingObjectTypes, start, end],
       ),
       this.database.query<QueryResultRow>(
-        `
-        SELECT object_type AS name, MAX(updated_at) AS "latestReceivedAt"
-        FROM sync_objects
-        WHERE user_id = $1
-          AND deleted_at IS NULL
-          AND object_type = ANY($2::text[])
-        GROUP BY object_type
-        ORDER BY object_type ASC
-        `,
+        `SELECT object_type AS name, MAX(updated_at) AS "latestReceivedAt"
+         FROM sync_objects
+         WHERE user_id = $1 AND deleted_at IS NULL
+           AND object_type = ANY($2::text[])
+         GROUP BY object_type ORDER BY object_type ASC`,
         [userId, trackingObjectTypes],
       ),
       this.database.query<QueryResultRow>(
-        `
-        SELECT
-          id::text AS id,
-          batch_uid AS "batchUid",
-          data_kind AS "dataKind",
-          status,
-          error_message AS "errorMessage",
-          updated_at AS "updatedAt"
-        FROM tracking_ingest_batches
-        WHERE user_id = $1
-          AND (
-            error_message IS NOT NULL
-            OR status IN ('failed', 'completed_with_rejections')
-          )
-        ORDER BY updated_at DESC
-        LIMIT 1
-        `,
+        `SELECT id::text AS id, batch_uid AS "batchUid", data_kind AS "dataKind",
+                status, error_message AS "errorMessage", updated_at AS "updatedAt"
+         FROM tracking_ingest_batches
+         WHERE user_id = $1 AND (error_message IS NOT NULL
+                OR status IN ('failed', 'completed_with_rejections'))
+         ORDER BY updated_at DESC LIMIT 1`,
         [userId],
       ),
       this.batches({ limit: '10' }, context),
@@ -467,40 +455,35 @@ export class TrackingService {
     };
   }
 
+  // ====================================================================
+  // private helpers
+  // ====================================================================
+
   private async findBatch(userId: string, batchId: string) {
     if (!this.isUuid(batchId)) {
       throw new BadRequestException('tracking ingest batchId must be a uuid');
     }
     const result = await this.database.query<BatchRow>(
-      `
-      SELECT id::text, batch_uid, data_kind, status, compression
-      FROM tracking_ingest_batches
-      WHERE user_id = $1 AND id = $2
-      LIMIT 1
-      `,
+      `SELECT id::text, batch_uid, data_kind, status, compression
+       FROM tracking_ingest_batches
+       WHERE user_id = $1 AND id = $2 LIMIT 1`,
       [userId, batchId],
     );
     return result.rows[0] ?? null;
   }
 
   private isUuid(value: string) {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    );
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private async readChunkRecords(
-    userId: string,
-    batchId: string,
-    compression: string,
+    userId: string, batchId: string, compression: string,
   ) {
     const chunks = await this.database.query<QueryResultRow>(
-      `
-      SELECT payload, payload_base64 AS "payloadBase64"
-      FROM tracking_ingest_chunks
-      WHERE user_id = $1 AND batch_id = $2 AND status = 'received'
-      ORDER BY chunk_index ASC
-      `,
+      `SELECT payload, payload_base64 AS "payloadBase64"
+       FROM tracking_ingest_chunks
+       WHERE user_id = $1 AND batch_id = $2 AND status = 'received'
+       ORDER BY chunk_index ASC`,
       [userId, batchId],
     );
     const records: unknown[] = [];
@@ -511,7 +494,7 @@ export class TrackingService {
   }
 
   private readRecordsFromChunk(row: QueryResultRow, compression: string) {
-    const payloadBase64 = this.clean(row.payloadBase64);
+    const payloadBase64 = clean(row.payloadBase64);
     if (payloadBase64) {
       const buffer = Buffer.from(payloadBase64, 'base64');
       const jsonText =
@@ -524,36 +507,41 @@ export class TrackingService {
   }
 
   private normalizeRecord(
-    value: unknown,
-    batchUid: string,
-    dataKind: string,
-    index: number,
+    value: unknown, batchUid: string, dataKind: string, index: number,
   ): NormalizedTrackingEvent | null {
-    const record = this.asRecord(value);
-    if (Object.keys(record).length === 0) {
+    const record = asRecord(value);
+    if (Object.keys(record).length === 0) return null;
+
+    const objectType =
+      clean(record.objectType) ??
+      this.objectTypeForKind(clean(record.kind) ?? dataKind);
+
+    // Reject if objectType is not a recognised tracking type
+    const validTypes: readonly string[] = [
+      ObjectType.RAW_ACTIVITY_LOG,
+      ObjectType.ACTIVITY_RECORD,
+      ObjectType.TRACKED_INPUT_EVENT,
+    ];
+    if (!validTypes.includes(objectType)) {
       return null;
     }
-    const objectType =
-      this.clean(record.objectType) ??
-      this.objectTypeForKind(this.clean(record.kind) ?? dataKind);
-    const startAt = this.readDate(
-      record.startAt ??
-        record.startTime ??
-        record.startedAt ??
-        record.timestamp ??
-        record.occurredAt,
+
+    const startAt = readIsoDate(
+      record.startAt ?? record.startTime ?? record.startedAt ??
+      record.timestamp ?? record.occurredAt,
     );
     const endAt =
-      this.readDate(record.endAt ?? record.endTime ?? record.endedAt) ??
+      readIsoDate(record.endAt ?? record.endTime ?? record.endedAt) ??
       (startAt
-        ? new Date(startAt.getTime() + Math.max(60, Number(record.durationSeconds ?? 60)) * 1000)
+        ? new Date(startAt.getTime() +
+            Math.max(60, Number(record.durationSeconds ?? 60)) * 1000)
         : null);
+
     const rawUid =
-      this.clean(record.uid) ??
-      this.clean(record.id) ??
-      this.clean(record.eventId) ??
-      `${batchUid}:${index}`;
+      clean(record.uid) ?? clean(record.id) ??
+      clean(record.eventId) ?? `${batchUid}:${index}`;
     const uid = this.normalizeSyncUid(objectType, rawUid);
+
     return {
       uid,
       objectType,
@@ -570,85 +558,58 @@ export class TrackingService {
   }
 
   private normalizeSyncUid(objectType: string, rawUid: string) {
-    if (Buffer.byteLength(rawUid, 'utf8') <= MAX_SYNC_UID_BYTES) {
-      return rawUid;
-    }
+    if (Buffer.byteLength(rawUid, 'utf8') <= MAX_SYNC_UID_BYTES) return rawUid;
     const digest = createHash('sha256').update(rawUid).digest('hex').slice(0, 32);
     return `tracking:${objectType}:${digest}`;
   }
 
-  private objectTypeForKind(kind: string) {
-    if (kind === 'input' || kind === 'input_event' || kind === 'tracked_input_event') {
-      return 'tracked_input_event';
+  private objectTypeForKind(kind: string): string {
+    if (kind === 'input' || kind === 'input_event' || kind === ObjectType.TRACKED_INPUT_EVENT) {
+      return ObjectType.TRACKED_INPUT_EVENT;
     }
-    if (kind === 'activity_record' || kind === 'activity_records') {
-      return 'activity_record';
+    if (kind === ObjectType.ACTIVITY_RECORD || kind === 'activity_records') {
+      return ObjectType.ACTIVITY_RECORD;
     }
-    return 'raw_activity_log';
+    return ObjectType.RAW_ACTIVITY_LOG;
   }
 
   private readRecords(value: unknown): unknown[] {
-    if (Array.isArray(value)) {
-      return value;
-    }
-    const record = this.asRecord(value);
-    if (Array.isArray(record.records)) {
-      return record.records;
-    }
-    if (Array.isArray(record.events)) {
-      return record.events;
-    }
-    if (Array.isArray(record.items)) {
-      return record.items;
-    }
+    if (Array.isArray(value)) return value;
+    const record = asRecord(value);
+    if (Array.isArray(record.records)) return record.records;
+    if (Array.isArray(record.events)) return record.events;
+    if (Array.isArray(record.items)) return record.items;
     return [];
   }
 
   private async recordChange(
-    client: TransactionClient,
-    userId: string,
-    deviceId: string,
-    objectId: string,
-    objectType: string,
-    serverVersion: number,
+    client: TransactionClient, userId: string, deviceId: string,
+    objectId: string, objectType: string, serverVersion: number,
     payload: Record<string, unknown>,
   ) {
     await client.query(
-      `
-      INSERT INTO sync_changes (
-        user_id, device_id, server_object_id, object_type, action, server_version, payload
-      ) VALUES ($1, $2, $3, $4, 'upsert', $5, $6::jsonb)
-      `,
+      `INSERT INTO sync_changes (
+         user_id, device_id, server_object_id, object_type, action, server_version, payload
+       ) VALUES ($1, $2, $3, $4, 'upsert', $5, $6::jsonb)`,
       [userId, deviceId, objectId, objectType, serverVersion, JSON.stringify(payload)],
     );
   }
 
   private async recordAudit(
-    client: TransactionClient,
-    userId: string,
-    deviceId: string,
-    action: string,
-    details: Record<string, unknown>,
+    client: TransactionClient, userId: string, deviceId: string,
+    action: string, details: Record<string, unknown>,
   ) {
     await client.query(
-      `
-      INSERT INTO audit_logs (
-        user_id, device_id, actor, action, entity_type, entity_id, summary, metadata
-      ) VALUES ($1, $2, 'server', $3, 'tracking_ingest', $4, $3, $5::jsonb)
-      `,
-      [
-        userId,
-        deviceId,
-        action,
-        details.batchId ? String(details.batchId) : null,
-        JSON.stringify(details),
-      ],
+      `INSERT INTO audit_logs (
+         user_id, device_id, actor, action, entity_type, entity_id, summary, metadata
+       ) VALUES ($1, $2, 'server', $3, 'tracking_ingest', $4, $3, $5::jsonb)`,
+      [userId, deviceId, action, details.batchId ? String(details.batchId) : null, JSON.stringify(details)],
     );
   }
 
   private countMap(rows: QueryResultRow[]) {
     return Object.fromEntries(
-      rows.map((row) => [String(row.name ?? 'unknown'), this.toNumber(row.count)]),
+      rows.map((row) => [String(row.name ?? 'unknown'), toNumber(row.count)]),
     );
   }
 
@@ -656,73 +617,8 @@ export class TrackingService {
     return Object.fromEntries(
       rows.map((row) => [
         String(row.name ?? 'unknown'),
-        row.latestReceivedAt ? this.iso(row.latestReceivedAt) : null,
+        row.latestReceivedAt ? iso(row.latestReceivedAt) : null,
       ]),
     );
-  }
-
-  private hashJson(value: unknown) {
-    return createHash('sha256').update(JSON.stringify(value)).digest('hex');
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
-
-  private readDate(value: unknown) {
-    if (value instanceof Date) {
-      return Number.isNaN(value.getTime()) ? null : value;
-    }
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const text = value.trim();
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
-      return null;
-    }
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readLimit(value: string | undefined, fallback: number) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed)
-      ? Math.max(1, Math.min(500, Math.trunc(parsed)))
-      : fallback;
-  }
-
-  private readOffset(value: string | undefined) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-  }
-
-  private iso(value: unknown) {
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-    const parsed = new Date(String(value));
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-
-  private toNumber(value: unknown) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
   }
 }

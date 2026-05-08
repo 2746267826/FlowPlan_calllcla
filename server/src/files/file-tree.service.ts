@@ -6,6 +6,7 @@ import { QueryResultRow } from 'pg';
 import { FlowPlanV2RequestContext } from '../common/request-context';
 import { DatabaseService, TransactionClient } from '../database/database.service';
 import { DevicesService } from '../devices/devices.service';
+import { clean, asRecord, readInt, readDate, errorMessage, basename, readNullableNumber } from '../common/utils';
 
 type DriveScanProgress = {
   scanned: number;
@@ -39,8 +40,8 @@ export class FileTreeService {
       [userId, rootId],
     );
     const root = rootResult.rows[0];
-    const requestedRootPath = this.clean(body.rootPath);
-    const rootPath = this.clean(root?.rootUri);
+    const requestedRootPath = clean(body.rootPath);
+    const rootPath = clean(root?.rootUri);
     if (!root || !rootPath) {
       return { ok: false, reason: 'root_not_found_or_path_missing', applied: 0 };
     }
@@ -52,7 +53,7 @@ export class FileTreeService {
       });
     }
     const startedAt = new Date();
-    const maxNodes = this.readNumber(body.maxNodes, 0);
+    const maxNodes = readInt(body.maxNodes, 0);
     const logPrefix = `[drive-scan:${rootId}]`;
     console.log(
       `${logPrefix} start name="${String(root.name ?? '')}" rootPath="${rootPath}" maxNodes=${maxNodes}`,
@@ -141,9 +142,9 @@ export class FileTreeService {
       );
     } catch (error) {
       const failedAt = new Date();
-      const errorMessage = this.errorMessage(error);
+      const errMsg = errorMessage(error);
       console.log(
-        `${logPrefix} failed scanned=${nodes.length}/${maxNodes} durationMs=${failedAt.getTime() - startedAt.getTime()} error="${errorMessage}"`,
+        `${logPrefix} failed scanned=${nodes.length}/${maxNodes} durationMs=${failedAt.getTime() - startedAt.getTime()} error="${errMsg}"`,
       );
       await this.database.query(
         `
@@ -158,7 +159,7 @@ export class FileTreeService {
         [
           userId,
           rootId,
-          errorMessage,
+          errMsg,
           JSON.stringify({
             lastScan: {
               status: 'failed',
@@ -168,9 +169,9 @@ export class FileTreeService {
               maxNodes,
               rootPath,
               scanned: nodes.length,
-              currentPath: nodes.length > 0 ? this.clean(nodes[nodes.length - 1]?.localPath) : rootPath,
-              progressMessage: `failed after ${nodes.length}/${maxNodes} nodes: ${errorMessage}`,
-              error: errorMessage,
+              currentPath: nodes.length > 0 ? clean(nodes[nodes.length - 1]?.localPath) : rootPath,
+              progressMessage: `failed after ${nodes.length}/${maxNodes} nodes: ${errMsg}`,
+              error: errMsg,
             },
           }),
         ],
@@ -179,11 +180,11 @@ export class FileTreeService {
         rootId,
         rootPath,
         status: 'failed',
-        errorMessage,
+        errorMessage: errMsg,
         scanned: nodes.length,
         durationMs: failedAt.getTime() - startedAt.getTime(),
       });
-      return { ok: false, reason: 'scan_failed', error: errorMessage, applied: 0 };
+      return { ok: false, reason: 'scan_failed', error: errMsg, applied: 0 };
     }
     const applied = await this.applyNodeSnapshot(
       {
@@ -222,7 +223,7 @@ export class FileTreeService {
   async applyNodeSnapshot(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.devicesService.ensureUser(context.userId);
     const deviceId = await this.devicesService.ensureDevice(context);
-    const rootId = this.clean(body.rootId);
+    const rootId = clean(body.rootId);
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     if (!rootId) {
       return { ok: false, error: 'rootId is required', applied: 0 };
@@ -230,11 +231,11 @@ export class FileTreeService {
     const result = await this.database.transaction(async (client) => {
       let applied = 0;
       for (const item of nodes) {
-        const node = this.asRecord(item);
+        const node = asRecord(item);
         const nodeUid =
-          this.clean(node.nodeUid) ??
-          `node:${rootId}:${this.clean(node.relativePath) ?? randomUUID()}`;
-        const parentUid = this.clean(node.parentNodeUid) ?? this.clean(node.parentUid);
+          clean(node.nodeUid) ??
+          `node:${rootId}:${clean(node.relativePath) ?? randomUUID()}`;
+        const parentUid = clean(node.parentNodeUid) ?? clean(node.parentUid);
         await client.query(
           `
           INSERT INTO file_nodes (
@@ -294,24 +295,24 @@ export class FileTreeService {
             nodeUid,
             rootId,
             parentUid,
-            this.clean(node.nodeType) ?? this.clean(node.type) ?? 'file',
-            this.clean(node.name) ?? this.basename(String(node.localPath ?? node.relativePath ?? nodeUid)),
-            this.clean(node.relativePath) ?? '',
-            this.clean(node.displayPath),
-            this.clean(node.providerFileId),
-            this.clean(node.localPath),
-            this.clean(node.mimeType),
-            this.clean(node.extension),
-            this.readNullableNumber(node.sizeBytes),
-            this.readDate(node.mtime),
-            this.readDate(node.ctime),
-            this.clean(node.hashSha256),
-            this.clean(node.thumbnailStatus) ?? 'none',
-            this.clean(node.previewStatus) ?? 'none',
-            this.clean(node.indexStatus) ?? 'none',
+            clean(node.nodeType) ?? clean(node.type) ?? 'file',
+            clean(node.name) ?? basename(String(node.localPath ?? node.relativePath ?? nodeUid)),
+            clean(node.relativePath) ?? '',
+            clean(node.displayPath),
+            clean(node.providerFileId),
+            clean(node.localPath),
+            clean(node.mimeType),
+            clean(node.extension),
+            readNullableNumber(node.sizeBytes),
+            readDate(node.mtime),
+            readDate(node.ctime),
+            clean(node.hashSha256),
+            clean(node.thumbnailStatus) ?? 'none',
+            clean(node.previewStatus) ?? 'none',
+            clean(node.indexStatus) ?? 'none',
             Boolean(node.isDeleted),
             Boolean(node.isMissing),
-            JSON.stringify(this.asRecord(node.metadata)),
+            JSON.stringify(asRecord(node.metadata)),
           ],
         );
         const savedNode = await client.query<QueryResultRow>(
@@ -324,8 +325,8 @@ export class FileTreeService {
           [userId, nodeUid],
         );
         const savedNodeId = savedNode.rows[0]?.id as string | undefined;
-        const localPath = this.clean(node.localPath);
-        const hashSha256 = this.clean(node.hashSha256);
+        const localPath = clean(node.localPath);
+        const hashSha256 = clean(node.hashSha256);
         if (savedNodeId && localPath) {
           await client.query(
             `
@@ -343,16 +344,16 @@ export class FileTreeService {
               savedNodeId,
               deviceId,
               localPath,
-              this.clean(node.availability) ?? 'available',
+              clean(node.availability) ?? 'available',
               JSON.stringify({
                 source: 'node_snapshot',
                 hashSha256,
-                sizeBytes: this.readNullableNumber(node.sizeBytes),
+                sizeBytes: readNullableNumber(node.sizeBytes),
               }),
             ],
           );
         }
-        if (savedNodeId && (hashSha256 || this.clean(node.providerFileId) || localPath)) {
+        if (savedNodeId && (hashSha256 || clean(node.providerFileId) || localPath)) {
           await client.query(
             `
             INSERT INTO file_identity_mappings (
@@ -381,24 +382,24 @@ export class FileTreeService {
             [
               userId,
               savedNodeId,
-              this.clean(node.providerKey) ?? 'local',
-              this.clean(node.providerFileId),
+              clean(node.providerKey) ?? 'local',
+              clean(node.providerFileId),
               deviceId,
               localPath,
               hashSha256,
-              this.readNullableNumber(node.sizeBytes),
-              this.readDate(node.mtime),
-              hashSha256 ? 'hash' : this.clean(node.providerFileId) ? 'provider_id' : 'path_size_mtime',
+              readNullableNumber(node.sizeBytes),
+              readDate(node.mtime),
+              hashSha256 ? 'hash' : clean(node.providerFileId) ? 'provider_id' : 'path_size_mtime',
               JSON.stringify({ source: 'node_snapshot' }),
             ],
           );
         }
         applied += 1;
       }
-      const scanStatus = this.clean(body.scanStatus) ?? 'completed';
-      const scanDiagnostic = this.asRecord(body.scanDiagnostic);
+      const scanStatus = clean(body.scanStatus) ?? 'completed';
+      const scanDiagnostic = asRecord(body.scanDiagnostic);
       const finishedAt = new Date();
-      const startedAt = this.clean(scanDiagnostic.startedAt);
+      const startedAt = clean(scanDiagnostic.startedAt);
       const startedTime = startedAt ? new Date(startedAt).getTime() : NaN;
       const rootMetadataPatch =
         Object.keys(scanDiagnostic).length > 0
@@ -508,7 +509,7 @@ export class FileTreeService {
     return {
       nodeUid: `root:${rootPath}`,
       nodeType: 'folder',
-      name: this.basename(rootPath),
+      name: basename(rootPath),
       relativePath: '',
       displayPath: rootPath,
       localPath: rootPath,
@@ -602,10 +603,10 @@ export class FileTreeService {
         deviceId,
         operation,
         nodeId,
-        this.clean(details.sourcePath),
-        this.clean(details.targetPath),
-        this.clean(details.status) ?? 'success',
-        this.clean(details.errorMessage),
+        clean(details.sourcePath),
+        clean(details.targetPath),
+        clean(details.status) ?? 'success',
+        clean(details.errorMessage),
         JSON.stringify(details),
       ],
     );
@@ -667,46 +668,4 @@ export class FileTreeService {
     return null;
   }
 
-  private basename(path: string) {
-    const normalized = path.replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).pop() ?? path;
-  }
-
-  private clean(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : null;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-    return {};
-  }
-
-  private readNumber(value: unknown, fallback: number) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-    return Math.max(0, Math.trunc(parsed));
-  }
-
-  private readNullableNumber(value: unknown) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
-  }
-
-  private readDate(value: unknown) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-      return null;
-    }
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
 }

@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 import { FlowPlanV2RequestContext } from '../common/request-context';
+import { asString, asRecord } from '../common/utils';
+import { ObjectType } from '../common/constants/object-types';
 
 @Injectable()
 export class DevicesService {
@@ -9,10 +11,10 @@ export class DevicesService {
 
   async register(body: Record<string, unknown>, context: FlowPlanV2RequestContext) {
     const userId = await this.ensureUser(context.userId);
-    const clientDeviceId = this.asString(body.deviceId) ?? context.deviceId;
-    const deviceName = this.asString(body.deviceName) ?? 'Unknown device';
-    const platform = this.asString(body.platform) ?? 'unknown';
-    const appVersion = this.asString(body.appVersion);
+    const clientDeviceId = asString(body.deviceId) ?? context.deviceId;
+    const deviceName = asString(body.deviceName) ?? 'Unknown device';
+    const platform = asString(body.platform) ?? 'unknown';
+    const appVersion = asString(body.appVersion);
 
     const existing = await this.database.query<{ id: string; revoked_at: Date | null }>(
       `
@@ -155,8 +157,8 @@ export class DevicesService {
       [
         userId,
         deviceId,
-        this.asString(body.deviceName),
-        this.asString(body.platform),
+        asString(body.deviceName),
+        asString(body.platform),
       ],
     );
     return { ok: true };
@@ -169,7 +171,7 @@ export class DevicesService {
   ) {
     const userId = await this.ensureUser(context.userId);
     const actorDeviceId = await this.ensureDevice(context);
-    const reason = this.asString(body.reason) ?? 'revoked_from_admin';
+    const reason = asString(body.reason) ?? 'revoked_from_admin';
     const result = await this.database.query<{ id: string }>(
       `
       UPDATE devices
@@ -244,12 +246,12 @@ export class DevicesService {
     const clientTime = this.asDate(body.clientTime);
     const latencyMs =
       clientTime == null ? undefined : Math.max(0, now.getTime() - clientTime.getTime());
-    const appVersion = this.asString(body.appVersion);
-    const platform = this.asString(body.platform);
-    const networkType = this.asString(body.networkType) ?? 'unknown';
-    const networkSummary = this.asRecord(body.networkSummary);
-    const syncSummary = this.asRecord(body.syncSummary);
-    const errorMessage = this.asString(body.errorMessage);
+    const appVersion = asString(body.appVersion);
+    const platform = asString(body.platform);
+    const networkType = asString(body.networkType) ?? 'unknown';
+    const networkSummary = asRecord(body.networkSummary);
+    const syncSummary = asRecord(body.syncSummary);
+    const errorMessage = asString(body.errorMessage);
     const pendingCount = this.asNumber(syncSummary.pendingCount) ?? 0;
     const failedCount = this.asNumber(syncSummary.failedCount) ?? 0;
     const conflictCount = this.asNumber(syncSummary.conflictCount) ?? 0;
@@ -313,7 +315,7 @@ export class DevicesService {
       networkSummary,
       syncSummary,
       errorMessage,
-      metadata: this.asRecord(body.metadata),
+      metadata: asRecord(body.metadata),
     });
 
     const syncCursor = await this.readSyncCursorSummary(userId, deviceId);
@@ -491,12 +493,6 @@ export class DevicesService {
     return context.deviceId;
   }
 
-  private asString(value: unknown) {
-    return typeof value === 'string' && value.trim().length > 0
-      ? value.trim()
-      : undefined;
-  }
-
   private asNumber(value: unknown) {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return Math.trunc(value);
@@ -590,12 +586,6 @@ export class DevicesService {
       hasServerChanges:
         Number.isFinite(latest) && Number.isFinite(cursor) && latest > cursor,
     };
-  }
-
-  private asRecord(value: unknown) {
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
   }
 
   private async recordConnectionEvent(
