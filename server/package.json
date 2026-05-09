@@ -8,6 +8,7 @@
     "db:schema": "node scripts/apply-schema.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "start": "node dist/src/main.js",
     "start": "node dist/main.js"
   },
   "dependencies": {

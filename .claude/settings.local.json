@@ -17,7 +17,10 @@
       "Bash(flutter analyze *)",
       "Bash(flutter pub *)",
       "Bash(flutter test *)",
-      "Bash(kopia --version)"
+      "Bash(kopia --version)",
+      "PowerShell(npm run *)",
+      "PowerShell(cd C:\\\\Users\\\\a2746\\\\Desktop\\\\calll260426\\\\server; Test-Path dist/main.js; if \\(Test-Path dist/main.js\\) { \\(Get-Item dist/main.js\\).LastWriteTime } else { \"NOT FOUND\" }; npx tsc --version)",
+      "PowerShell(cd C:\\\\Users\\\\a2746\\\\Desktop\\\\calll260426\\\\server; npx nest build 2>&1 | Select-Object -Last 3; Write-Host \"---\"; if \\(Test-Path dist/main.js\\) { $d = Get-Item dist/main.js; Write-Host \"dist/main.js: $\\($d.LastWriteTime\\)\"; Select-String -Path dist/main.js -Pattern \"dotenv|Loaded\" | Select -First 1 } else { Write-Host \"NO dist/main.js - checking app.module.js\"; Get-ChildItem dist/ -Recurse -Name | Select -First 10 })"
     ]
   }
 }

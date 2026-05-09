@@ -1970,6 +1970,26 @@ export class AdminService {
     };
   }
 
+  async uploadEnv(content: string) {
+    if (!content || content.trim().length < 10) {
+      return { ok: false, reason: 'Content too short' };
+    }
+    const { writeFileSync, existsSync, readFileSync } = require('node:fs');
+    const { resolve } = require('node:path');
+    const envPath = resolve(process.cwd(), '.env');
+
+    if (existsSync(envPath)) {
+      writeFileSync(envPath + '.backup.' + Date.now(), readFileSync(envPath, 'utf8'));
+    }
+    writeFileSync(envPath, content.trim() + '\n');
+
+    const { config } = require('dotenv');
+    const result = config({ path: envPath, override: true });
+    const count = Object.keys(result.parsed ?? {}).length;
+
+    return { ok: true, path: envPath, varsLoaded: count, message: `Written and ${count} vars loaded. Restart server for full effect.` };
+  }
+
   runtimeEnv() {
     return {
       database: { urlPresent: !!(process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL), poolMax: Number(process.env.DATABASE_POOL_MAX ?? 10), slowQueryThresholdMs: Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? 1000) },

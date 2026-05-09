@@ -59,18 +59,16 @@ import { AuditService } from './common/audit/audit.service';
 import { SyncObjectRepository } from './common/repositories/sync-object.repository';
 import { VectorService } from './common/utils/vector.service';
 
-const appConfig = loadConfig();
-
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: resolve(__dirname, '.env'), load: [loadConfig] }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: resolve(__dirname, '..', '.env'), load: [loadConfig] }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get('jwtAccessSecret', appConfig.jwtAccessSecret),
+        secret: config.get('jwtAccessSecret', process.env.JWT_ACCESS_SECRET ?? process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL ?? 'flowplanv2-jwt-access-secret'),
         signOptions: { expiresIn: config.get('jwtAccessExpires', '24h') },
       }),
     }),

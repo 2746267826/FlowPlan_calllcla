@@ -1,5 +1,5 @@
-import { Card, Col, Descriptions, Row, Tag } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Input, message, Row, Tag, Upload } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { useEffect, useState } from 'react';
 import type { AdminApiClient } from '../api/adminApi';
@@ -8,6 +8,7 @@ import { asRecord } from '../utils/format';
 
 export function EnvPage(props: { api: AdminApiClient; onDataRefresh: () => void }) {
   const [env, setEnv] = useState<ApiRecord | null>(null);
+  const [envContent, setEnvContent] = useState('');
 
   const load = async () => {
     try {
@@ -26,9 +27,34 @@ export function EnvPage(props: { api: AdminApiClient; onDataRefresh: () => void 
   const stor = asRecord(env?.storage);
   const kopia = asRecord(env?.kopia);
 
+  const uploadEnv = async () => {
+    if (!envContent.trim()) { message.warning('请先粘贴 .env 文件内容'); return; }
+    try {
+      const res = await props.api.request<ApiRecord>('/api/admin/env/upload', {
+        method: 'POST', body: JSON.stringify({ content: envContent }),
+      });
+      message.success(String((res as ApiRecord).message ?? '已上传'));
+      setEnvContent('');
+      await load();
+    } catch (e) { message.error(e instanceof Error ? e.message : String(e)); }
+  };
+
   return (
     <PageContainer title="运行时环境" content={`当前服务端运行环境快照 · 生成时间: ${String(env?.generatedAt ?? '未加载')}`}>
       <Row gutter={[16, 16]}>
+        <Col span={24}>
+          <Card title="上传 .env 文件（内容粘贴 → 服务端写入 + 立即加载）" size="small">
+            <Input.TextArea
+              rows={6}
+              value={envContent}
+              onChange={(e) => setEnvContent(e.target.value)}
+              placeholder="粘贴 .env 文件内容..."
+            />
+            <Button type="primary" icon={<UploadOutlined />} onClick={uploadEnv} style={{ marginTop: 8 }}>
+              上传到服务端
+            </Button>
+          </Card>
+        </Col>
         <Col xs={24} lg={12}>
           <Card title="数据库" size="small">
             <Descriptions column={1} size="small">

@@ -409,4 +409,9 @@ export class AdminController {
   env() {
     return this.adminService.runtimeEnv();
   }
+
+  @Post('env/upload')
+  envUpload(@Body() body: Record<string, unknown>) {
+    return this.adminService.uploadEnv(String(body.content ?? ''));
+  }
 }

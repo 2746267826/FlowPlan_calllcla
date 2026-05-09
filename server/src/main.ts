@@ -1,4 +1,28 @@
 import 'reflect-metadata';
+
+// ── .env must be loaded BEFORE any other module imports ──
+import { config } from 'dotenv';
+import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+
+// Try multiple paths: dev (src/ → ..), prod (dist/src/ → ../../), cwd fallback
+const envCandidates = [
+  resolve(__dirname, '..', '.env'),           // src/main.ts → server/
+  resolve(__dirname, '..', '..', '.env'),      // dist/src/main.js → server/
+  resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), 'server', '.env'),
+];
+const envPath = envCandidates.find((p) => existsSync(p));
+
+if (envPath) {
+  const result = config({ path: envPath });
+  const count = Object.keys(result.parsed ?? {}).length;
+  console.log(`[Env] Loaded ${count} vars from ${envPath}`);
+} else {
+  console.warn(`[Env] .env not found. Searched: ${envCandidates.join(', ')}`);
+  console.warn('[Env] Using system environment variables only.');
+}
+
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -21,11 +45,10 @@ async function bootstrap() {
   });
   app.setGlobalPrefix('api');
 
-  // Swagger / OpenAPI
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FlowPlanV2 API')
     .setDescription('个人数据管理系统 — 日历、任务、追踪、文件、报告、同步、AI')
-    .setVersion('1.5.0')
+    .setVersion('2.0.0')
     .addBearerAuth()
     .build();
   const swaggerDoc = SwaggerModule.createDocument(app, swaggerConfig);
@@ -38,20 +61,20 @@ async function bootstrap() {
 
   const logger = app.get(AppLogger);
   logger.log(`FlowPlanV2 server listening on http://${host}:${port}/api`);
+  logger.log(`Encryption key: ${process.env.FLOWPLANV2_ENCRYPTION_KEY ? '✅ configured' : '❌ NOT SET — set FLOWPLANV2_ENCRYPTION_KEY in .env'}`);
 }
 
 bootstrap().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  // Use console here because DI is not available during bootstrap failure.
   console.error('FlowPlanV2 server startup failed.');
   console.error(message);
   console.error(
     [
       'Startup checklist:',
-      '1. Copy flowplanv2.local.env.example to flowplanv2.local.env and set FLOWPLANV2_DATABASE_URL.',
-      '2. Confirm PostgreSQL is running and reachable from FLOWPLANV2_DATABASE_URL.',
-      '3. Run: cd server; npm run db:schema',
-      '4. Run: cd server; npm run dev',
+      '1. Ensure .env exists in server/ with FLOWPLANV2_DATABASE_URL.',
+      '2. Confirm PostgreSQL is running and reachable.',
+      '3. Run: cd server; npm run build; npm run db:schema',
+      '4. Run: cd server; npm start  (or npm run dev)',
     ].join('\n'),
   );
   process.exit(1);
