@@ -17,6 +17,7 @@ export const modules: Array<{ key: ModuleKey; label: string; description: string
   { key: 'jobs', label: '定时任务', description: '管理后台定时任务：查看、触发、暂停、恢复。' },
   { key: 'schedule', label: '智能排程', description: '拓扑排序、遗传算法调度、依赖管理。' },
   { key: 'alerts', label: '异常告警', description: '查看所有模块的失败记录和错误信息。' },
+  { key: 'env', label: '运行环境', description: '查看服务端运行时环境变量和配置状态。' },
 ];
 
 export const datasets: Record<string, DatasetDefinition> = {

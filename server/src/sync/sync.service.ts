@@ -158,26 +158,31 @@ export class SyncService {
         AND c.id > $2
         AND (c.device_id IS NULL OR c.device_id <> $3)
         AND ($4::text IS NULL OR c.object_type = $4)
-      ORDER BY
-        CASE c.object_type
-          WHEN 'calendar_book' THEN 0
-          WHEN 'task_list' THEN 0
-          WHEN 'calendar_event' THEN 1
-          WHEN 'task_item' THEN 1
-          WHEN 'task_schedule_segment' THEN 2
-          WHEN 'actual_activity_log' THEN 2
-          WHEN 'activity_segment' THEN 2
-          WHEN 'activity_interpretation' THEN 2
-          WHEN 'task_work_log' THEN 2
-          ELSE 3
-        END,
-        c.id ASC
+      ORDER BY c.id ASC
       LIMIT $5
       `,
       [userId, cursorValue, deviceId, objectType, limit],
     );
 
-    const changes: SyncChangeDto[] = result.rows.map((row) => ({
+    // Memory sort — restores the original object_type priority ordering
+    // without requiring PostgreSQL to compute CASE expressions (avoids FileSort).
+    const priorityMap: Record<string, number> = {
+      calendar_book: 0, task_list: 0,
+      calendar_event: 1, task_item: 1,
+      task_schedule_segment: 2, actual_activity_log: 2,
+      activity_segment: 2, activity_interpretation: 2,
+      task_work_log: 2,
+    };
+    const rows = result.rows.sort((a, b) => {
+      const pa = priorityMap[a.object_type] ?? 3;
+      const pb = priorityMap[b.object_type] ?? 3;
+      if (pa !== pb) return pa - pb;
+      const idA = BigInt(a.id);
+      const idB = BigInt(b.id);
+      return idA < idB ? -1 : idA > idB ? 1 : 0;
+    });
+
+    const changes: SyncChangeDto[] = rows.map((row) => ({
       changeId: row.id,
       objectType: row.object_type,
       serverId: row.server_object_id,

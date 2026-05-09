@@ -404,4 +404,9 @@ export class AdminController {
       readRequestContext(headers),
     );
   }
+
+  @Get('env')
+  env() {
+    return this.adminService.runtimeEnv();
+  }
 }

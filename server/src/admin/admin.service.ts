@@ -1970,6 +1970,17 @@ export class AdminService {
     };
   }
 
+  runtimeEnv() {
+    return {
+      database: { urlPresent: !!(process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL), poolMax: Number(process.env.DATABASE_POOL_MAX ?? 10), slowQueryThresholdMs: Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? 1000) },
+      encryption: { keySecure: !!(process.env.FLOWPLANV2_ENCRYPTION_KEY ?? process.env.OUTLOOK_CONFIG_SECRET ?? process.env.AI_CONFIG_SECRET), source: process.env.FLOWPLANV2_ENCRYPTION_KEY ? 'FLOWPLANV2_ENCRYPTION_KEY' : process.env.OUTLOOK_CONFIG_SECRET ? 'OUTLOOK_CONFIG_SECRET' : process.env.AI_CONFIG_SECRET ? 'AI_CONFIG_SECRET' : 'DATABASE_URL (fallback)' },
+      jwt: { accessExpires: process.env.JWT_ACCESS_EXPIRES ?? '24h', refreshExpires: process.env.JWT_REFRESH_EXPIRES ?? '7d' },
+      service: { port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? '0.0.0.0', bodyLimit: process.env.FLOWPLANV2_BODY_LIMIT ?? '50mb', corsOrigin: process.env.ADMIN_CORS_ORIGIN ?? '*' },
+      storage: { dir: process.env.FLOWPLANV2_SERVER_STORAGE_DIR ?? null },
+      kopia: { exePath: process.env.KOPIA_EXE ?? 'kopia', timeoutMs: Number(process.env.KOPIA_TIMEOUT_MS ?? 120000) },
+      generatedAt: new Date().toISOString(),
+    };
+  }
 
   private readDeviceId(value: unknown) {
     const cleaned = clean(value);

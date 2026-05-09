@@ -32,6 +32,7 @@ import { SchedulePage } from '../pages/SchedulePage';
 import { LogsPage } from '../pages/LogsPage';
 import { JobsPage } from '../pages/JobsPage';
 import { AlertsPage } from '../pages/AlertsPage';
+import { EnvPage } from '../pages/EnvPage';
 import { OutlookPage } from '../pages/OutlookPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TasksSchedulesPage } from '../pages/TasksSchedulesPage';
@@ -66,6 +67,7 @@ const iconMap: Record<ModuleKey, ReactNode> = {
   jobs: <ClockCircleOutlined />,
   schedule: <PlayCircleOutlined />,
   alerts: <WarningOutlined />,
+  env: <SettingOutlined />,
 };
 
 const actualPanels: BusinessPanel[] = [
@@ -525,6 +527,10 @@ export function AdminApp() {
       case 'alerts':
         return (
           <AlertsPage api={api} onDataRefresh={onDataRefresh} />
+        );
+      case 'env':
+        return (
+          <EnvPage api={api} onDataRefresh={onDataRefresh} />
         );
       default:
         return null;
