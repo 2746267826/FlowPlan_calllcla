@@ -9,7 +9,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.error('DATABASE_URL is required to apply the FlowPlanV2 schema.');
   console.error('Expected format: postgres://USER:PASSWORD@HOST:5432/DATABASE');
-  console.error('Set it in flowplanv2.local.env or in the current shell, then run: npm run db:schema');
+  console.error('Set DATABASE_URL in .env or in the current shell, then run: npm run db:schema');
   process.exit(1);
 }
 

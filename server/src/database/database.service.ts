@@ -13,7 +13,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
       throw new Error(
         [
           'FLOWPLANV2_DATABASE_URL or DATABASE_URL is required for FlowPlanV2 Server startup.',
-          'Create flowplanv2.local.env in the workspace root or set $env:FLOWPLANV2_DATABASE_URL before starting the server.',
+          'Create .env in the server directory or set FLOWPLANV2_DATABASE_URL before starting the server.',
           'Expected format: postgres://USER:PASSWORD@HOST:5432/DATABASE',
           'Then run: cd server; npm run db:schema; npm run dev',
         ].join(' '),
