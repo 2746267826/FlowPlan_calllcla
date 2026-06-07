@@ -580,6 +580,8 @@ export function AdminApp() {
         location={{ pathname: `/${activeModule}` }}
         menuItemRender={(item, dom) => (
           <a
+            aria-label={`Open ${String(item.path ?? '').replace(/^\//, '')} page`}
+            data-testid={`nav-${String(item.path ?? '').replace(/^\//, '')}`}
             onClick={() => {
               const key = String(item.path ?? '')
                 .replace(/^\//, '') as ModuleKey;

@@ -1,0 +1,51 @@
+import { vi } from 'vitest';
+
+export function createMockAdminApi(overrides: Record<string, unknown> = {}) {
+  return {
+    login: vi.fn().mockResolvedValue({
+      accessToken: 'test-token',
+      refreshToken: 'refresh-token',
+      user: { id: 'admin', displayName: 'FlowPlanV2 Admin' },
+    }),
+    refreshToken: vi.fn().mockResolvedValue({
+      accessToken: 'test-token',
+      refreshToken: 'refresh-token',
+      user: { id: 'admin', displayName: 'FlowPlanV2 Admin' },
+    }),
+    health: vi.fn().mockResolvedValue({ ok: true }),
+    dashboard: vi.fn().mockResolvedValue({ pending: {}, recentAuditLogs: [] }),
+    monitoringHealth: vi.fn().mockResolvedValue({ database: { status: 'ok' } }),
+    syncHealth: vi.fn().mockResolvedValue({ devices: [] }),
+    adminData: vi.fn().mockResolvedValue({ items: [] }),
+    adminRows: vi.fn().mockResolvedValue([]),
+    adminDataDetail: vi.fn().mockResolvedValue({}),
+    patchAdminData: vi.fn().mockResolvedValue({ ok: true }),
+    driveRoots: vi.fn().mockResolvedValue({ items: [] }),
+    upsertDriveRoot: vi.fn().mockResolvedValue({ ok: true }),
+    scanDriveRoot: vi.fn().mockResolvedValue({ ok: true }),
+    deleteDriveRoot: vi.fn().mockResolvedValue({ ok: true }),
+    settings: vi.fn().mockResolvedValue({ items: [] }),
+    patchSetting: vi.fn().mockResolvedValue({ ok: true }),
+    outlookStatus: vi.fn().mockResolvedValue({ connected: false }),
+    outlookCalendars: vi.fn().mockResolvedValue({ items: [] }),
+    outlookRuns: vi.fn().mockResolvedValue({ items: [] }),
+    outlookDiagnostics: vi.fn().mockResolvedValue({ ok: true }),
+    startOutlookAuth: vi.fn().mockResolvedValue({ ok: true }),
+    completeOutlookAuth: vi.fn().mockResolvedValue({ ok: true }),
+    syncOutlook: vi.fn().mockResolvedValue({ ok: true }),
+    resetOutlook: vi.fn().mockResolvedValue({ ok: true }),
+    prepareOperation: vi.fn().mockResolvedValue({
+      confirmationToken: 'confirm-token',
+      operationKey: 'test.operation',
+    }),
+    confirmOperation: vi.fn().mockResolvedValue({ ok: true }),
+    geneticEvolve: vi.fn().mockResolvedValue({ ok: true }),
+    geneticFeedback: vi.fn().mockResolvedValue({ ok: true }),
+    geneticPrompts: vi.fn().mockResolvedValue({ ok: true }),
+    topoSort: vi.fn().mockResolvedValue({ ok: true }),
+    validateDependencies: vi.fn().mockResolvedValue({ ok: true }),
+    listJobs: vi.fn().mockResolvedValue({ jobs: [] }),
+    triggerJob: vi.fn().mockResolvedValue({ ok: true }),
+    ...overrides,
+  };
+}

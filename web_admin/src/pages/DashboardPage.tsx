@@ -80,7 +80,13 @@ export function DashboardPage(props: {
       title="总览"
       content="健康、风险、待处理事项、趋势图表和最近审计。"
       extra={
-        <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新总览</Button>
+        <Button
+          aria-label="Refresh dashboard"
+          icon={<ReloadOutlined />}
+          onClick={() => void load()}
+        >
+          刷新总览
+        </Button>
       }
       loading={loading}
     >

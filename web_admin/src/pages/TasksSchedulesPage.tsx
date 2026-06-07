@@ -114,14 +114,14 @@ export function TasksSchedulesPage(props: {
         </StatisticCard.Group>
         <Card>
           <Space className="table-toolbar" wrap>
-            <Input.Search placeholder="搜索标题、备注、地点、所属本" allowClear value={query} onChange={(event) => setQuery(event.target.value)} style={{ width: 320 }} />
+            <Input.Search aria-label="Search tasks and schedules" placeholder="搜索标题、备注、地点、所属本" allowClear value={query} onChange={(event) => setQuery(event.target.value)} style={{ width: 320 }} />
             <Select value={typeFilter} onChange={setTypeFilter} style={{ width: 140 }} options={[{ label: '全部类型', value: 'all' }, { label: '任务', value: 'task' }, { label: '日程', value: 'schedule' }]} />
             <Select value={sourceFilter} onChange={setSourceFilter} style={{ width: 140 }} options={[{ label: '全部来源', value: 'all' }, { label: '本地', value: 'local' }, { label: 'Outlook', value: 'outlook' }]} />
             <Select value={timeFilter} onChange={setTimeFilter} style={{ width: 150 }} options={[{ label: '全部时间', value: 'all' }, { label: '今天', value: 'today' }, { label: '未来 7 天', value: 'next7' }, { label: '已逾期', value: 'overdue' }, { label: '无时间', value: 'none' }]} />
             <Select allowClear placeholder="状态筛选" value={statusFilter === 'all' ? undefined : statusFilter} onChange={(value) => setStatusFilter(value ?? 'all')} style={{ width: 160 }} options={statusOptions} />
-            <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
-            <Button icon={<CheckCircleOutlined />} disabled={!selectedKeys.length} onClick={batchComplete}>批量完成</Button>
-            <Button danger icon={<DeleteOutlined />} disabled={!selectedKeys.length} onClick={batchDelete}>批量删除</Button>
+            <Button aria-label="Refresh tasks and schedules" icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
+            <Button aria-label="Batch complete selected tasks" icon={<CheckCircleOutlined />} disabled={!selectedKeys.length} onClick={batchComplete}>批量完成</Button>
+            <Button aria-label="Batch delete selected items" danger icon={<DeleteOutlined />} disabled={!selectedKeys.length} onClick={batchDelete}>批量删除</Button>
           </Space>
           <ProTable<ManagementItem>
             rowKey="key"
