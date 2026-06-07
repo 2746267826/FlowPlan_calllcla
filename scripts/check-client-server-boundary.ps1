@@ -80,7 +80,6 @@ $trackerServerFirstPatterns = @(
 $trackerProcessedDataPatterns = @(
   'ActivityInsights.fromRecords',
   'WorkSessionGrouper.fromRecords',
-  'activityRecords(',
   'inputEvents(limit: 500'
 )
 

@@ -93,16 +93,47 @@ function Assert-NoFocusedOrSkippedTests {
   Write-Host '== focused/skipped test scan =='
   $pattern = '\b(describe|it|test)\.(only|skip)\s*\(|\b(fit|xit)\s*\('
   $targetPaths = @('server', 'web_admin', 'client_flutter')
-  $arguments = @(
-    '-n',
-    '--glob',
+  $includeGlobs = @(
     '*.spec.*',
-    '--glob',
     '*.test.*',
-    '--glob',
-    '*_test.dart',
-    $pattern
-  ) + $targetPaths
+    '*_test.dart'
+  )
+  $excludeGlobs = @(
+    '!**/node_modules/**',
+    '!**/dist/**',
+    '!**/coverage/**',
+    '!**/build/**',
+    '!**/.vite/**',
+    '!**/out/**',
+    '!**/.output/**',
+    '!**/.dart_tool/**',
+    '!**/.gradle/**',
+    '!**/.pub-cache/**',
+    '!**/.next/**',
+    '!**/.firebase/**',
+    '!**/playwright-report/**',
+    '!**/test-results/**',
+    '!**/reports/**',
+    '!**/report/**',
+    '!**/html-report/**',
+    '!**/allure-results/**',
+    '!**/allure-report/**',
+    '!**/generated/**',
+    '!**/gen/**',
+    '!**/vendor/**',
+    '!**/third_party/**',
+    '!docs/test-governance/reports/generated/**',
+    '!server/server_storage/**',
+    '!server/server_storage_*/**',
+    '!**/Users*AppDataLocalnpm-cache/**'
+  )
+  $arguments = @(
+    '-n'
+  )
+  foreach ($glob in ($includeGlobs + $excludeGlobs)) {
+    $arguments += @('--glob', $glob)
+  }
+  $arguments += @($pattern) + $targetPaths
 
   try {
     $matches = & rg @arguments 2>&1

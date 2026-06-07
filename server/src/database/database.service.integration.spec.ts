@@ -132,14 +132,17 @@ describe('DatabaseService', () => {
       ).rejects.toThrow();
     });
 
-    it.skip('throws on foreign key violation', async () => {
+    it('throws on foreign key violation', async () => {
       await expect(
         db.query(
           `INSERT INTO devices (id, user_id, device_name, platform, client_device_id, connection_status)
            VALUES ($1, $2, $3, $4, $5, 'online')`,
           ['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000099', 'bad', 'windows', 'bad-client'],
         ),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({
+        code: '23503',
+        constraint: 'devices_user_id_fkey',
+      });
     });
   });
 

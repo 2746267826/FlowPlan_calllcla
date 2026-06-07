@@ -2,6 +2,8 @@
 
 Every included hand-written production file must reach 100% lines, branches, functions, and statements. The root gate is `scripts/test-flowplanv2.ps1`.
 
+Every excluded file or pattern must have a reviewed row in `docs/test-governance/coverage-exclusions.csv` with `pattern`, `reason`, `replacement_verification`, `owner_or_module`, `review_condition`, and `status`. Rows left as `missing` are not accepted for completion closeout.
+
 Generated report locations:
 
 - Server coverage: `server/coverage/index.html`
@@ -11,3 +13,5 @@ Generated report locations:
 - Root summaries: `docs/test-governance/reports/generated`
 
 The root gate fails for automated server and web failures. Flutter commands are printed for user execution because `docs/development_constraints_260426.md` forbids Codex from running Flutter or Dart commands.
+
+The focused/skipped scan runs before automated suites and relies on repository ignore rules. Generated, dependency, report, and build directories such as `**/build/**`, `**/dist/**`, `**/coverage/**`, `**/node_modules/**`, `web_admin/playwright-report/**`, `web_admin/test-results/**`, and `docs/test-governance/reports/generated/**` stay out of that scan; new generated or build output locations require a reviewed ledger row before they are treated as excluded.
