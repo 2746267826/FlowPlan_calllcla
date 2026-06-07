@@ -1,6 +1,8 @@
 # Miscellaneous
 *.class
 *.log
+*.tmp
+*.temp
 *.pyc
 *.swp
 .DS_Store
@@ -27,19 +29,39 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 **/.dart_tool/
+**/.packages
+**/.flutter-plugins
 **/.flutter-plugins-dependencies
 **/.pub-cache/
 **/.pub/
 **/build/
 **/coverage/
+client_flutter/lib_old/
 
 # Node / web build artifacts
 **/node_modules/
 **/.npm-cache/
+**/Users*AppDataLocalnpm-cache/
+**/.cache/
+**/.turbo/
+**/.vite/
+**/.next/
+**/test-results/
+**/playwright-report/
+**/screenshots/
+**/*screenshot*.png
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 server/dist/
 web_admin/dist/
+web_admin/build/
 
 # Local secrets
+.env
+.env.*
+!.env.example
 flowplanv2.local.env
 server/flowplanv2.local.env
 flowplan.local.env
@@ -57,16 +79,34 @@ app.*.map.json
 **/android/app/profile
 **/android/app/release
 
-# Visual Studio 缓存和相关文件
+# Visual Studio cache and user-specific files
 **/.vs/
 *.user
 *.userosscache
 *.sln.docstates
 *.suo
 
-# 编译产生的数据库文件
+# Build-generated database files
 *.db
 *.opendb
 *.VC.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
+# Server runtime storage
+server/server_storage/
+server/server_storage_flowplanv2/
+server/uploads/
+server/upload/
+server/data/
+server/logs/
+server/log/
+
+# Local archives and migration leftovers
 oldtracker/
