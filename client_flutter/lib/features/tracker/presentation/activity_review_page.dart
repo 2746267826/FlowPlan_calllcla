@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../data/activity_fusion_repository.dart';
 
@@ -527,6 +528,7 @@ class _ConfirmSegmentDialogState extends State<_ConfirmSegmentDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
+          key: AppKeys.trackerReviewConfirmButton,
           onPressed: () {
             Navigator.of(context).pop(
               _SegmentConfirmationDraft(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 
 class QuickAddBar extends ConsumerStatefulWidget {
@@ -138,6 +139,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           ),
         ),
         IconButton(
+          key: AppKeys.trackerStartButton,
           icon: const Icon(Icons.play_circle_outline),
           color: AppColors.primary,
           iconSize: 28,

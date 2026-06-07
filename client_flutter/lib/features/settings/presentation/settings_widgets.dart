@@ -399,6 +399,7 @@ class _WorkScheduleEditorDialogState extends State<_WorkScheduleEditorDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
+          key: AppKeys.settingsSaveButton,
           onPressed: _saving ? null : _save,
           child: _saving
               ? const SizedBox(

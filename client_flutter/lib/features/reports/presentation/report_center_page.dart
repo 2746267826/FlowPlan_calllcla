@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 
 final reportRefreshTickProvider = StateProvider<int>((ref) => 0);
@@ -75,6 +76,7 @@ class _ReportCenterBody extends ConsumerWidget {
           runSpacing: 10,
           children: [
             FilledButton.icon(
+              key: AppKeys.reportGenerateButton,
               onPressed: () => _generateReport(context, ref),
               icon: const Icon(Icons.auto_awesome_outlined),
               label: const Text('生成今日日报'),

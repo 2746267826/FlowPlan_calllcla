@@ -9,6 +9,7 @@ import '../../core/database/app_database.dart';
 import '../../core/router/app_router.dart';
 import '../../core/server_api/server_config_store.dart';
 import '../../core/sync/sync_cursor_store.dart';
+import '../../core/ui/app_keys.dart';
 import '../../shared/providers/app_providers.dart';
 import '../../shared/providers/database_provider.dart';
 
@@ -322,6 +323,7 @@ class _ServerSyncStatusPageState extends ConsumerState<ServerSyncStatusPage> {
               runSpacing: 10,
               children: [
                 FilledButton.icon(
+                  key: AppKeys.syncRunButton,
                   onPressed: _runningAction
                       ? null
                       : () => _run(

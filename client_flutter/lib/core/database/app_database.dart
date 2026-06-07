@@ -27,7 +27,12 @@ part 'app_database.g.dart';
   TaskLists,
 ])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(openAppDatabaseConnection());
+  AppDatabase([QueryExecutor? executor])
+      : super(executor ?? openAppDatabaseConnection());
+
+  factory AppDatabase.forTesting(QueryExecutor executor) {
+    return AppDatabase(executor);
+  }
 
   @override
   int get schemaVersion => 18;

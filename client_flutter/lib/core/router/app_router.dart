@@ -49,10 +49,11 @@ class AppRoutes {
   static const String aiChat = '/ai-chat';
 }
 
-final GoRouter appRouter = GoRouter(
-  initialLocation: AppRoutes.timeline,
-  debugLogDiagnostics: false,
-  routes: [
+GoRouter createAppRouter({String initialLocation = AppRoutes.timeline}) {
+  return GoRouter(
+    initialLocation: initialLocation,
+    debugLogDiagnostics: false,
+    routes: [
     ShellRoute(
       builder: (context, state, child) => CalendarShell(
         currentRoute: state.uri.path,
@@ -202,5 +203,8 @@ final GoRouter appRouter = GoRouter(
       name: 'aiChat',
       builder: (context, state) => const AiChatPage(),
     ),
-  ],
-);
+    ],
+  );
+}
+
+final GoRouter appRouter = createAppRouter();

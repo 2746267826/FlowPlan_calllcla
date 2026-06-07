@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/sync/sync_object_registry.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../files/data/file_context_repository.dart';
@@ -141,6 +142,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
               icon: const Icon(Icons.delete_outline),
             ),
           TextButton.icon(
+            key: AppKeys.taskSaveButton,
             onPressed: _saving ? null : _save,
             icon: _saving
                 ? const SizedBox(
@@ -200,6 +202,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             ),
             const SizedBox(height: 20),
             TextField(
+              key: AppKeys.taskSummaryField,
               controller: _titleController,
               autofocus: true,
               decoration: const InputDecoration(

@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/widgets/server_connection_indicator.dart';
@@ -122,6 +123,17 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     if (route.startsWith(AppRoutes.files)) return 5;
     if (route.startsWith(AppRoutes.settings)) return 6;
     return 0;
+  }
+
+  Key _keyForRoute(String route) {
+    if (route == AppRoutes.timeline) return AppKeys.shellTimeline;
+    if (route == AppRoutes.week) return AppKeys.shellWeek;
+    if (route == AppRoutes.month) return AppKeys.shellMonth;
+    if (route == AppRoutes.tracker) return AppKeys.shellTracker;
+    if (route == AppRoutes.reports) return AppKeys.shellReports;
+    if (route == AppRoutes.files) return AppKeys.shellFiles;
+    if (route == AppRoutes.settings) return AppKeys.shellSettings;
+    return ValueKey<String>('flowplan.shell.$route');
   }
 
   void _navigate(int index) => context.go(_items[index].route);
@@ -580,6 +592,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
+                        key: AppKeys.shellCreateTask,
                         onPressed: _showQuickAdd,
                         icon: const Icon(Icons.add, size: 18),
                         label: const Text('\u65b0\u5efa'),
@@ -589,6 +602,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
                   const SizedBox(height: 8),
                   for (var i = 0; i < _items.length; i++)
                     _NavItem(
+                      key: _keyForRoute(_items[i].route),
                       icon: _currentIndex == i ? _items[i].activeIcon : _items[i].icon,
                       label: _items[i].label,
                       selected: _currentIndex == i,
@@ -648,7 +662,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
                     (item) => NavigationRailDestination(
                       icon: Icon(item.icon),
                       selectedIcon: Icon(item.activeIcon),
-                      label: Text(item.label),
+                      label: Text(item.label, key: _keyForRoute(item.route)),
                     ),
                   )
                   .toList(growable: false),
@@ -665,6 +679,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
           ],
         ),
         floatingActionButton: FloatingActionButton(
+          key: AppKeys.shellCreateTask,
           onPressed: _showQuickAdd,
           backgroundColor: AppColors.primary,
           child: const Icon(Icons.add, color: Colors.white),
@@ -705,6 +720,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
         destinations: _items
             .map(
               (item) => NavigationDestination(
+                key: _keyForRoute(item.route),
                 icon: Icon(item.icon),
                 selectedIcon: Icon(item.activeIcon),
                 label: item.label,
@@ -713,6 +729,7 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
             .toList(growable: false),
       ),
       floatingActionButton: FloatingActionButton(
+        key: AppKeys.shellCreateTask,
         onPressed: _showQuickAdd,
         backgroundColor: AppColors.primary,
         mini: true,
@@ -914,6 +931,9 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
             child: Column(
               children: [
                 TextField(
+                  key: _tab == 0
+                      ? AppKeys.taskSummaryField
+                      : AppKeys.eventSummaryField,
                   controller: _titleController,
                   autofocus: true,
                   decoration: InputDecoration(
@@ -993,6 +1013,9 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
+                    key: _tab == 0
+                        ? AppKeys.taskSaveButton
+                        : AppKeys.eventSaveButton,
                     onPressed: _saving ? null : _submit,
                     child: _saving
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -1119,7 +1142,13 @@ class _SidebarBooks extends ConsumerWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _NavItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;

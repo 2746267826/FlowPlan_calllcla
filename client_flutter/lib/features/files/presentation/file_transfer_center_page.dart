@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../services/file_transfer_service.dart';
 
@@ -42,6 +43,7 @@ class FileTransferCenterPage extends ConsumerWidget {
             runSpacing: 8,
             children: [
               FilledButton.icon(
+                key: AppKeys.fileTransferStartButton,
                 onPressed: () => _pickAndUpload(context, service),
                 icon: const Icon(Icons.upload_file),
                 label: const Text('上传本地文件'),

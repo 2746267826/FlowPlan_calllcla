@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/sync/sync_object_registry.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../../files/data/file_context_repository.dart';
 import '../../files/presentation/file_context_panel.dart';
@@ -173,6 +174,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               icon: const Icon(Icons.delete_outline),
             ),
           TextButton.icon(
+            key: AppKeys.eventSaveButton,
             onPressed: _saving || isReadOnly ? null : _save,
             icon: _saving
                 ? const SizedBox(
@@ -247,6 +249,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                   ),
                   const SizedBox(height: 20),
                   TextField(
+                    key: AppKeys.eventSummaryField,
                     controller: _titleController,
                     autofocus: !isReadOnly,
                     decoration: const InputDecoration(
