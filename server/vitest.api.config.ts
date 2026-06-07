@@ -8,20 +8,10 @@ export default defineConfig({
     fileParallelism: false,
     maxConcurrency: 1,
     root: resolve(__dirname, 'src'),
-    include: ['**/*.spec.ts'],
+    include: ['**/*.api.spec.ts'],
     setupFiles: [resolve(__dirname, 'src/test-setup.ts')],
     testTimeout: 30000,
     hookTimeout: 15000,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'text-summary'],
-      include: ['**/*.ts'],
-      exclude: ['**/*.spec.ts', 'test-setup.ts', 'common/test/**', 'main.ts'],
-    },
   },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-    },
-  },
+  resolve: { alias: { '@': resolve(__dirname, 'src') } },
 });
