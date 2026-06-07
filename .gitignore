@@ -110,3 +110,4 @@ server/log/
 
 # Local archives and migration leftovers
 oldtracker/
+docs/test-governance/reports/generated/

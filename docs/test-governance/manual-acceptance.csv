@@ -1,0 +1,6 @@
+manual_id,area,scenario,required_environment,steps,evidence,status
+MANUAL-WIN-001,client_flutter,Windows task create complete sync audit,Windows desktop local server test database,"Create task in Windows client; complete it; open Web Admin; verify task status sync mutation and audit row","screenshots and audit row id",missing
+MANUAL-ANDROID-001,client_flutter,Android usage stats import,Android device with usage access,"Grant usage access; import latest usage; verify tracker timeline and upload payload","device screenshot and test notes",missing
+MANUAL-OUTLOOK-001,cross_end,Outlook OAuth and sync,Microsoft account test calendar,"Authorize Outlook; run read-only sync; verify diagnostics; reset connection","screenshots and run id",missing
+MANUAL-AI-001,cross_end,Real AI provider draft approval,OpenAI-compatible test key,"Save provider; test connection; ask for a task draft; approve; verify task and audit","provider test id and audit row id",missing
+MANUAL-FILE-001,cross_end,Real file transfer interruption recovery,Windows filesystem,"Upload 10MB file; interrupt; resume; download; compare hash","hashes and transfer session id",missing

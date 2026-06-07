@@ -1,0 +1,6 @@
+pattern,reason,replacement_verification,owner_or_module,review_condition,status
+server/src/main.ts,bootstrap entrypoint only after logic moves to app.bootstrap.ts,server/src/app.bootstrap.ts unit and API app tests cover behavior,server,review whenever main.ts gains branches,missing
+server/src/common/test/**,test helper infrastructure,test helper tests and consuming suites cover behavior,server,review when helpers contain branching production behavior,missing
+web_admin/src/test/**,test helper infrastructure,component and e2e suites consume helpers,web_admin,review when helpers contain production behavior,missing
+client_flutter/lib/core/database/app_database.g.dart,generated Drift code,repository and database behavior tests cover generated behavior,client_flutter,review after schema generation changes,missing
+client_flutter/**.g.dart,generated source,provider/model behavior tests cover generated behavior,client_flutter,review after generator updates,missing
