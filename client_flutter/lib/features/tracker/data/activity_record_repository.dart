@@ -50,6 +50,7 @@ class ActivityRecordRepository {
     String? processName,
     String? windowTitle,
     String? packageName,
+    String? className,
     String? category,
     String? deviceId,
     String? platform,
@@ -71,6 +72,12 @@ class ActivityRecordRepository {
             source: Value(source),
           ),
         );
+    if (className?.trim().isNotEmpty ?? false) {
+      await _db.customStatement(
+        'UPDATE activity_records SET class_name = ? WHERE id = ?',
+        [className!.trim(), id],
+      );
+    }
     await _stampDeviceContext(id, deviceId: deviceId, platform: platform);
     return id;
   }

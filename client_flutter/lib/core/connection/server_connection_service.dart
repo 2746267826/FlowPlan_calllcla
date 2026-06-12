@@ -27,7 +27,8 @@ class ServerConnectionService extends ChangeNotifier {
         _operationLogs = operationLogs,
         _deviceId = deviceId,
         _platform = platform {
-    _bootstrapService.onProgress = _handleBootstrapProgress;
+    _bootstrapProgressHandler = _handleBootstrapProgress;
+    _bootstrapService.onProgress = _bootstrapProgressHandler;
   }
 
   static const _maxBackoffSeconds = 300;
@@ -49,6 +50,7 @@ class ServerConnectionService extends ChangeNotifier {
   int _failureCount = 0;
   String? _queuedSource;
   String? _queuedReason;
+  ValueChanged<ClientSyncProgress>? _bootstrapProgressHandler;
 
   ServerConnectionState _state = const ServerConnectionState();
 
@@ -77,9 +79,10 @@ class ServerConnectionService extends ChangeNotifier {
     if (SyncWriteRecorder.onMutationRecorded != null) {
       SyncWriteRecorder.onMutationRecorded = null;
     }
-    if (identical(_bootstrapService.onProgress, _handleBootstrapProgress)) {
+    if (identical(_bootstrapService.onProgress, _bootstrapProgressHandler)) {
       _bootstrapService.onProgress = null;
     }
+    _bootstrapProgressHandler = null;
     super.dispose();
   }
 

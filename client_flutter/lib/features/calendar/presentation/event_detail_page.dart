@@ -1,9 +1,11 @@
+import 'package:flowplanv2/core/server_first/server_first_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/sync/sync_object_registry.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/app_keys.dart';
@@ -120,16 +122,24 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   }
 
   void _close(BuildContext context) {
-    if (GoRouter.of(context).canPop()) {
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
       context.pop();
       return;
     }
-    Navigator.of(context).pop();
+
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    context.go(AppRoutes.timeline);
   }
 
   bool _selectedCalendarIsOutlook() {
-    final calendars =
-        ref.read(allEventCalendarsProvider).asData?.value ?? const <EventCalendar>[];
+    final calendars = ref.read(allEventCalendarsProvider).asData?.value ??
+        const <EventCalendar>[];
     for (final calendar in calendars) {
       if (calendar.id == _eventCalendarId) {
         return calendar.source == 'outlook';
@@ -222,7 +232,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     ),
                     data: (value) {
                       final selectableCalendars = isCreating
-                          ? value.where((calendar) => calendar.source == 'local').toList()
+                          ? value
+                              .where((calendar) => calendar.source == 'local')
+                              .toList()
                           : value;
                       if (selectableCalendars.isEmpty) {
                         return const _WarningNotice(
@@ -290,7 +302,8 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     controller: _locationController,
                     decoration: const InputDecoration(
                       labelText: '\u5730\u70b9',
-                      hintText: '\u6dfb\u52a0\u5730\u70b9\uff08\u53ef\u9009\uff09',
+                      hintText:
+                          '\u6dfb\u52a0\u5730\u70b9\uff08\u53ef\u9009\uff09',
                       prefixIcon: Icon(Icons.location_on_outlined, size: 20),
                     ),
                   ),
@@ -299,7 +312,8 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     controller: _descController,
                     decoration: const InputDecoration(
                       labelText: '\u5907\u6ce8',
-                      hintText: '\u6dfb\u52a0\u5907\u6ce8\uff08\u53ef\u9009\uff09',
+                      hintText:
+                          '\u6dfb\u52a0\u5907\u6ce8\uff08\u53ef\u9009\uff09',
                       prefixIcon: Icon(Icons.notes_outlined, size: 20),
                     ),
                     maxLines: 3,
@@ -477,7 +491,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
     try {
       final store = await ref.read(taskEventServerFirstStoreProvider.future);
-      late final result;
+      late final ServerFirstWriteResult result;
       if (widget.eventId == null) {
         result = await store.createEvent(payload);
       } else {
@@ -692,8 +706,7 @@ class _CalendarSelector extends StatelessWidget {
                   calendar.name,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: selected ? color : null,
                   ),
                 ),
@@ -779,8 +792,7 @@ class _DateTimeTile extends StatelessWidget {
   }
 
   String _format(DateTime dt, bool allDay) {
-    final date =
-        '${dt.year}\u5e74${dt.month}\u6708${dt.day}\u65e5';
+    final date = '${dt.year}\u5e74${dt.month}\u6708${dt.day}\u65e5';
     if (allDay) {
       return date;
     }

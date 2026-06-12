@@ -2,7 +2,14 @@
 /// are handled exclusively by the server. This client-side service is fully
 /// stubbed — all real methods return empty data or throw StateError.
 /// See: server/src/outlook/outlook.service.ts
+library;
+
 import 'outlook_auth_service.dart';
+
+typedef MsGraphServiceFactory = MsGraphService Function(
+  OutlookConfig config, {
+  required OutlookSyncMode syncMode,
+});
 
 class MsGraphService {
   static const _defaultTimezone = 'UTC';
@@ -15,10 +22,6 @@ class MsGraphService {
 
   final OutlookConfig config;
   final OutlookSyncMode syncMode;
-
-  Future<Map<String, String>?> _authHeaders() async {
-    return null;
-  }
 
   Future<List<Map<String, dynamic>>> getCalendars() async {
     return const <Map<String, dynamic>>[];
@@ -33,10 +36,6 @@ class MsGraphService {
     return (events: const <Map<String, dynamic>>[], deltaLink: null);
   }
 
-  Future<Map<String, String>> _writeHeaders() async {
-    throw StateError('Outlook is server-managed and read-only on the client.');
-  }
-
   void _assertWriteAllowed({
     required bool isFlowPlanV2ManagedContainer,
   }) {
@@ -47,7 +46,8 @@ class MsGraphService {
     required String name,
     required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
+    _assertWriteAllowed(
+        isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     return const <String, dynamic>{};
   }
 
@@ -56,7 +56,8 @@ class MsGraphService {
     required String calendarId,
     required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
+    _assertWriteAllowed(
+        isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     return null;
   }
 
@@ -66,7 +67,8 @@ class MsGraphService {
     required Map<String, dynamic> event,
     required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
+    _assertWriteAllowed(
+        isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     return false;
   }
 
@@ -82,7 +84,8 @@ class MsGraphService {
     required String eventId,
     required bool isFlowPlanV2ManagedContainer,
   }) async {
-    _assertWriteAllowed(isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
+    _assertWriteAllowed(
+        isFlowPlanV2ManagedContainer: isFlowPlanV2ManagedContainer);
     return false;
   }
 
@@ -148,10 +151,12 @@ class MsGraphService {
     final startRaw = graphEvent['start'] as Map<String, dynamic>? ?? const {};
     final endRaw = graphEvent['end'] as Map<String, dynamic>? ?? const {};
 
-    final start = DateTime.tryParse(startRaw['dateTime'] as String? ?? '')?.toLocal() ??
-        DateTime.now();
-    final end = DateTime.tryParse(endRaw['dateTime'] as String? ?? '')?.toLocal() ??
-        start.add(const Duration(hours: 1));
+    final start =
+        DateTime.tryParse(startRaw['dateTime'] as String? ?? '')?.toLocal() ??
+            DateTime.now();
+    final end =
+        DateTime.tryParse(endRaw['dateTime'] as String? ?? '')?.toLocal() ??
+            start.add(const Duration(hours: 1));
 
     final statusRaw = (graphEvent['showAs'] as String? ?? 'busy').toLowerCase();
     final status = switch (statusRaw) {
@@ -183,8 +188,8 @@ class MsGraphService {
   }
 
   static String? _extractLocation(Map<String, dynamic> graphEvent) {
-    final location =
-        graphEvent['location'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final location = graphEvent['location'] as Map<String, dynamic>? ??
+        const <String, dynamic>{};
     final displayName = (location['displayName'] as String?)?.trim();
     if (displayName != null && displayName.isNotEmpty) {
       return displayName;
@@ -204,10 +209,11 @@ class MsGraphService {
   }
 
   static String? _extractBodyText(Map<String, dynamic> graphEvent) {
-    final bodyMap =
-        graphEvent['body'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final bodyMap = graphEvent['body'] as Map<String, dynamic>? ??
+        const <String, dynamic>{};
     final bodyContent = (bodyMap['content'] as String?)?.trim();
-    final bodyContentType = (bodyMap['contentType'] as String? ?? '').trim().toLowerCase();
+    final bodyContentType =
+        (bodyMap['contentType'] as String? ?? '').trim().toLowerCase();
     if (bodyContent != null && bodyContent.isNotEmpty) {
       final normalized = bodyContentType == 'html'
           ? _stripHtml(bodyContent)
@@ -240,7 +246,8 @@ class MsGraphService {
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'");
     final collapsedSpaces = decoded.replaceAll(RegExp(r'[ \t]+'), ' ');
-    final collapsedLines = collapsedSpaces.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    final collapsedLines =
+        collapsedSpaces.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     return collapsedLines.trim();
   }
 }

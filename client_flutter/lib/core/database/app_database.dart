@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -158,6 +158,10 @@ class AppDatabase extends _$AppDatabase {
 
           if (from < 18) {
             await _ensureTaskLocationColumn();
+          }
+
+          if (from < 19) {
+            await _ensureActivityRecordDeviceColumns();
           }
         },
       );
@@ -778,6 +782,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> _ensureActivityRecordDeviceColumns() async {
+    if (!await _tableExists('activity_records')) {
+      return;
+    }
     final columns = await customSelect(
       'PRAGMA table_info(activity_records)',
     ).get();
@@ -795,6 +802,11 @@ class AppDatabase extends _$AppDatabase {
         'ALTER TABLE activity_records ADD COLUMN platform TEXT',
       );
     }
+    if (!names.contains('class_name')) {
+      await customStatement(
+        'ALTER TABLE activity_records ADD COLUMN class_name TEXT',
+      );
+    }
     await customStatement(
       'CREATE INDEX IF NOT EXISTS activity_records_device_idx '
       'ON activity_records(device_id, start_time)',
@@ -803,6 +815,17 @@ class AppDatabase extends _$AppDatabase {
       'CREATE INDEX IF NOT EXISTS activity_records_platform_idx '
       'ON activity_records(platform, start_time)',
     );
+  }
+
+  Future<bool> _tableExists(String tableName) async {
+    final rows = await customSelect(
+      'SELECT name FROM sqlite_master WHERE type = ? AND name = ? LIMIT 1',
+      variables: [
+        const Variable<String>('table'),
+        Variable<String>(tableName),
+      ],
+    ).get();
+    return rows.isNotEmpty;
   }
 
   Future<void> _ensureAppSettingsTable() async {

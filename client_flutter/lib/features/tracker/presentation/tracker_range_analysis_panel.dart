@@ -245,6 +245,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
                 child: DropdownButtonFormField<String?>(
                   key: ValueKey<String?>('detail-process-$selectedProcess'),
                   initialValue: selectedProcess,
+                  isExpanded: true,
                   decoration: InputDecoration(
                     labelText: '应用',
                     border: OutlineInputBorder(
@@ -280,6 +281,7 @@ class _SelectedRangeAnalysisPanelState extends State<_SelectedRangeAnalysisPanel
                 child: DropdownButtonFormField<String?>(
                   key: ValueKey<String?>('detail-category-$selectedCategory'),
                   initialValue: selectedCategory,
+                  isExpanded: true,
                   decoration: InputDecoration(
                     labelText: '分类',
                     border: OutlineInputBorder(

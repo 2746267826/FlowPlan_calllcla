@@ -16,8 +16,39 @@ class TrackerPlatformSource {
     required this.supportsDetailedInputHistory,
   });
 
-  factory TrackerPlatformSource.current() {
-    if (Platform.isWindows) {
+  const TrackerPlatformSource.testing({
+    required String platformLabel,
+    required TrackerCollectionMode collectionMode,
+    required bool supportsInputAnalytics,
+    required bool supportsSequenceRecording,
+    required bool supportsUsageAccessPermission,
+    required bool supportsDetailedInputHistory,
+  }) : this._(
+          platformLabel: platformLabel,
+          collectionMode: collectionMode,
+          supportsInputAnalytics: supportsInputAnalytics,
+          supportsSequenceRecording: supportsSequenceRecording,
+          supportsUsageAccessPermission: supportsUsageAccessPermission,
+          supportsDetailedInputHistory: supportsDetailedInputHistory,
+        );
+
+  const TrackerPlatformSource.windowsForTesting()
+      : this._(
+          platformLabel: 'Windows',
+          collectionMode: TrackerCollectionMode.continuousWindowSampling,
+          supportsInputAnalytics: true,
+          supportsSequenceRecording: true,
+          supportsUsageAccessPermission: false,
+          supportsDetailedInputHistory: true,
+        );
+
+  factory TrackerPlatformSource.current({
+    bool Function()? isWindows,
+    bool Function()? isAndroid,
+  }) {
+    final windows = isWindows ?? () => Platform.isWindows;
+    final android = isAndroid ?? () => Platform.isAndroid;
+    if (windows()) {
       return const TrackerPlatformSource._(
         platformLabel: 'Windows',
         collectionMode: TrackerCollectionMode.continuousWindowSampling,
@@ -27,7 +58,7 @@ class TrackerPlatformSource {
         supportsDetailedInputHistory: true,
       );
     }
-    if (Platform.isAndroid) {
+    if (android()) {
       return const TrackerPlatformSource._(
         platformLabel: 'Android',
         collectionMode: TrackerCollectionMode.manualUsageStatsImport,
@@ -60,8 +91,7 @@ class TrackerPlatformSource {
   bool get isAndroid =>
       collectionMode == TrackerCollectionMode.manualUsageStatsImport;
 
-  bool get isSupported =>
-      collectionMode != TrackerCollectionMode.unsupported;
+  bool get isSupported => collectionMode != TrackerCollectionMode.unsupported;
 
   String get collectionDescription {
     return switch (collectionMode) {

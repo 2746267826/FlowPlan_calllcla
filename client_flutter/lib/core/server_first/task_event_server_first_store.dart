@@ -52,14 +52,16 @@ class TaskEventServerFirstStore {
     return _repository.events(from: from, to: to, q: q, limit: limit);
   }
 
-  Future<ServerFirstWriteResult> createTask(Map<String, Object?> payload) async {
+  Future<ServerFirstWriteResult> createTask(
+      Map<String, Object?> payload) async {
     final writePayload = _ensureUid(payload);
     try {
       final result = await _repository.createTask(
         writePayload,
         queueOnFailure: false,
       );
-      final localId = await _createLocalTask(_payloadForLocal(result, writePayload));
+      final localId =
+          await _createLocalTask(_payloadForLocal(result, writePayload));
       await _markSyncedFromResult(
         objectType: SyncObjectType.taskItem.key,
         localId: localId.toString(),
@@ -229,7 +231,10 @@ class TaskEventServerFirstStore {
           localId: localId.toString(),
           serverId: serverId,
           action: OfflineMutationAction.delete,
-          payload: <String, Object?>{'id': localId.toString(), 'uid': state?.uid},
+          payload: <String, Object?>{
+            'id': localId.toString(),
+            'uid': state?.uid
+          },
           baseServerVersion: version,
         );
         return ServerFirstWriteResult.pending(
@@ -368,7 +373,8 @@ class TaskEventServerFirstStore {
     required String id,
     int? baseServerVersion,
   }) {
-    return _repository.deleteEvent(id: id, baseServerVersion: baseServerVersion);
+    return _repository.deleteEvent(
+        id: id, baseServerVersion: baseServerVersion);
   }
 
   Future<ServerFirstWriteResult> deleteLocalEvent({
@@ -404,7 +410,10 @@ class TaskEventServerFirstStore {
           localId: localId.toString(),
           serverId: serverId,
           action: OfflineMutationAction.delete,
-          payload: <String, Object?>{'id': localId.toString(), 'uid': state?.uid},
+          payload: <String, Object?>{
+            'id': localId.toString(),
+            'uid': state?.uid
+          },
           baseServerVersion: version,
         );
         return ServerFirstWriteResult.pending(
@@ -480,7 +489,8 @@ class TaskEventServerFirstStore {
   }
 
   Future<int> _createLocalEvent(Map<String, Object?> payload) {
-    return _eventRepository.create(_eventInsertCompanion(payload), audit: false);
+    return _eventRepository.create(_eventInsertCompanion(payload),
+        audit: false);
   }
 
   Future<void> _updateLocalEvent(
@@ -508,7 +518,7 @@ class TaskEventServerFirstStore {
       due: Value(dateAny(payload, const ['dueAt', 'due', 'dueDate'])),
       completed: Value(completedAt),
       priority: Value(intAny(payload, const ['priority']) ?? 0),
-      status: Value(taskStatus(stringFromMap(payload, 'status'))),
+      status: Value(_localTaskStatus(stringFromMap(payload, 'status'))),
       percentComplete: Value(
         intAny(payload, const ['percentComplete']) ?? (completed ? 100 : 0),
       ),
@@ -517,7 +527,8 @@ class TaskEventServerFirstStore {
       durationMinutes: Value(intAny(payload, const ['durationMinutes']) ?? 60),
       isSplittable: Value(boolAny(payload, const ['isSplittable']) ?? false),
       priorityLocal: Value(intAny(payload, const ['priorityLocal']) ?? 2),
-      isAutoScheduled: Value(boolAny(payload, const ['isAutoScheduled']) ?? true),
+      isAutoScheduled:
+          Value(boolAny(payload, const ['isAutoScheduled']) ?? true),
       taskListId: Value(intAny(payload, const ['taskListId'])),
       tagId: Value(stringFromMap(payload, 'tagId')),
       isLocked: Value(boolAny(payload, const ['isLocked']) ?? false),
@@ -538,12 +549,13 @@ class TaskEventServerFirstStore {
       location: _nullableStringValue(patch, const ['location']),
       dtstart: _nullableDateValue(patch, const ['dtstart', 'startAt']),
       due: _nullableDateValue(patch, const ['dueAt', 'due', 'dueDate']),
-      completed: patch.containsKey('completedAt') || patch.containsKey('completed')
-          ? Value(completed)
-          : const Value.absent(),
+      completed:
+          patch.containsKey('completedAt') || patch.containsKey('completed')
+              ? Value(completed)
+              : const Value.absent(),
       priority: _valueInt(patch, const ['priority']),
       status: patch.containsKey('status')
-          ? Value(taskStatus(status))
+          ? Value(_localTaskStatus(status))
           : const Value.absent(),
       percentComplete: hasAny(patch, const ['percentComplete'])
           ? _valueInt(patch, const ['percentComplete'])
@@ -713,6 +725,20 @@ class TaskEventServerFirstStore {
     }
   }
 
+  String _localTaskStatus(String? value) {
+    switch (taskStatus(value)) {
+      case 'done':
+        return 'COMPLETED';
+      case 'in_progress':
+        return 'IN-PROCESS';
+      case 'cancelled':
+        return 'CANCELLED';
+      case 'todo':
+      default:
+        return 'NEEDS-ACTION';
+    }
+  }
+
   // Status helpers now imported from payload_utils.dart (aligned with server 5.1)
   // _taskStatus → taskStatus()  (returns 'todo'/'done' etc.)
   // _eventStatus → eventStatus()  (returns 'confirmed'/'tentative'/'cancelled')
@@ -723,22 +749,28 @@ class TaskEventServerFirstStore {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(stringAny(map, keys) ?? '');
   }
-  Value<String?> _nullableStringValue(Map<String, Object?> map, List<String> keys) {
+
+  Value<String?> _nullableStringValue(
+      Map<String, Object?> map, List<String> keys) {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(stringAny(map, keys));
   }
+
   Value<int> _valueInt(Map<String, Object?> map, List<String> keys) {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(intAny(map, keys) ?? 0);
   }
+
   Value<int?> _nullableIntValue(Map<String, Object?> map, List<String> keys) {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(intAny(map, keys));
   }
+
   Value<bool> _valueBool(Map<String, Object?> map, List<String> keys) {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(boolAny(map, keys) ?? false);
   }
+
   Value<DateTime> _valueDate(Map<String, Object?> map, List<String> keys) {
     if (!hasAny(map, keys)) return const Value.absent();
     return Value(dateAny(map, keys) ?? DateTime.now());

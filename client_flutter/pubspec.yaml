@@ -67,6 +67,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  async: ^2.13.0
 
   # === 代码生成 ===
   build_runner: ^2.4.14
@@ -76,6 +77,8 @@ dev_dependencies:
   riverpod_generator: ^2.6.4
   mocktail: ^1.0.4
   golden_toolkit: ^0.15.0
+  path_provider_platform_interface: ^2.1.2
+  url_launcher_platform_interface: ^2.3.2
   
   #安装包生成
   msix: ^3.16.1

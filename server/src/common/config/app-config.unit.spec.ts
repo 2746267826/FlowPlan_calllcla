@@ -81,4 +81,28 @@ describe('loadConfig', () => {
       logFormat: 'json',
     });
   });
+
+  it('keeps empty database-derived secrets when no database URL or JWT secret is configured', () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key];
+    }
+
+    expect(loadConfig()).toMatchObject({
+      databaseUrl: '',
+      jwtAccessSecret: '',
+      jwtRefreshSecret: '',
+    });
+  });
+
+  it('uses the access secret as the refresh secret fallback', () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key];
+    }
+    process.env.JWT_ACCESS_SECRET = 'access-only';
+
+    expect(loadConfig()).toMatchObject({
+      jwtAccessSecret: 'access-only',
+      jwtRefreshSecret: 'access-only',
+    });
+  });
 });

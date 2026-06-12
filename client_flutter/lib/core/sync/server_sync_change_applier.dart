@@ -1,4 +1,6 @@
 import 'package:drift/drift.dart';
+// ignore: depend_on_referenced_packages
+import 'package:meta/meta.dart';
 
 import '../database/app_database.dart';
 import 'sync_object_registry.dart';
@@ -116,7 +118,8 @@ class ServerSyncChangeApplier {
         continue;
       }
       final change = ServerSyncChange.fromJson(Map<String, dynamic>.from(raw));
-      perType.update(change.objectType, (value) => value + 1, ifAbsent: () => 1);
+      perType.update(change.objectType, (value) => value + 1,
+          ifAbsent: () => 1);
       if (change.changeId.isEmpty ||
           change.objectType.isEmpty ||
           change.serverId.isEmpty) {
@@ -137,16 +140,21 @@ class ServerSyncChangeApplier {
       return left.changeId.compareTo(right.changeId);
     });
 
+    final appliedChanges = <ServerSyncChange>[];
     for (final change in changes) {
       try {
-        await applyChange(change);
-        applied.add(change.changeId);
+        if (await applyChange(change)) {
+          applied.add(change.changeId);
+          appliedChanges.add(change);
+        } else {
+          skipped++;
+        }
       } catch (error) {
         failed++;
         errors.add('${change.objectType}:${change.changeId}: $error');
       }
     }
-    await _refreshPlaceholderCalendarNames(changes);
+    await _refreshPlaceholderCalendarNames(appliedChanges);
     final repairedOrphans = await repairOutlookOrphanEvents();
     return ServerSyncApplyResult(
       received: rawChanges.length,
@@ -171,11 +179,17 @@ class ServerSyncChangeApplier {
     }
   }
 
-  Future<void> applyChange(ServerSyncChange change) async {
+  Future<bool> applyChange(ServerSyncChange change) async {
     final state = await _stateStore.getStateByServerId(
       objectType: change.objectType,
       serverId: change.serverId,
     );
+    final currentServerVersion = state?.serverVersion;
+    if (change.action != 'delete' &&
+        currentServerVersion != null &&
+        change.serverVersion <= currentServerVersion) {
+      return false;
+    }
 
     if (change.action == 'delete') {
       if (state != null) {
@@ -185,12 +199,12 @@ class ServerSyncChangeApplier {
           localId: state.localId,
         );
       }
-      return;
+      return true;
     }
 
     final localId = await _upsertLocal(change, state?.localId);
     if (localId == null || localId.isEmpty) {
-      return;
+      return false;
     }
 
     await _stateStore.markSynced(
@@ -200,6 +214,12 @@ class ServerSyncChangeApplier {
       serverVersion: change.serverVersion,
       uid: change.uid ?? _string(change.payload, 'uid'),
     );
+    return true;
+  }
+
+  @visibleForTesting
+  Future<String?> upsertLocalForTesting(ServerSyncChange change) {
+    return _upsertLocal(change, null);
   }
 
   Future<String?> _upsertLocal(
@@ -417,11 +437,14 @@ class ServerSyncChangeApplier {
       isVisible: Value(_bool(payload, 'isVisible', 'is_visible') ?? true),
       isDefault: Value(_bool(payload, 'isDefault', 'is_default') ?? false),
       source: Value(_string(payload, 'source') ?? 'server'),
-      syncUrl: Value(_string(payload, 'syncUrl', 'sync_url') ?? remoteCalendarId),
-      createdAt: Value(_date(payload, 'createdAt', 'created_at') ?? DateTime.now()),
+      syncUrl:
+          Value(_string(payload, 'syncUrl', 'sync_url') ?? remoteCalendarId),
+      createdAt:
+          Value(_date(payload, 'createdAt', 'created_at') ?? DateTime.now()),
     );
     if (id == null) {
-      final created = await _database.into(_database.eventCalendars).insert(companion);
+      final created =
+          await _database.into(_database.eventCalendars).insert(companion);
       return created.toString();
     }
     await _database.update(_database.eventCalendars).replace(companion);
@@ -442,10 +465,12 @@ class ServerSyncChangeApplier {
       isVisible: Value(_bool(payload, 'isVisible', 'is_visible') ?? true),
       isDefault: Value(_bool(payload, 'isDefault', 'is_default') ?? false),
       isArchived: Value(_bool(payload, 'isArchived', 'is_archived') ?? false),
-      createdAt: Value(_date(payload, 'createdAt', 'created_at') ?? DateTime.now()),
+      createdAt:
+          Value(_date(payload, 'createdAt', 'created_at') ?? DateTime.now()),
     );
     if (id == null) {
-      final created = await _database.into(_database.taskLists).insert(companion);
+      final created =
+          await _database.into(_database.taskLists).insert(companion);
       return created.toString();
     }
     await _database.update(_database.taskLists).replace(companion);
@@ -469,10 +494,13 @@ class ServerSyncChangeApplier {
             _string(payload, 'bodyPreview', 'name') ??
             '未命名日程',
       ),
-      description:
-          Value(_string(payload, 'description', 'bodyPreview', 'notes') ?? _string(payload, 'note')),
+      description: Value(
+          _string(payload, 'description', 'bodyPreview', 'notes') ??
+              _string(payload, 'note')),
       location: Value(_locationString(payload)),
-      dtstart: Value(_date(payload, 'dtstart', 'startAt', 'start_at', 'startTime') ?? DateTime.now()),
+      dtstart: Value(
+          _date(payload, 'dtstart', 'startAt', 'start_at', 'startTime') ??
+              DateTime.now()),
       dtend: Value(_date(payload, 'dtend', 'endAt', 'end_at', 'endTime')),
       rrule: Value(_string(payload, 'rrule')),
       status: Value(_string(payload, 'status') ?? 'CONFIRMED'),
@@ -483,7 +511,8 @@ class ServerSyncChangeApplier {
       isBlock: Value(_bool(payload, 'isBlock', 'is_block') ?? false),
     );
     if (id == null) {
-      final created = await _database.into(_database.calendarEvents).insert(companion);
+      final created =
+          await _database.into(_database.calendarEvents).insert(companion);
       return created.toString();
     }
     await _database.update(_database.calendarEvents).replace(companion);
@@ -530,15 +559,14 @@ class ServerSyncChangeApplier {
   }
 
   Future<int> _ensureDefaultCalendarId() async {
-    final defaultCalendar = await _database.select(_database.eventCalendars)
+    final defaultCalendar = _database.select(_database.eventCalendars)
       ..where((t) => t.isDefault.equals(true))
       ..limit(1);
     final existing = await defaultCalendar.getSingleOrNull();
     if (existing != null) {
       return existing.id;
     }
-    final anyCalendar = await _database.select(_database.eventCalendars)
-      ..limit(1);
+    final anyCalendar = _database.select(_database.eventCalendars)..limit(1);
     final any = await anyCalendar.getSingleOrNull();
     if (any != null) {
       return any.id;
@@ -578,9 +606,8 @@ class ServerSyncChangeApplier {
   Future<void> _refreshPlaceholderCalendarNames(
     List<ServerSyncChange> appliedChanges,
   ) async {
-    final bookChanges = appliedChanges
-        .where((c) => c.objectType == 'calendar_book')
-        .toList();
+    final bookChanges =
+        appliedChanges.where((c) => c.objectType == 'calendar_book').toList();
     if (bookChanges.isEmpty) return;
 
     for (final bookChange in bookChanges) {
@@ -599,7 +626,7 @@ class ServerSyncChangeApplier {
       final isVisible = _bool(payload, 'isVisible', 'is_visible') ?? true;
       final isDefault = _bool(payload, 'isDefault', 'is_default') ?? false;
 
-      await _database.update(_database.eventCalendars)
+      _database.update(_database.eventCalendars)
         ..where((row) => row.id.equals(existingId))
         ..write(EventCalendarsCompanion(
           name: Value(name),
@@ -713,12 +740,16 @@ class ServerSyncChangeApplier {
       completed: Value(_date(payload, 'completed')),
       priority: Value(_int(payload, 'priority') ?? 0),
       status: Value(_string(payload, 'status') ?? 'NEEDS-ACTION'),
-      percentComplete: Value(_int(payload, 'percentComplete', 'percent_complete') ?? 0),
+      percentComplete:
+          Value(_int(payload, 'percentComplete', 'percent_complete') ?? 0),
       categories: Value(_string(payload, 'categories') ?? '[]'),
       rrule: Value(_string(payload, 'rrule')),
-      durationMinutes: Value(_int(payload, 'durationMinutes', 'duration_minutes') ?? 60),
-      isSplittable: Value(_bool(payload, 'isSplittable', 'is_splittable') ?? false),
-      priorityLocal: Value(_int(payload, 'priorityLocal', 'priority_local') ?? 2),
+      durationMinutes:
+          Value(_int(payload, 'durationMinutes', 'duration_minutes') ?? 60),
+      isSplittable:
+          Value(_bool(payload, 'isSplittable', 'is_splittable') ?? false),
+      priorityLocal:
+          Value(_int(payload, 'priorityLocal', 'priority_local') ?? 2),
       isAutoScheduled: Value(
         _bool(payload, 'isAutoScheduled', 'is_auto_scheduled') ?? true,
       ),
@@ -730,7 +761,8 @@ class ServerSyncChangeApplier {
       ),
     );
     if (id == null) {
-      final created = await _database.into(_database.taskItems).insert(companion);
+      final created =
+          await _database.into(_database.taskItems).insert(companion);
       return created.toString();
     }
     await _database.update(_database.taskItems).replace(companion);
@@ -762,8 +794,10 @@ class ServerSyncChangeApplier {
         [
           _int(payload, 'taskId', 'task_id') ?? 0,
           _int(payload, 'segmentIndex', 'segment_index') ?? 0,
-          (_date(payload, 'startAt', 'start_at') ?? DateTime.now()).toIso8601String(),
-          (_date(payload, 'endAt', 'end_at') ?? DateTime.now()).toIso8601String(),
+          (_date(payload, 'startAt', 'start_at') ?? DateTime.now())
+              .toIso8601String(),
+          (_date(payload, 'endAt', 'end_at') ?? DateTime.now())
+              .toIso8601String(),
           _string(payload, 'source') ?? 'server',
           _string(payload, 'planRunId', 'plan_run_id'),
           _string(payload, 'note'),
@@ -771,9 +805,11 @@ class ServerSyncChangeApplier {
           now,
         ],
       );
-      final row = await _database.customSelect(
-        'SELECT last_insert_rowid() AS id',
-      ).getSingle();
+      final row = await _database
+          .customSelect(
+            'SELECT last_insert_rowid() AS id',
+          )
+          .getSingle();
       return row.read<int>('id').toString();
     }
 
@@ -793,7 +829,8 @@ class ServerSyncChangeApplier {
       [
         _int(payload, 'taskId', 'task_id') ?? 0,
         _int(payload, 'segmentIndex', 'segment_index') ?? 0,
-        (_date(payload, 'startAt', 'start_at') ?? DateTime.now()).toIso8601String(),
+        (_date(payload, 'startAt', 'start_at') ?? DateTime.now())
+            .toIso8601String(),
         (_date(payload, 'endAt', 'end_at') ?? DateTime.now()).toIso8601String(),
         _string(payload, 'source') ?? 'server',
         _string(payload, 'planRunId', 'plan_run_id'),
@@ -813,9 +850,12 @@ class ServerSyncChangeApplier {
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
     final values = [
-      change.uid ?? _string(payload, 'actualUid', 'actual_uid') ?? change.serverId,
+      change.uid ??
+          _string(payload, 'actualUid', 'actual_uid') ??
+          change.serverId,
       _string(payload, 'title') ?? '未命名实际记录',
-      (_date(payload, 'startAt', 'start_at') ?? DateTime.now()).toIso8601String(),
+      (_date(payload, 'startAt', 'start_at') ?? DateTime.now())
+          .toIso8601String(),
       (_date(payload, 'endAt', 'end_at') ?? DateTime.now()).toIso8601String(),
       _string(payload, 'sourceType', 'source_type') ?? 'server',
       _string(payload, 'sourceId', 'source_id'),
@@ -889,8 +929,11 @@ class ServerSyncChangeApplier {
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
     final values = [
-      change.uid ?? _string(payload, 'segmentUid', 'segment_uid') ?? change.serverId,
-      (_date(payload, 'startAt', 'start_at') ?? DateTime.now()).toIso8601String(),
+      change.uid ??
+          _string(payload, 'segmentUid', 'segment_uid') ??
+          change.serverId,
+      (_date(payload, 'startAt', 'start_at') ?? DateTime.now())
+          .toIso8601String(),
       (_date(payload, 'endAt', 'end_at') ?? DateTime.now()).toIso8601String(),
       _string(payload, 'primaryProcessName', 'primary_process_name'),
       _string(payload, 'primaryWindowTitle', 'primary_window_title'),
@@ -1097,13 +1140,16 @@ class ServerSyncChangeApplier {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
-    final reportUid =
-        change.uid ?? _string(payload, 'reportUid', 'report_uid') ?? change.serverId;
+    final reportUid = change.uid ??
+        _string(payload, 'reportUid', 'report_uid') ??
+        change.serverId;
     final values = [
       reportUid,
       _string(payload, 'reportType', 'report_type') ?? 'daily',
-      (_date(payload, 'periodStart', 'period_start') ?? DateTime.now()).toIso8601String(),
-      (_date(payload, 'periodEnd', 'period_end') ?? DateTime.now()).toIso8601String(),
+      (_date(payload, 'periodStart', 'period_start') ?? DateTime.now())
+          .toIso8601String(),
+      (_date(payload, 'periodEnd', 'period_end') ?? DateTime.now())
+          .toIso8601String(),
       _string(payload, 'title') ?? '远端报告',
       _string(payload, 'summaryMarkdown', 'summary_markdown') ?? '',
       _string(payload, 'metricsJson', 'metrics_json') ?? '{}',
@@ -1181,9 +1227,11 @@ class ServerSyncChangeApplier {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
-    final entryDate = _date(payload, 'entryDate', 'entry_date') ?? DateTime.now();
-    final diaryUid =
-        change.uid ?? _string(payload, 'diaryUid', 'diary_uid') ?? change.serverId;
+    final entryDate =
+        _date(payload, 'entryDate', 'entry_date') ?? DateTime.now();
+    final diaryUid = change.uid ??
+        _string(payload, 'diaryUid', 'diary_uid') ??
+        change.serverId;
     final values = [
       diaryUid,
       _dayKey(entryDate),
@@ -1205,7 +1253,7 @@ class ServerSyncChangeApplier {
         'SELECT id FROM diary_entries WHERE diary_uid = ? LIMIT 1',
         variables: [Variable<String>(diaryUid)],
       ).getSingleOrNull();
-      targetId = existing == null ? null : existing.read<int>('id');
+      targetId = existing?.read<int>('id');
     }
     if (targetId == null) {
       await _database.customStatement(
@@ -1272,7 +1320,8 @@ class ServerSyncChangeApplier {
       _string(payload, 'status') ?? 'pending',
       _int(payload, 'attempts') ?? 0,
       _string(payload, 'lastError', 'last_error'),
-      (_date(payload, 'scheduledAt', 'scheduled_at') ?? DateTime.now()).toIso8601String(),
+      (_date(payload, 'scheduledAt', 'scheduled_at') ?? DateTime.now())
+          .toIso8601String(),
       _date(payload, 'sentAt', 'sent_at')?.toIso8601String(),
       _string(payload, 'createdAt', 'created_at') ?? now,
       now,
@@ -1331,7 +1380,9 @@ class ServerSyncChangeApplier {
     final id = int.tryParse(currentLocalId ?? '');
     final now = DateTime.now().toIso8601String();
     final values = [
-      change.uid ?? _string(payload, 'folderUid', 'folder_uid') ?? change.serverId,
+      change.uid ??
+          _string(payload, 'folderUid', 'folder_uid') ??
+          change.serverId,
       _string(payload, 'provider') ?? 'local',
       _string(payload, 'displayName', 'display_name') ?? '远端文件夹',
       _string(payload, 'localPath', 'local_path'),
@@ -1565,9 +1616,12 @@ class ServerSyncChangeApplier {
   ) async {
     final payload = change.payload;
     final id = int.tryParse(currentLocalId ?? '');
+    final folderId = await _resolveFileFolderUsageFolderId(payload);
     final values = [
-      change.uid ?? _string(payload, 'usageUid', 'usage_uid') ?? change.serverId,
-      _int(payload, 'folderId', 'folder_id') ?? 0,
+      change.uid ??
+          _string(payload, 'usageUid', 'usage_uid') ??
+          change.serverId,
+      folderId ?? 0,
       _string(payload, 'entityType', 'entity_type'),
       _string(payload, 'entityId', 'entity_id'),
       _string(payload, 'action') ?? 'open',
@@ -1609,6 +1663,48 @@ class ServerSyncChangeApplier {
       [...values, id],
     );
     return id.toString();
+  }
+
+  Future<int?> _resolveFileFolderUsageFolderId(
+    Map<String, dynamic> payload,
+  ) async {
+    final direct = _int(payload, 'folderId', 'folder_id');
+    if (direct != null) {
+      return direct;
+    }
+
+    final folderServerId = _string(
+      payload,
+      'folderId',
+      'folder_id',
+      'folderServerId',
+    );
+    if (folderServerId == null) {
+      return null;
+    }
+
+    final state = await _stateStore.getStateByServerId(
+      objectType: 'file_folder',
+      serverId: folderServerId,
+    );
+    final stateLocalId = int.tryParse(state?.localId ?? '');
+    if (stateLocalId != null) {
+      return stateLocalId;
+    }
+
+    final folder = await _database.customSelect(
+      '''
+      SELECT id
+      FROM file_folders
+      WHERE folder_uid = ? OR remote_id = ?
+      LIMIT 1
+      ''',
+      variables: [
+        Variable<String>(folderServerId),
+        Variable<String>(folderServerId),
+      ],
+    ).getSingleOrNull();
+    return folder?.read<int>('id');
   }
 
   Future<String> _upsertFileVersionRecord(
@@ -1717,14 +1813,17 @@ class ServerSyncChangeApplier {
         _string(payload, 'metadataJson', 'metadata_json'),
       ],
     );
-    final row = await _database.customSelect(
-      'SELECT last_insert_rowid() AS id',
-    ).getSingle();
+    final row = await _database
+        .customSelect(
+          'SELECT last_insert_rowid() AS id',
+        )
+        .getSingle();
     return row.read<int>('id').toString();
   }
 
   Future<String?> _upsertUserSetting(ServerSyncChange change) async {
-    final key = change.uid ?? _string(change.payload, 'settingKey', 'setting_key');
+    final key =
+        change.uid ?? _string(change.payload, 'settingKey', 'setting_key');
     final value = _string(change.payload, 'settingValue', 'setting_value');
     if (key == null || value == null) {
       return null;
@@ -1733,7 +1832,8 @@ class ServerSyncChangeApplier {
     return key;
   }
 
-  String? _string(Map<String, dynamic> payload, String key, [String? alt, String? alt2]) {
+  String? _string(Map<String, dynamic> payload, String key,
+      [String? alt, String? alt2]) {
     final value = payload[key] ??
         (alt == null ? null : payload[alt]) ??
         (alt2 == null ? null : payload[alt2]);
@@ -1821,7 +1921,8 @@ class ServerSyncChangeApplier {
     return null;
   }
 
-  DateTime? _date(Map<String, dynamic> payload, String key, [String? alt, String? alt2, String? alt3]) {
+  DateTime? _date(Map<String, dynamic> payload, String key,
+      [String? alt, String? alt2, String? alt3]) {
     final value = payload[key] ??
         (alt == null ? null : payload[alt]) ??
         (alt2 == null ? null : payload[alt2]) ??
@@ -1845,9 +1946,11 @@ class ServerSyncChangeApplier {
   }
 
   Future<String> _lastInsertId() async {
-    final row = await _database.customSelect(
-      'SELECT last_insert_rowid() AS id',
-    ).getSingle();
+    final row = await _database
+        .customSelect(
+          'SELECT last_insert_rowid() AS id',
+        )
+        .getSingle();
     return row.read<int>('id').toString();
   }
 }

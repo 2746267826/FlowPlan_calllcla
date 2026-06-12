@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/sync/sync_object_registry.dart';
@@ -37,8 +38,8 @@ class EventRepository {
       predicate = predicate & _db.eventCalendars.isVisible.equals(true);
     }
     if (extraFilter != null) {
-      predicate = predicate &
-          extraFilter(_db.calendarEvents, _db.eventCalendars);
+      predicate =
+          predicate & extraFilter(_db.calendarEvents, _db.eventCalendars);
     }
 
     query.where(predicate);
@@ -84,6 +85,22 @@ class EventRepository {
     return _watchEventsInRange(
       start: start,
       end: end,
+    );
+  }
+
+  @visibleForTesting
+  Stream<List<CalendarEvent>> debugWatchForDateRangeWithExtraFilter(
+    DateTime start,
+    DateTime end,
+    Expression<bool> Function(
+      $CalendarEventsTable event,
+      $EventCalendarsTable calendar,
+    ) extraFilter,
+  ) {
+    return _watchEventsInRange(
+      start: start,
+      end: end,
+      extraFilter: extraFilter,
     );
   }
 
@@ -169,8 +186,8 @@ class EventRepository {
           actor: actor,
           action: action,
           event: created,
-          summary:
-              summary ?? '\u521b\u5efa\u65e5\u7a0b\u300c${created.summary}\u300d',
+          summary: summary ??
+              '\u521b\u5efa\u65e5\u7a0b\u300c${created.summary}\u300d',
           after: created.toJson(),
           metadata: metadata,
         );
@@ -318,7 +335,8 @@ class EventRepository {
   }) async {
     return (_db.delete(_db.calendarEvents)
           ..where(
-            (e) => e.source.equals(source) & e.eventCalendarId.equals(calendarId),
+            (e) =>
+                e.source.equals(source) & e.eventCalendarId.equals(calendarId),
           ))
         .go();
   }
@@ -344,7 +362,8 @@ class EventRepository {
     if (matches.length > 1) {
       final duplicateIds = matches.skip(1).map((event) => event.id).toList();
       if (duplicateIds.isNotEmpty) {
-        await (_db.delete(_db.calendarEvents)..where((e) => e.id.isIn(duplicateIds)))
+        await (_db.delete(_db.calendarEvents)
+              ..where((e) => e.id.isIn(duplicateIds)))
             .go();
       }
     }
@@ -370,7 +389,8 @@ class EventRepository {
       return;
     }
 
-    await (_db.update(_db.calendarEvents)..where((e) => e.id.equals(existing.id)))
+    await (_db.update(_db.calendarEvents)
+          ..where((e) => e.id.equals(existing.id)))
         .write(
       CalendarEventsCompanion(
         uid: Value(uid),

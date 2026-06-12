@@ -1655,8 +1655,12 @@ export class ReportsService {
     const userId = await this.devicesService.ensureUser(context.userId);
     const detail = await this.report(reportId, context);
 
-    const entries = (detail.entries as Array<Record<string, unknown>>) ?? [];
-    const evidence = (detail.evidence as Array<Record<string, unknown>>) ?? [];
+    const entries = Array.isArray(detail.entries)
+      ? (detail.entries as Array<Record<string, unknown>>)
+      : [];
+    const evidence = Array.isArray(detail.evidence)
+      ? (detail.evidence as Array<Record<string, unknown>>)
+      : [];
     const report = detail.report as Record<string, unknown>;
 
     // Completeness: fact + inferred + external entries exist
@@ -1666,7 +1670,12 @@ export class ReportsService {
     const completeness = Math.min(100, (factCount > 0 ? 50 : 0) + (inferredCount > 0 ? 30 : 0) + (externalCount > 0 ? 20 : 0));
 
     // Evidence coverage: what percentage of entries have linked evidence
-    const entriesWithEvidence = new Set(evidence.map((e) => String(e.entryId ?? '')));
+    const entryIds = new Set(entries.map((e) => String(e.id ?? '')).filter(Boolean));
+    const entriesWithEvidence = new Set(
+      evidence
+        .map((e) => String(e.entryId ?? ''))
+        .filter((entryId) => entryId && entryIds.has(entryId)),
+    );
     const evidenceCoverage = entries.length > 0
       ? Math.round((entriesWithEvidence.size / entries.length) * 100)
       : 0;

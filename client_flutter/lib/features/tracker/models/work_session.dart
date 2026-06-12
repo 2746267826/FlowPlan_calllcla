@@ -100,6 +100,12 @@ class WorkSessionGrouper {
       return sessions;
     }
 
+    return _mergeCompatibleBaseSessions(sessions);
+  }
+
+  static List<_WorkSessionAccumulator> _mergeCompatibleBaseSessions(
+    List<_WorkSessionAccumulator> sessions,
+  ) {
     final merged = <_WorkSessionAccumulator>[sessions.first];
     for (final next in sessions.skip(1)) {
       final previous = merged.last;
@@ -110,6 +116,17 @@ class WorkSessionGrouper {
       }
     }
     return merged;
+  }
+
+  static WorkSession debugMergeBaseSessionsForTesting(
+    ActivityRecord first,
+    ActivityRecord second,
+  ) {
+    final sessions = <_WorkSessionAccumulator>[
+      _WorkSessionAccumulator.fromRecord(first),
+      _WorkSessionAccumulator.fromRecord(second),
+    ];
+    return _mergeCompatibleBaseSessions(sessions).single.build();
   }
 
   static void _mergeShortInterruptionRuns(
@@ -144,8 +161,7 @@ class WorkSessionGrouper {
         }
 
         final next = sessions[currentIndex + 1];
-        final shouldBridge =
-            previous.canBridgeAcrossRun(interruptions, next);
+        final shouldBridge = previous.canBridgeAcrossRun(interruptions, next);
         if (shouldBridge) {
           previous.absorbInterruptionRun(interruptions, next);
           sessions.removeRange(index, currentIndex + 2);

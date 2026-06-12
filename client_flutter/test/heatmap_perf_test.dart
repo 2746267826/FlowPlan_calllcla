@@ -39,8 +39,6 @@ void main() {
 
     stopwatch.stop();
 
-    print('[C6] 5000 heatmap points → ${aggregated.length} aggregates in ${stopwatch.elapsedMilliseconds}ms');
-
     expect(aggregated.length, greaterThan(0));
     expect(stopwatch.elapsedMilliseconds, lessThan(500));
   });

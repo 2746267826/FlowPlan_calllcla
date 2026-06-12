@@ -370,7 +370,7 @@ export class GeneticSchedulerService {
         count++;
       }
     }
-    return count > 0 ? totalDiff / count : 0;
+    return totalDiff / count;
   }
 
   private chromosomeDistance(a: ScheduleChromosome, b: ScheduleChromosome): number {

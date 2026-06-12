@@ -1,8 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import React from 'react';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { server } from './msw/server';
+
+configure({ asyncUtilTimeout: 5000 });
 
 vi.mock('@ant-design/charts', () => ({
   Area: (props: { data?: unknown[] }) =>

@@ -390,6 +390,7 @@ Future<void> _editReport(
     initialMarkdown: '${item['contentMarkdown'] ?? item['summary'] ?? ''}',
   );
   if (result == null) return;
+  if (!context.mounted) return;
   await _run(context, ref, () async {
     final api = await ref.read(reportsApiProvider.future);
     await api.updateReport(
@@ -458,6 +459,7 @@ Future<void> _editDiary(
     initialMarkdown: '${item['contentMarkdown'] ?? ''}',
   );
   if (result == null) return;
+  if (!context.mounted) return;
   await _run(context, ref, () async {
     final api = await ref.read(reportsApiProvider.future);
     await api.updateDiary(
@@ -575,6 +577,7 @@ Future<void> _configureWeather(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (saved != true) return;
+  if (!context.mounted) return;
   await _run(context, ref, () async {
     final api = await ref.read(reportsApiProvider.future);
     final created = await api.upsertWeatherLocation(
@@ -631,6 +634,7 @@ Future<void> _configurePush(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (saved != true) return;
+  if (!context.mounted) return;
   await _run(context, ref, () async {
     final api = await ref.read(reportsApiProvider.future);
     await api.upsertPushChannel(

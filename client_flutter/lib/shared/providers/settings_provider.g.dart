@@ -104,7 +104,7 @@ final firstDayOfWeekNotifierProvider =
 
 typedef _$FirstDayOfWeekNotifier = Notifier<int>;
 String _$sequenceRecordingNotifierHash() =>
-    r'1d6d3ca0d1f4d70b1f79e4f6cf2f1b6bf8a2d0ea';
+    r'0a70fa0817fd203893b7c0e526d267d8a1006984';
 
 /// See also [SequenceRecordingNotifier].
 @ProviderFor(SequenceRecordingNotifier)

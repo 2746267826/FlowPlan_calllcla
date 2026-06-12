@@ -54,4 +54,57 @@ describe('normalizeTaskPayload', () => {
       isSplittable: true,
     });
   });
+
+  it('falls back to canonical defaults and normalizes numeric flags and legacy fields', () => {
+    const defaultTitle = normalizeTaskPayload({}).title;
+    const task = normalizeTaskPayload({
+      name: '   ',
+      deadline: '2026-04-05T12:00:00.000Z',
+      startTime: '2026-04-05T10:00:00.000Z',
+      estimatedMinutes: 'bad',
+      durationMinutes: 90,
+      taskListName: 'Projects',
+      where: 'Library',
+      rrule: 'FREQ=WEEKLY',
+      isLocked: 2,
+      reminderMinutesBefore: '15',
+      source: 'manual',
+      created_at: '2026-04-01T00:00:00.000Z',
+      updated_at: '2026-04-02T00:00:00.000Z',
+    });
+
+    expect(task).toMatchObject({
+      title: defaultTitle,
+      dueAt: '2026-04-05T12:00:00.000Z',
+      startAt: '2026-04-05T10:00:00.000Z',
+      estimatedMinutes: 90,
+      taskListName: 'Projects',
+      location: 'Library',
+      rrule: 'FREQ=WEEKLY',
+      isLocked: true,
+      reminderMinutesBefore: 15,
+      source: 'manual',
+      createdAt: '2026-04-01T00:00:00.000Z',
+      updatedAt: '2026-04-02T00:00:00.000Z',
+    });
+  });
+
+  it('treats false string and zero numeric lock flags as unlocked', () => {
+    expect(normalizeTaskPayload({ title: 'Task', isLocked: 'false' }).isLocked).toBe(
+      false,
+    );
+    expect(normalizeTaskPayload({ title: 'Task', is_locked: 0 }).isLocked).toBe(false);
+    expect(
+      normalizeTaskPayload({
+        title: 'Task',
+        isLocked: true,
+        allowAutoSchedule: true,
+        canSplit: true,
+      }),
+    ).toMatchObject({
+      isLocked: true,
+      isAutoScheduled: true,
+      isSplittable: true,
+    });
+  });
 });

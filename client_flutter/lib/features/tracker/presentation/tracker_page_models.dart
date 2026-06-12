@@ -1,4 +1,4 @@
-﻿part of 'tracker_page.dart';
+part of 'tracker_page.dart';
 
 enum _TrackerMenuAction {
   viewActivityReview,
@@ -65,6 +65,23 @@ class _TrackerPageSnapshot {
   }
 }
 
+@visibleForTesting
+DateTime trackerPresentationDebugCopySnapshotRefreshedAt(
+  DateTime refreshedAt,
+) {
+  final snapshot = _TrackerPageSnapshot(
+    dayRecordsAsync: const AsyncValue.data(<ActivityRecord>[]),
+    insights: ActivityInsights.empty(),
+    workSessions: const <WorkSession>[],
+    inputBehaviorSummaryAsync: AsyncValue.data(
+      InputHeatmapSummary.empty(const InputEventQuery()),
+    ),
+    trackerState: const TrackerState(),
+    refreshedAt: refreshedAt,
+  );
+  return snapshot.copyWith().refreshedAt;
+}
+
 class _TrackerLoadTimeout implements Exception {
   final String message;
 
@@ -73,4 +90,3 @@ class _TrackerLoadTimeout implements Exception {
   @override
   String toString() => message;
 }
-

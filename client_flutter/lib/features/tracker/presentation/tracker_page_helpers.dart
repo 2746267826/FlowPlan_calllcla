@@ -1,4 +1,4 @@
-﻿part of 'tracker_page.dart';
+part of 'tracker_page.dart';
 
 Widget _card(BuildContext context, Widget child) {
   return Container(
@@ -58,9 +58,8 @@ Widget _emptyState({
 Widget _summaryCard(String title, String value, String note) {
   final views = WidgetsBinding.instance.platformDispatcher.views;
   final view = views.isEmpty ? null : views.first;
-  final width = view == null
-      ? 800.0
-      : view.physicalSize.width / view.devicePixelRatio;
+  final width =
+      view == null ? 800.0 : view.physicalSize.width / view.devicePixelRatio;
   final compact = width < 520;
   return Container(
     width: compact ? math.max(180, width - 56) : 210,
@@ -184,8 +183,9 @@ String _formatDayShort(DateTime dateTime) {
 }
 
 String _formatSessionRange(DateTime start, DateTime end) {
-  final isSameDay =
-      start.year == end.year && start.month == end.month && start.day == end.day;
+  final isSameDay = start.year == end.year &&
+      start.month == end.month &&
+      start.day == end.day;
   if (isSameDay) {
     return '${_formatDayShort(start)} ${_formatTime(start)} - ${_formatTime(end)}';
   }
@@ -228,7 +228,8 @@ String _sessionTitle(String? processName, String? windowTitle, String? label) {
 String _sessionSubtitle(String? processName, String? category) {
   final parts = <String>[
     if (category != null && category.trim().isNotEmpty) category.trim(),
-    if (processName != null && processName.trim().isNotEmpty) processName.trim(),
+    if (processName != null && processName.trim().isNotEmpty)
+      processName.trim(),
   ];
   return parts.isEmpty
       ? '\u672a\u5206\u7c7b\u5916\u90e8\u4f1a\u8bdd'
@@ -266,13 +267,13 @@ int _sessionMinutes(DateTime? start, DateTime? end) {
 }
 
 int _sessionInputScore(WorkSession session) {
-  return session.keyCount + (session.mouseClicks * 4) + (session.scrollPx ~/ 120);
+  return session.keyCount +
+      (session.mouseClicks * 4) +
+      (session.scrollPx ~/ 120);
 }
 
 String _formatHourLabel(int hour) {
-  final normalized = hour < 0
-      ? 0
-      : (hour > 23 ? 23 : hour);
+  final normalized = hour < 0 ? 0 : (hour > 23 ? 23 : hour);
   return '${normalized.toString().padLeft(2, '0')}:00';
 }
 
@@ -320,8 +321,9 @@ int? _dominantHourForRange({
     return null;
   }
 
-  final normalizedEnd =
-      itemEnd.isAfter(itemStart) ? itemEnd : itemStart.add(const Duration(seconds: 1));
+  final normalizedEnd = itemEnd.isAfter(itemStart)
+      ? itemEnd
+      : itemStart.add(const Duration(seconds: 1));
   final effectiveStart = itemStart.isBefore(dayStart) ? dayStart : itemStart;
   final effectiveEnd = normalizedEnd.isAfter(dayEnd) ? dayEnd : normalizedEnd;
   if (!effectiveEnd.isAfter(effectiveStart)) {
@@ -390,7 +392,8 @@ bool _matchesWorkSession(
   required bool onlyWithInput,
   required ActivityHeatmapBucket? selectedHeatmapBucket,
 }) {
-  if (selectedProcess != null && !session.processNames.contains(selectedProcess)) {
+  if (selectedProcess != null &&
+      !session.processNames.contains(selectedProcess)) {
     return false;
   }
 
@@ -445,7 +448,8 @@ bool _matchesActivityRecord(
   required String? selectedCategory,
   required bool onlyWithInput,
 }) {
-  if (selectedProcess != null && record.processName?.trim() != selectedProcess) {
+  if (selectedProcess != null &&
+      record.processName?.trim() != selectedProcess) {
     return false;
   }
 
@@ -519,6 +523,27 @@ bool _matchesLogEntry(
   return _matchesSearchText(searchTarget, searchQuery);
 }
 
+@visibleForTesting
+bool trackerPresentationDebugMatchesLogEntry(
+  ActivityLogEntry entry, {
+  required String searchQuery,
+  required String? selectedProcess,
+  required String? selectedCategory,
+  Set<int>? selectedRecordIds,
+  required bool onlyWithInput,
+  required ActivityHeatmapBucket? selectedHeatmapBucket,
+}) {
+  return _matchesLogEntry(
+    entry,
+    searchQuery: searchQuery,
+    selectedProcess: selectedProcess,
+    selectedCategory: selectedCategory,
+    selectedRecordIds: selectedRecordIds,
+    onlyWithInput: onlyWithInput,
+    selectedHeatmapBucket: selectedHeatmapBucket,
+  );
+}
+
 bool _hasInputActivity({
   required int keyCount,
   required int mouseClicks,
@@ -553,8 +578,9 @@ bool _timeRangeOverlaps({
   required DateTime itemStart,
   required DateTime itemEnd,
 }) {
-  final normalizedItemEnd =
-      itemEnd.isAfter(itemStart) ? itemEnd : itemStart.add(const Duration(seconds: 1));
+  final normalizedItemEnd = itemEnd.isAfter(itemStart)
+      ? itemEnd
+      : itemStart.add(const Duration(seconds: 1));
   return itemStart.isBefore(rangeEnd) && normalizedItemEnd.isAfter(rangeStart);
 }
 
@@ -611,10 +637,7 @@ String _buildLogDaySummary(List<ActivityLogEntry> entries) {
 
   final orderedDays = counts.keys.toList()
     ..sort((left, right) => right.compareTo(left));
-  return orderedDays
-      .take(5)
-      .map((day) => '$day ${counts[day]}条')
-      .join(' · ');
+  return orderedDays.take(5).map((day) => '$day ${counts[day]}条').join(' · ');
 }
 
 List<String> _collectRangeProcessOptions({
@@ -781,6 +804,14 @@ List<TaskItem> _buildTrackerTaskCandidates(
   });
 
   return candidates.take(24).toList(growable: false);
+}
+
+@visibleForTesting
+List<TaskItem> trackerPresentationDebugBuildTaskCandidates(
+  List<TaskItem> tasks,
+  DateTime referenceDate,
+) {
+  return _buildTrackerTaskCandidates(tasks, referenceDate);
 }
 
 int _taskCompletionRank(TaskItem task) {

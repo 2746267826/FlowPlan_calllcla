@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/router/app_router.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../data/file_context_repository.dart';
 import '../services/file_context_interaction_service.dart';
@@ -38,6 +39,7 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
 
   @override
   Widget build(BuildContext context) {
+    final pageActionContext = context;
     final rootsAsync = ref.watch(allFileFoldersProvider);
     return Scaffold(
       appBar: AppBar(
@@ -86,6 +88,7 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
                 onDelete: (root) => _deleteRoot(root),
               );
               final browser = _NodeBrowserPane(
+                actionContext: pageActionContext,
                 root: selectedRoot,
                 currentFolderNodeId: _currentFolderNodeId,
                 selectedNodeId: _selectedNodeId,
@@ -100,7 +103,8 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
                     _selectedNodeId = null;
                   });
                 },
-                onSelectNode: (node) => setState(() => _selectedNodeId = node.id),
+                onSelectNode: (node) =>
+                    setState(() => _selectedNodeId = node.id),
                 onGoUp: _goUp,
                 onScan: () => _scanRoot(selectedRoot),
                 onRelocate: () => _relocateRoot(selectedRoot),
@@ -235,10 +239,13 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
       _scanPath = root.remoteId ?? '';
     });
     try {
-      await ref.read(fileContextRepositoryProvider).requestServerRootScan(root.id);
+      await ref
+          .read(fileContextRepositoryProvider)
+          .requestServerRootScan(root.id);
       if (!mounted) return;
       final rootNode =
           await ref.read(fileContextRepositoryProvider).getRootNode(root.id);
+      if (!mounted) return;
       setState(() {
         _currentFolderNodeId = rootNode?.id;
         _selectedNodeId = null;
@@ -268,10 +275,11 @@ class _FileContextPageState extends ConsumerState<FileContextPage> {
     if (selectedPath == null || selectedPath.trim().isEmpty) {
       return;
     }
-    final bound = await ref.read(fileContextRepositoryProvider).bindRootLocalDirectory(
-          folderId: root.id,
-          localPath: selectedPath,
-        );
+    final bound =
+        await ref.read(fileContextRepositoryProvider).bindRootLocalDirectory(
+              folderId: root.id,
+              localPath: selectedPath,
+            );
     setState(() {
       _selectedRootId = bound.id;
       _currentFolderNodeId = null;
@@ -374,7 +382,8 @@ class _RootList extends ConsumerWidget {
               title: Row(
                 children: [
                   Expanded(child: Text(root.displayName)),
-                  if (root.pinned) const Icon(Icons.push_pin_outlined, size: 16),
+                  if (root.pinned)
+                    const Icon(Icons.push_pin_outlined, size: 16),
                 ],
               ),
               subtitle: Text(
@@ -414,6 +423,7 @@ class _RootList extends ConsumerWidget {
 
 class _NodeBrowserPane extends ConsumerWidget {
   const _NodeBrowserPane({
+    required this.actionContext,
     required this.root,
     required this.currentFolderNodeId,
     required this.selectedNodeId,
@@ -430,6 +440,7 @@ class _NodeBrowserPane extends ConsumerWidget {
     required this.onCreateSnapshot,
   });
 
+  final BuildContext actionContext;
   final FileFolder root;
   final int? currentFolderNodeId;
   final int? selectedNodeId;
@@ -491,9 +502,8 @@ class _NodeBrowserPane extends ConsumerWidget {
                       ),
                       IconButton(
                         tooltip: '创建 Kopia 快照',
-                        onPressed: scanning || !hasLocalBinding || rootMissing
-                            ? null
-                            : onCreateSnapshot,
+                        onPressed:
+                            scanning || rootMissing ? null : onCreateSnapshot,
                         icon: const Icon(Icons.history_toggle_off),
                       ),
                     ],
@@ -554,9 +564,7 @@ class _NodeBrowserPane extends ConsumerWidget {
               }
               if (data.nodes.isEmpty) {
                 return Center(
-                  child: Text(query.trim().isEmpty
-                      ? '当前目录为空。'
-                      : '没有匹配的文件名。'),
+                  child: Text(query.trim().isEmpty ? '当前目录为空。' : '没有匹配的文件名。'),
                 );
               }
               return ListView.builder(
@@ -571,7 +579,7 @@ class _NodeBrowserPane extends ConsumerWidget {
                         ? onEnterFolder(node)
                         : onSelectNode(node),
                     onSelect: () => onSelectNode(node),
-                    onOpen: () => _openOrDownloadNode(context, ref, node),
+                    onOpen: () => _openOrDownloadNode(actionContext, ref, node),
                     onReveal: () => ref
                         .read(fileContextInteractionServiceProvider)
                         .revealNode(node),
@@ -668,6 +676,9 @@ Future<void> _openOrDownloadNode(
       return;
     }
 
+    final repo = ref.read(fileContextRepositoryProvider);
+    final transferService = ref.read(fileTransferServiceProvider);
+
     if (!context.mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -697,7 +708,6 @@ Future<void> _openOrDownloadNode(
       return;
     }
 
-    final repo = ref.read(fileContextRepositoryProvider);
     final root = await repo.getFolderById(node.rootFolderId);
     final boundRootPath = root?.localPath?.trim();
     var targetPath = boundRootPath != null &&
@@ -718,8 +728,8 @@ Future<void> _openOrDownloadNode(
       return;
     }
     final parentDirectory = File(targetPath).parent;
-    if (!await parentDirectory.exists()) {
-      await parentDirectory.create(recursive: true);
+    if (!parentDirectory.existsSync()) {
+      parentDirectory.createSync(recursive: true);
     }
 
     final api = await ref.read(fileContextApiProvider.future);
@@ -731,7 +741,6 @@ Future<void> _openOrDownloadNode(
       throw StateError(request['reason']?.toString() ?? '创建下载请求失败');
     }
 
-    final transferService = ref.read(fileTransferServiceProvider);
     unawaited(
       transferService
           .downloadPreparedSession(
@@ -754,9 +763,8 @@ Future<void> _openOrDownloadNode(
             'identity': identity.toJson(storageObjectId: job.storageObjectId),
           },
         );
-      }).catchError((Object error) {
-        // 传输中心会保留失败状态；这里避免后台 Future 变成未处理异常。
-        debugPrint('云盘文件下载失败：$error');
+      }).catchError((Object _) {
+        // Download failures are surfaced by the transfer center job state.
       }),
     );
 
@@ -806,8 +814,9 @@ class _NodeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final exists = _localPathExists(node.localPath);
-    final remoteOnly =
-        !exists && (node.availability == FileAvailability.remoteOnly || node.remoteId != null);
+    final remoteOnly = !exists &&
+        (node.availability == FileAvailability.remoteOnly ||
+            node.remoteId != null);
     final canAskServerOpenPlan = node.isFile && node.remoteId != null;
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -849,7 +858,11 @@ class _NodeTile extends StatelessWidget {
               onPressed: onSelect,
             ),
             IconButton(
-              tooltip: node.isFolder ? '打开文件夹' : remoteOnly ? '下载到本机' : '系统默认打开',
+              tooltip: node.isFolder
+                  ? '打开文件夹'
+                  : remoteOnly
+                      ? '下载到本机'
+                      : '系统默认打开',
               icon: const Icon(Icons.open_in_new),
               onPressed: exists || canAskServerOpenPlan ? onOpen : null,
             ),
@@ -895,10 +908,11 @@ class _NodePreviewHost extends ConsumerWidget {
     return FutureBuilder<FileNode?>(
       future: ref.read(fileContextRepositoryProvider).getNodeById(nodeId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        final node = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            node == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        final node = snapshot.data;
         if (node == null) {
           return const Center(child: Text('选中的文件节点不存在。'));
         }
@@ -1006,7 +1020,8 @@ class _NodePreviewPane extends ConsumerWidget {
     );
   }
 
-  bool _isImageNode(FileNode node) => node.mimeType?.startsWith('image/') == true;
+  bool _isImageNode(FileNode node) =>
+      node.mimeType?.startsWith('image/') == true;
 
   bool _isTextNode(FileNode node) {
     final mime = node.mimeType;
@@ -1097,7 +1112,8 @@ class _ServerStorageAndVersionPaneState
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.cloud_outlined),
-                      title: Text(item['displayName']?.toString() ?? 'server object'),
+                      title: Text(
+                          item['displayName']?.toString() ?? 'server object'),
                       subtitle: Text(
                         '对象 ${item['storageObjectId']} · ${item['status'] ?? ''}',
                         maxLines: 2,
@@ -1172,7 +1188,8 @@ class _ServerStorageAndVersionPaneState
     final results = await Future.wait([
       api.storageStatus(),
       api.storageObjects(
-        localPath: widget.node.localPath.trim().isEmpty ? null : widget.node.localPath,
+        localPath:
+            widget.node.localPath.trim().isEmpty ? null : widget.node.localPath,
         nodeId: widget.node.remoteId,
       ),
       api.versions(widget.node.id.toString()),
@@ -1180,8 +1197,10 @@ class _ServerStorageAndVersionPaneState
     return _ServerFileState.fromApi(results[0], results[1], results[2]);
   }
 
-  void _reload() {
-    setState(() => _future = _load());
+  void _reload() => setState(_assignReloadFuture);
+
+  void _assignReloadFuture() {
+    _future = _load();
   }
 
   Future<void> _registerStorageObject() async {
@@ -1201,7 +1220,7 @@ class _ServerStorageAndVersionPaneState
         throw StateError(result['reason']?.toString() ?? '登记失败');
       }
       _reload();
-      _snack('已登记为服务端存储对象');
+      _snack(_registeredStorageObjectMessage);
     });
   }
 
@@ -1217,14 +1236,15 @@ class _ServerStorageAndVersionPaneState
         throw StateError(result['reason']?.toString() ?? '刷新历史版本失败');
       }
       _reload();
-      _snack('历史版本已刷新');
+      _snack(_versionsRefreshedMessage);
     });
   }
 
   Future<void> _downloadVersionCopy(Map<String, dynamic> version) async {
     final targetPath = await FilePicker.platform.saveFile(
       dialogTitle: '下载历史版本副本',
-      fileName: '${p.basenameWithoutExtension(widget.node.displayName)}.kopia-copy${p.extension(widget.node.displayName)}',
+      fileName:
+          '${p.basenameWithoutExtension(widget.node.displayName)}.kopia-copy${p.extension(widget.node.displayName)}',
     );
     if (targetPath == null || targetPath.trim().isEmpty) {
       return;
@@ -1240,7 +1260,7 @@ class _ServerStorageAndVersionPaneState
         throw StateError(result['reason']?.toString() ?? '下载副本失败');
       }
       _reload();
-      _snack('历史版本已下载为副本');
+      _snack(_versionCopyDownloadedMessage);
     });
   }
 
@@ -1287,9 +1307,14 @@ class _ServerStorageAndVersionPaneState
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
+
+const _registeredStorageObjectMessage = '已登记为服务端存储对象';
+const _versionsRefreshedMessage = '历史版本已刷新';
+const _versionCopyDownloadedMessage = '历史版本已下载为副本';
 
 class _ServerFileState {
   const _ServerFileState({
@@ -1342,7 +1367,8 @@ class _NodeTextPreviewEditor extends ConsumerStatefulWidget {
       _NodeTextPreviewEditorState();
 }
 
-class _NodeTextPreviewEditorState extends ConsumerState<_NodeTextPreviewEditor> {
+class _NodeTextPreviewEditorState
+    extends ConsumerState<_NodeTextPreviewEditor> {
   late Future<FilePreviewResult> _future;
   final _controller = TextEditingController();
   bool _loaded = false;
@@ -1351,8 +1377,9 @@ class _NodeTextPreviewEditorState extends ConsumerState<_NodeTextPreviewEditor> 
   @override
   void initState() {
     super.initState();
-    _future =
-        ref.read(fileContextInteractionServiceProvider).previewTextNode(widget.node);
+    _future = ref
+        .read(fileContextInteractionServiceProvider)
+        .previewTextNode(widget.node);
   }
 
   @override
@@ -1395,6 +1422,7 @@ class _NodeTextPreviewEditorState extends ConsumerState<_NodeTextPreviewEditor> 
               children: [
                 const Expanded(child: Text('文本/Markdown 预览')),
                 FilledButton.icon(
+                  key: AppKeys.fileContextSavePreviewButton,
                   onPressed: _saving ? null : _save,
                   icon: _saving
                       ? const SizedBox(

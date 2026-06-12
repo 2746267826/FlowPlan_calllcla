@@ -141,9 +141,7 @@ export function AdminApp() {
   const [selectedDeviceId, setSelectedDeviceId] = useState(() =>
     loadStored('flowplanv2.admin.selectedDeviceId') ?? 'all',
   );
-  const [accessToken, setAccessToken] = useState(() =>
-    loadStored(TOKEN_KEY) ?? '',
-  );
+  const [accessToken, setAccessToken] = useState('');
   const [refreshToken, setRefreshToken] = useState(() =>
     loadStored(REFRESH_KEY) ?? '',
   );

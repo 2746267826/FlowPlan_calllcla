@@ -34,6 +34,38 @@ part 'tracker_range_analysis_panel.dart';
 part 'tracker_session_tiles.dart';
 part 'tracker_page_helpers.dart';
 
+TrackerPlatformSource _trackerPlatformForUi() {
+  return trackerPlatformSourceForRuntime();
+}
+
+typedef TrackerDatabaseFolderOpener = Future<void> Function(String folderPath);
+typedef TrackerProcessStarter = Future<Object?> Function(
+  String executable,
+  List<String> arguments,
+);
+
+@visibleForTesting
+Future<void> openTrackerDatabaseFolderForPlatform({
+  required String folderPath,
+  required bool isWindows,
+  required TrackerProcessStarter startProcess,
+}) async {
+  if (isWindows) {
+    await startProcess('explorer.exe', [folderPath]);
+  }
+}
+
+final trackerPageDatabaseFolderOpenerProvider =
+    Provider<TrackerDatabaseFolderOpener>((ref) {
+  return (folderPath) async {
+    await openTrackerDatabaseFolderForPlatform(
+      folderPath: folderPath,
+      isWindows: Platform.isWindows,
+      startProcess: Process.start,
+    );
+  };
+});
+
 class TrackerPage extends ConsumerStatefulWidget {
   const TrackerPage({super.key});
 
@@ -45,7 +77,8 @@ class TrackerPage extends ConsumerStatefulWidget {
   }
 
   void _clearHeatmapAnalysisBucket(WidgetRef ref) {
-    ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier).state = null;
+    ref.read(trackerHistorySelectedAnalysisBucketProvider.notifier).state =
+        null;
   }
 
   void _clearHeatmapSelections(WidgetRef ref) {
@@ -183,9 +216,10 @@ class TrackerPage extends ConsumerStatefulWidget {
                 children: [
                   Text(
                     '关联任务',
-                    style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                    style:
+                        Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -316,12 +350,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       return;
     }
 
-    int? nextTaskId;
-    if (action == _TaskBindingSheetAction.unbind) {
-      nextTaskId = null;
-    } else if (action is int) {
-      nextTaskId = action;
-    } else {
+    if (action != _TaskBindingSheetAction.unbind && action is! int) {
       return;
     }
 
@@ -390,10 +419,7 @@ class TrackerPage extends ConsumerStatefulWidget {
       final database = ref.read(databaseProvider);
       final databasePath = await database.getDatabasePath();
       final folderPath = File(databasePath).parent.path;
-
-      if (Platform.isWindows) {
-        await Process.start('explorer.exe', [folderPath]);
-      }
+      await ref.read(trackerPageDatabaseFolderOpenerProvider)(folderPath);
 
       if (!context.mounted) {
         return;
@@ -418,7 +444,6 @@ class TrackerPage extends ConsumerStatefulWidget {
       );
     }
   }
-
 }
 
 class _TrackerPageState extends ConsumerState<TrackerPage> {
@@ -559,7 +584,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       }
 
       final supportsInputAnalytics =
-          TrackerPlatformSource.current().supportsInputAnalytics;
+          _trackerPlatformForUi().supportsInputAnalytics;
       final dayStart = DateTime(
         selectedDate.year,
         selectedDate.month,
@@ -584,8 +609,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         ),
       );
       final inputBehaviorFuture = supportsInputAnalytics
-            ? AsyncValue.guard(
-                () => _withLoadTimeout(
+          ? AsyncValue.guard(
+              () => _withLoadTimeout(
                 ref.read(inputHeatmapSummaryProvider(inputQuery).future),
                 '输入行为分析',
               ),
@@ -667,7 +692,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
   @override
   Widget build(BuildContext context) {
     final selectedDate = ref.watch(selectedDateProvider);
-    final trackerPlatform = TrackerPlatformSource.current();
+    final trackerPlatform = _trackerPlatformForUi();
     final supportsInputAnalytics = trackerPlatform.supportsInputAnalytics;
     final pageWidth = MediaQuery.of(context).size.width;
     final isCompactLayout = pageWidth < 600;
@@ -677,7 +702,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         ref.watch(trackerHistorySelectedHeatmapBucketProvider);
     final selectedAnalysisBucket =
         ref.watch(trackerHistorySelectedAnalysisBucketProvider);
-    final heatmapScaleOverride = ref.watch(activityHeatmapScaleOverrideProvider);
+    final heatmapScaleOverride =
+        ref.watch(activityHeatmapScaleOverrideProvider);
     final heatmapSeriesAsync = ref.watch(activityHeatmapSeriesProvider);
     final AsyncValue<TrackerRangeAnalysisSnapshot?>? rangeAnalysisAsync =
         selectedAnalysisBucket == null
@@ -716,9 +742,10 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         hasFreshSnapshot ? snapshot.insights : ActivityInsights.empty();
     final List<WorkSession> workSessions =
         hasFreshSnapshot ? snapshot.workSessions : const <WorkSession>[];
-    final AsyncValue<InputHeatmapSummary> inputBehaviorSummaryAsync = hasFreshSnapshot
-        ? snapshot.inputBehaviorSummaryAsync
-        : const AsyncLoading<InputHeatmapSummary>();
+    final AsyncValue<InputHeatmapSummary> inputBehaviorSummaryAsync =
+        hasFreshSnapshot
+            ? snapshot.inputBehaviorSummaryAsync
+            : const AsyncLoading<InputHeatmapSummary>();
     final trackerState = (snapshot?.trackerState ?? const TrackerState())
         .copyWith(isRunning: isTrackingRunning);
     final hasAndroidUsageAccess =
@@ -760,7 +787,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             value: isTrackingRunning,
             activeThumbColor: AppColors.primary,
             onChanged: (value) {
-              final notifier = ref.read(trackerServiceNotifierProvider.notifier);
+              final notifier =
+                  ref.read(trackerServiceNotifierProvider.notifier);
               value ? notifier.start() : notifier.stop();
             },
           ),
@@ -795,7 +823,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                     child: CircularProgressIndicator(strokeWidth: 2.2),
                   )
                 : (lastAutoUploadError != null
-                    ? const Icon(Icons.cloud_upload_outlined, color: Colors.orange)
+                    ? const Icon(Icons.cloud_upload_outlined,
+                        color: Colors.orange)
                     : const Icon(Icons.cloud_upload_outlined)),
             onPressed: _isUploading ? null : _uploadTrackingBuffer,
           ),
@@ -892,7 +921,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                   },
                   onFilterBucket: (bucket) {
                     ref
-                        .read(trackerHistorySelectedHeatmapBucketProvider.notifier)
+                        .read(trackerHistorySelectedHeatmapBucketProvider
+                            .notifier)
                         .state = bucket;
                   },
                   onAnalyzeBucket: (bucket) {
@@ -997,7 +1027,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               ),
               const SizedBox(height: 16),
             ],
-            if (trackerPlatform.isAndroid && hasAndroidUsageAccess == false) ...[
+            if (trackerPlatform.isAndroid &&
+                hasAndroidUsageAccess == false) ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -1022,10 +1053,12 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                         Expanded(
                           child: Text(
                             '安卓端需要“使用情况访问权限”后，才能导入应用前台使用记录。',
-                            style:
-                                Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
                         ),
                       ],
@@ -1076,7 +1109,9 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                 showInputTelemetry: supportsInputAnalytics,
                 onToggleSequence: supportsInputAnalytics
                     ? () {
-                        ref.read(sequenceRecordingNotifierProvider.notifier).set(
+                        ref
+                            .read(sequenceRecordingNotifierProvider.notifier)
+                            .set(
                               !sequenceEnabled,
                             );
                       }
@@ -1168,4 +1203,3 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     );
   }
 }
-

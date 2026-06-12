@@ -1,4 +1,4 @@
-﻿part of 'tracker_page.dart';
+part of 'tracker_page.dart';
 
 class TrackerDayDetailsPage extends ConsumerWidget {
   const TrackerDayDetailsPage({super.key});
@@ -54,7 +54,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final supportsInputAnalytics =
-        TrackerPlatformSource.current().supportsInputAnalytics;
+        _trackerPlatformForUi().supportsInputAnalytics;
     final selectedDate = ref.watch(selectedDateProvider);
     final recordsAsync = ref.watch(activityRecordsForDateProvider);
     final uploadDiagnosticsAsync = ref.watch(trackingUploadDiagnosticsProvider);
@@ -62,7 +62,8 @@ class TrackerDayDetailsPage extends ConsumerWidget {
     final allTasksAsync = ref.watch(allTasksProvider);
     final searchQuery = ref.watch(trackerHistorySearchQueryProvider);
     final selectedProcessRaw = ref.watch(trackerHistorySelectedProcessProvider);
-    final selectedCategoryRaw = ref.watch(trackerHistorySelectedCategoryProvider);
+    final selectedCategoryRaw =
+        ref.watch(trackerHistorySelectedCategoryProvider);
     final selectedTaskIdRaw = ref.watch(trackerHistorySelectedTaskIdProvider);
     final onlyWithInput = ref.watch(trackerHistoryOnlyWithInputProvider);
     final selectedHeatmapBucket =
@@ -81,13 +82,11 @@ class TrackerDayDetailsPage extends ConsumerWidget {
         ? selectedCategoryRaw!.trim()
         : null;
     final selectedTaskId = selectedTaskIdRaw;
-    final selectedProcessForDropdown =
-        selectedProcess != null &&
+    final selectedProcessForDropdown = selectedProcess != null &&
             filterOptions.processOptions.contains(selectedProcess)
         ? selectedProcess
         : null;
-    final selectedCategoryForDropdown =
-        selectedCategory != null &&
+    final selectedCategoryForDropdown = selectedCategory != null &&
             filterOptions.categoryOptions.contains(selectedCategory)
         ? selectedCategory
         : null;
@@ -108,8 +107,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
       records: records,
       taskById: taskById,
     );
-    final selectedTaskIdForDropdown =
-        selectedTaskId != null &&
+    final selectedTaskIdForDropdown = selectedTaskId != null &&
             taskOptions.any((task) => task.id == selectedTaskId)
         ? selectedTaskId
         : null;
@@ -117,8 +115,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
     final selectedTimeBucketLabel = selectedHeatmapBucket?.longLabel;
     final hasLinkedInputBehavior = supportsInputAnalytics &&
         (selectedProcess != null || selectedTimeBucketLabel != null);
-    final hasActiveHistoryFilters =
-        searchQuery.trim().isNotEmpty ||
+    final hasActiveHistoryFilters = searchQuery.trim().isNotEmpty ||
         selectedProcess != null ||
         selectedCategory != null ||
         selectedTaskId != null ||
@@ -200,8 +197,10 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                     runSpacing: 8,
                     children: [
                       _tag('日期：${_formatDate(selectedDate)}'),
-                      _tag('${filteredWorkSessions.length}/${workSessions.length} 段会话'),
-                      if (selectedProcess != null) _tag('联动应用：$selectedProcess'),
+                      _tag(
+                          '${filteredWorkSessions.length}/${workSessions.length} 段会话'),
+                      if (selectedProcess != null)
+                        _tag('联动应用：$selectedProcess'),
                       if (selectedTimeBucketLabel != null)
                         _tag('联动时段：$selectedTimeBucketLabel'),
                     ],
@@ -248,23 +247,23 @@ class TrackerDayDetailsPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-              _card(
-                context,
-                _HistoryFilterPanel(
-                  options: filterOptions,
-                  searchQuery: searchQuery,
-                  selectedProcess: selectedProcessForDropdown,
-                  selectedCategory: selectedCategoryForDropdown,
-                  taskOptions: taskOptions,
-                  selectedTaskId: selectedTaskIdForDropdown,
-                  onlyWithInput: onlyWithInput,
-                  selectedTimeBucketLabel: selectedTimeBucketLabel,
-                  filteredSessionCount: filteredWorkSessions.length,
-                  totalSessionCount: workSessions.length,
-                  filteredLogCount: 0,
-                  totalLogCount: 0,
-                ),
+            _card(
+              context,
+              _HistoryFilterPanel(
+                options: filterOptions,
+                searchQuery: searchQuery,
+                selectedProcess: selectedProcessForDropdown,
+                selectedCategory: selectedCategoryForDropdown,
+                taskOptions: taskOptions,
+                selectedTaskId: selectedTaskIdForDropdown,
+                onlyWithInput: onlyWithInput,
+                selectedTimeBucketLabel: selectedTimeBucketLabel,
+                filteredSessionCount: filteredWorkSessions.length,
+                totalSessionCount: workSessions.length,
+                filteredLogCount: null,
+                totalLogCount: null,
               ),
+            ),
             const SizedBox(height: 16),
             _card(
               context,
@@ -403,20 +402,18 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                       _intValue(diagnostics['lastActivityRecordId']);
                   final lastInputEventId =
                       _intValue(diagnostics['lastInputEventId']);
-                  final lastRawLogId =
-                      _intValue(diagnostics['lastRawLogId']);
+                  final lastRawLogId = _intValue(diagnostics['lastRawLogId']);
                   final pendingRecords =
                       _intValue(diagnostics['pendingActivityRecords']);
                   final pendingEvents =
                       _intValue(diagnostics['pendingInputEvents']);
-                  final pendingLogs =
-                      _intValue(diagnostics['pendingRawLogs']);
+                  final pendingLogs = _intValue(diagnostics['pendingRawLogs']);
                   final lastCompletedAt =
                       _stringValue(diagnostics['lastCompletedAt']);
-                  final lastError =
-                      _stringValue(diagnostics['lastError']);
+                  final lastError = _stringValue(diagnostics['lastError']);
 
-                  final totalPending = pendingRecords + pendingEvents + pendingLogs;
+                  final totalPending =
+                      pendingRecords + pendingEvents + pendingLogs;
                   final hasPending = totalPending > 0;
                   final hasError = lastError != null && lastError.isNotEmpty;
 
@@ -455,9 +452,7 @@ class TrackerDayDetailsPage extends ConsumerWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _tag(hasPending
-                              ? '总计 $totalPending 条待上传'
-                              : '缓冲区已清空'),
+                          _tag(hasPending ? '总计 $totalPending 条待上传' : '缓冲区已清空'),
                           if (lastCompletedAt != null)
                             _tag('上次上传：$lastCompletedAt'),
                         ],
@@ -496,5 +491,3 @@ class TrackerDayDetailsPage extends ConsumerWidget {
     );
   }
 }
-
-

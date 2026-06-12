@@ -202,10 +202,10 @@ class TrackingUploadService {
     if (accepted <= 0 && rejected > 0) {
       await _database.setSetting(
         lastErrorKey,
-        'Tracking ingest rejected all ${rejected} ${export.dataKind} records.',
+        'Tracking ingest rejected all $rejected ${export.dataKind} records.',
       );
       throw StateError(
-        'Tracking ingest rejected all ${rejected} ${export.dataKind} records; '
+        'Tracking ingest rejected all $rejected ${export.dataKind} records; '
         'local upload cursor was preserved for retry.',
       );
     }

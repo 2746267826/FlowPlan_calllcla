@@ -55,4 +55,25 @@ describe('RequestLogInterceptor', () => {
     );
     expect(logger.log).not.toHaveBeenCalled();
   });
+
+  it('logs non-Error thrown values as request errors', async () => {
+    const logger = { log: vi.fn(), warn: vi.fn() };
+    const interceptor = new RequestLogInterceptor(logger as never);
+    const context = createContext(
+      { method: 'DELETE', url: '/api/files/node-1' },
+      { statusCode: 500 },
+    );
+    const next: CallHandler = {
+      handle: () => throwError(() => 'plain failure'),
+    };
+
+    await expect(firstValueFrom(interceptor.intercept(context, next))).rejects.toBe(
+      'plain failure',
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^DELETE \/api\/files\/node-1 - \d+ms error: plain failure$/),
+    );
+    expect(logger.log).not.toHaveBeenCalled();
+  });
 });

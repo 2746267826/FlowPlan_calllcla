@@ -42,6 +42,15 @@ class ActivitySegment {
   final DateTime updatedAt;
 
   int get durationMinutes => endAt.difference(startAt).inMinutes;
+  List<int> get sourceRecordIds {
+    final decoded = _decodeJson(sourceRecordIdsJson);
+    if (decoded is! List) {
+      return const <int>[];
+    }
+    return decoded.whereType<num>().map((item) => item.toInt()).toList();
+  }
+
+  Map<String, Object?> get evidence => _decodeJsonMap(evidenceJson);
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -74,7 +83,7 @@ class ActivitySegment {
       label: row.data['label'] as String?,
       sourceRecordIdsJson: row.read<String>('source_record_ids_json'),
       evidenceJson: row.read<String>('evidence_json'),
-      confidence: row.read<num>('confidence').toDouble(),
+      confidence: (row.data['confidence'] as num).toDouble(),
       status: row.read<String>('status'),
       createdAt: DateTime.parse(row.read<String>('created_at')),
       updatedAt: DateTime.parse(row.read<String>('updated_at')),
@@ -111,6 +120,8 @@ class ActivityInterpretation {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  Map<String, Object?> get evidence => _decodeJsonMap(evidenceJson);
+
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'id': id,
@@ -137,7 +148,7 @@ class ActivityInterpretation {
       inferredProject: row.data['inferred_project'] as String?,
       inferredDocument: row.data['inferred_document'] as String?,
       inferredTaskId: row.data['inferred_task_id'] as int?,
-      confidence: row.read<num>('confidence').toDouble(),
+      confidence: (row.data['confidence'] as num).toDouble(),
       evidenceJson: row.read<String>('evidence_json'),
       status: row.read<String>('status'),
       createdAt: DateTime.parse(row.read<String>('created_at')),
@@ -179,6 +190,8 @@ class TaskWorkLog {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  Map<String, Object?> get evidence => _decodeJsonMap(evidenceJson);
+
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'id': id,
@@ -208,7 +221,7 @@ class TaskWorkLog {
       startAt: DateTime.parse(row.read<String>('start_at')),
       endAt: DateTime.parse(row.read<String>('end_at')),
       durationMinutes: row.read<int>('duration_minutes'),
-      confidence: row.read<num>('confidence').toDouble(),
+      confidence: (row.data['confidence'] as num).toDouble(),
       sourceType: row.read<String>('source_type'),
       evidenceJson: row.read<String>('evidence_json'),
       status: row.read<String>('status'),
@@ -322,14 +335,16 @@ class ActivityFusionRepository {
         now.toIso8601String(),
       ],
     );
-    final segment = ActivitySegment.fromRow(await _lastRow('activity_segments'));
+    final segment =
+        ActivitySegment.fromRow(await _lastRow('activity_segments'));
     if (audit) {
       await _operationLogs?.record(
         actor: 'system',
         action: 'create_activity_segment',
         entityType: 'activity_segment',
         entityId: segment.id.toString(),
-        summary: '生成活动片段「${segment.label ?? segment.category ?? segment.primaryProcessName ?? '未分类'}」',
+        summary:
+            '生成活动片段「${segment.label ?? segment.category ?? segment.primaryProcessName ?? '未分类'}」',
         after: segment.toJson(),
       );
     }
@@ -497,7 +512,8 @@ class ActivityFusionRepository {
     ).get();
     final afterById = <int, ActivityInterpretation>{
       for (final row in afterRows)
-        ActivityInterpretation.fromRow(row).id: ActivityInterpretation.fromRow(row),
+        ActivityInterpretation.fromRow(row).id:
+            ActivityInterpretation.fromRow(row),
     };
     for (final item in before) {
       final updated = afterById[item.id];
@@ -526,7 +542,8 @@ class ActivityFusionRepository {
     String status = 'candidate',
   }) async {
     final now = DateTime.now();
-    final duration = endAt.difference(startAt).inMinutes.clamp(0, 1 << 31).toInt();
+    final duration =
+        endAt.difference(startAt).inMinutes.clamp(0, 1 << 31).toInt();
     await _db.customStatement(
       '''
       INSERT INTO task_work_logs (
@@ -580,15 +597,26 @@ class ActivityFusionRepository {
     return workLog;
   }
 
-  Future<List<TaskWorkLog>> listTaskWorkLogsForSegment(int segmentId) async {
+  Future<List<TaskWorkLog>> listTaskWorkLogsForSegment(
+    int segmentId, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final normalizedLimit = limit.clamp(1, 1000).toInt();
+    final normalizedOffset = offset < 0 ? 0 : offset;
     final rows = await _db.customSelect(
       '''
       SELECT *
       FROM task_work_logs
       WHERE segment_id = ?
       ORDER BY start_at ASC
+      LIMIT ? OFFSET ?
       ''',
-      variables: [Variable<int>(segmentId)],
+      variables: [
+        Variable<int>(segmentId),
+        Variable<int>(normalizedLimit),
+        Variable<int>(normalizedOffset),
+      ],
     ).get();
     return rows.map(TaskWorkLog.fromRow).toList();
   }
@@ -632,7 +660,8 @@ class ActivityFusionRepository {
 
     final before = TaskWorkLog.fromRow(existingRows.first);
     final now = DateTime.now().toIso8601String();
-    final duration = endAt.difference(startAt).inMinutes.clamp(0, 1 << 31).toInt();
+    final duration =
+        endAt.difference(startAt).inMinutes.clamp(0, 1 << 31).toInt();
     await _db.customStatement(
       '''
       UPDATE task_work_logs
@@ -815,55 +844,84 @@ class ActivityFusionRepository {
 
   Future<List<ActivitySegment>> listSegmentsInRange(
     DateTime start,
-    DateTime end,
-  ) async {
+    DateTime end, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final normalizedLimit = limit.clamp(1, 1000).toInt();
+    final normalizedOffset = offset < 0 ? 0 : offset;
     final rows = await _db.customSelect(
       '''
       SELECT *
       FROM activity_segments
       WHERE start_at < ? AND end_at > ?
       ORDER BY start_at ASC
+      LIMIT ? OFFSET ?
       ''',
       variables: [
         Variable<String>(end.toIso8601String()),
         Variable<String>(start.toIso8601String()),
+        Variable<int>(normalizedLimit),
+        Variable<int>(normalizedOffset),
       ],
     ).get();
     return rows.map(ActivitySegment.fromRow).toList();
   }
 
   Future<List<ActivityInterpretation>> listInterpretationsForSegment(
-    int segmentId,
-  ) async {
+    int segmentId, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final normalizedLimit = limit.clamp(1, 1000).toInt();
+    final normalizedOffset = offset < 0 ? 0 : offset;
     final rows = await _db.customSelect(
       '''
       SELECT *
       FROM activity_interpretations
       WHERE segment_id = ?
       ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
       ''',
-      variables: [Variable<int>(segmentId)],
+      variables: [
+        Variable<int>(segmentId),
+        Variable<int>(normalizedLimit),
+        Variable<int>(normalizedOffset),
+      ],
     ).get();
     return rows.map(ActivityInterpretation.fromRow).toList();
   }
 
-  Future<List<TaskWorkLog>> listTaskWorkLogsForTask(int taskId) async {
+  Future<List<TaskWorkLog>> listTaskWorkLogsForTask(
+    int taskId, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final normalizedLimit = limit.clamp(1, 1000).toInt();
+    final normalizedOffset = offset < 0 ? 0 : offset;
     final rows = await _db.customSelect(
       '''
       SELECT *
       FROM task_work_logs
       WHERE task_id = ?
       ORDER BY start_at DESC
+      LIMIT ? OFFSET ?
       ''',
-      variables: [Variable<int>(taskId)],
+      variables: [
+        Variable<int>(taskId),
+        Variable<int>(normalizedLimit),
+        Variable<int>(normalizedOffset),
+      ],
     ).get();
     return rows.map(TaskWorkLog.fromRow).toList();
   }
 
   Future<QueryRow> _lastRow(String tableName) async {
-    return _db.customSelect(
-      'SELECT * FROM $tableName WHERE id = last_insert_rowid()',
-    ).getSingle();
+    return _db
+        .customSelect(
+          'SELECT * FROM $tableName WHERE id = last_insert_rowid()',
+        )
+        .getSingle();
   }
 }
 
@@ -891,4 +949,22 @@ class ActivitySegmentDraft {
   final String? label;
   final double confidence;
   final String status;
+}
+
+Object? _decodeJson(String value) {
+  try {
+    return jsonDecode(value);
+  } on FormatException {
+    return null;
+  }
+}
+
+Map<String, Object?> _decodeJsonMap(String value) {
+  final decoded = _decodeJson(value);
+  if (decoded is! Map) {
+    return const <String, Object?>{};
+  }
+  return decoded.map(
+    (key, value) => MapEntry(key.toString(), value),
+  );
 }

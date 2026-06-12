@@ -43,13 +43,10 @@ class RemoteSettingsRepository {
       return null;
     }
     final decoded = jsonDecode(raw);
-    if (decoded is Map<String, dynamic>) {
-      return RemoteSettingsSnapshot.fromJson(decoded);
+    if (decoded is! Map) {
+      return null;
     }
-    if (decoded is Map) {
-      return RemoteSettingsSnapshot.fromJson(Map<String, dynamic>.from(decoded));
-    }
-    return null;
+    return RemoteSettingsSnapshot.fromJson(Map<String, dynamic>.from(decoded));
   }
 }
 

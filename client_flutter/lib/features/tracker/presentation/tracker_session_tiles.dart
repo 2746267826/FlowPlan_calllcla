@@ -1,4 +1,4 @@
-﻿part of 'tracker_page.dart';
+part of 'tracker_page.dart';
 
 class _WorkSessionTile extends StatelessWidget {
   final WorkSession session;
@@ -157,9 +157,7 @@ class _WorkSessionTile extends StatelessWidget {
                           )
                         : const Icon(Icons.tune, size: 16),
                     label: Text(
-                      isProcessLinked
-                          ? '已联动应用分析'
-                          : '查看「$primaryProcess」输入分析',
+                      isProcessLinked ? '已联动应用分析' : '查看「$primaryProcess」输入分析',
                     ),
                   ),
                 if (linkedHour != null && onLinkHourAnalysis != null)
@@ -181,7 +179,8 @@ class _WorkSessionTile extends StatelessWidget {
               ],
             ),
           ],
-          if (onBindTask != null || (singleLinkedTaskId != null && onOpenTask != null)) ...[
+          if (onBindTask != null ||
+              (singleLinkedTaskId != null && onOpenTask != null)) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -257,9 +256,10 @@ class _WorkSessionTile extends StatelessWidget {
                     onBindTask: onBindRecordTask == null
                         ? null
                         : () => onBindRecordTask!(record),
-                    onOpenTask: record.linkedTaskId != null && onOpenTask != null
-                        ? () => onOpenTask!(record.linkedTaskId!)
-                        : null,
+                    onOpenTask:
+                        record.linkedTaskId != null && onOpenTask != null
+                            ? () => onOpenTask!(record.linkedTaskId!)
+                            : null,
                   ),
                 ),
               ],
@@ -299,8 +299,7 @@ class _SessionRecordRow extends StatelessWidget {
     final title = WorkSessionGrouper.preferredLabel(record);
     final endTime = record.endTime ?? record.startTime;
     final linkedTaskId = record.linkedTaskId;
-    final linkedTask =
-        linkedTaskId == null ? null : taskById[linkedTaskId];
+    final linkedTask = linkedTaskId == null ? null : taskById[linkedTaskId];
     final processName = record.processName?.trim().isNotEmpty == true
         ? record.processName!.trim()
         : null;
@@ -496,9 +495,9 @@ class _LogEntryTile extends StatelessWidget {
         '备注：${entry.note!.trim()}',
     ];
     final keySequence = entry.keySequence?.trim();
-    final hasDetails =
-        showDetails &&
-        (detailLines.isNotEmpty || (keySequence != null && keySequence.isNotEmpty));
+    final hasDetails = showDetails &&
+        (detailLines.isNotEmpty ||
+            (keySequence != null && keySequence.isNotEmpty));
     final timeLabel = showDate
         ? _formatDateTimeShort(entry.timestamp)
         : _formatTime(entry.timestamp);
@@ -565,7 +564,8 @@ class _LogEntryTile extends StatelessWidget {
           if (hasDetails) ...[
             const SizedBox(height: 8),
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 4),
@@ -630,3 +630,15 @@ class _LogEntryTile extends StatelessWidget {
   }
 }
 
+@visibleForTesting
+Widget trackerPresentationDebugLogEntryTile({
+  required ActivityLogEntry entry,
+  bool showDate = false,
+  bool showDetails = false,
+}) {
+  return _LogEntryTile(
+    entry: entry,
+    showDate: showDate,
+    showDetails: showDetails,
+  );
+}

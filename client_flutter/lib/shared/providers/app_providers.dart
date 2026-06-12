@@ -115,7 +115,10 @@ final actualActivityLogRepositoryProvider =
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
   final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  return ActualActivityLogRepository(db, operationLogs, syncRecorder);
+  final repository =
+      ActualActivityLogRepository(db, operationLogs, syncRecorder);
+  ref.onDispose(repository.dispose);
+  return repository;
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
@@ -246,7 +249,8 @@ final syncCursorStoreProvider = Provider<SyncCursorStore>((ref) {
   return SyncCursorStore(db);
 }, dependencies: [databaseProvider]);
 
-final serverRequestContextProvider = FutureProvider<RequestContext>((ref) async {
+final serverRequestContextProvider =
+    FutureProvider<RequestContext>((ref) async {
   final db = ref.watch(databaseProvider);
   final identity = DeviceIdentityService();
   final deviceId = await identity.getOrCreateDeviceId(db);
@@ -742,8 +746,7 @@ final outlookFieldConflictSummariesProvider =
           remoteCalendarName: binding.remoteCalendarName,
           conflictState: OutlookTaskMirrorConflictState.remoteDeleted,
           changedFields: const <String>['本地任务已不存在'],
-          detail:
-              '本地任务已经不存在，但仍保留了 Outlook 镜像绑定。建议先清理镜像索引，或导出诊断报告后再处理。',
+          detail: '本地任务已经不存在，但仍保留了 Outlook 镜像绑定。建议先清理镜像索引，或导出诊断报告后再处理。',
           canPushLocal: false,
           canPullRemote: false,
           canRecreateRemote: false,
@@ -828,16 +831,12 @@ final outlookFieldConflictSummariesProvider =
         previousHash.isNotEmpty &&
         previousHash != snapshot.fingerprint;
 
-    final conflictState = binding.conflictState ==
-            OutlookTaskMirrorConflictState.none
-        ? (localChanged
-            ? OutlookTaskMirrorConflictState.pendingLocalPush
-            : OutlookTaskMirrorConflictState.none)
-        : binding.conflictState;
-    if (conflictState == OutlookTaskMirrorConflictState.none) {
-      continue;
-    }
-
+    final conflictState =
+        binding.conflictState == OutlookTaskMirrorConflictState.none
+            ? (localChanged
+                ? OutlookTaskMirrorConflictState.pendingLocalPush
+                : OutlookTaskMirrorConflictState.none)
+            : binding.conflictState;
     List<String> changedFields;
     String detail;
     var canPushLocal = false;
@@ -846,6 +845,8 @@ final outlookFieldConflictSummariesProvider =
     var canDetachMirror = false;
 
     switch (conflictState) {
+      case OutlookTaskMirrorConflictState.none:
+        continue;
       case OutlookTaskMirrorConflictState.pendingLocalPush:
         changedFields = OutlookTaskMirrorSnapshot.changedFieldLabels(
           previousSnapshotJson: binding.localSnapshotJson,
@@ -899,10 +900,6 @@ final outlookFieldConflictSummariesProvider =
             : '最近一次远端写回失败，请稍后重试，或导出诊断报告进一步检查。';
         canPushLocal = true;
         canDetachMirror = true;
-        break;
-      case OutlookTaskMirrorConflictState.none:
-        changedFields = const <String>[];
-        detail = '';
         break;
     }
 
@@ -1007,4 +1004,3 @@ final managementEventsProvider = StreamProvider<List<CalendarEvent>>((ref) {
   final repo = ref.watch(eventRepositoryProvider);
   return repo.watchAllForManagement();
 });
-

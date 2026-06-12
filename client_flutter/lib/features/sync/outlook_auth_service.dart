@@ -148,8 +148,17 @@ class AuthToken {
       DateTime.now().isAfter(expiresAt.subtract(const Duration(minutes: 1)));
 
   bool supportsMode(OutlookSyncMode mode) =>
-      grantedMode == OutlookSyncMode.bidirectional ||
+      (grantedMode == OutlookSyncMode.bidirectional && _scopeAllowsWrite) ||
       !mode.requiresWritePermission;
+
+  bool get _scopeAllowsWrite {
+    final normalizedScopes = scope
+        .split(RegExp(r'\s+'))
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    return normalizedScopes.contains('calendars.readwrite');
+  }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'access_token': accessToken,
@@ -174,13 +183,11 @@ class AuthToken {
     return AuthToken(
       accessToken: json['access_token'] as String,
       refreshToken: json['refresh_token'] as String?,
-      expiresInSeconds:
-          _coerceInt(json['expires_in']) ??
-              expiresAt.difference(obtainedAt).inSeconds,
+      expiresInSeconds: _coerceInt(json['expires_in']) ??
+          expiresAt.difference(obtainedAt).inSeconds,
       obtainedAt: obtainedAt,
       expiresAt: expiresAt,
-      grantedMode:
-          outlookSyncModeFromStorage(json['granted_mode'] as String?),
+      grantedMode: outlookSyncModeFromStorage(json['granted_mode'] as String?),
       scope: (json['scope'] as String?)?.trim().isNotEmpty == true
           ? (json['scope'] as String).trim()
           : OutlookOAuthPlatformConfig.scopeString,
@@ -209,7 +216,14 @@ class AuthToken {
   }
 
   static OutlookSyncMode _grantedModeFromScope(String scope) {
-    return OutlookSyncMode.readOnly;
+    final normalizedScopes = scope
+        .split(RegExp(r'\s+'))
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    return normalizedScopes.contains('calendars.readwrite')
+        ? OutlookSyncMode.bidirectional
+        : OutlookSyncMode.readOnly;
   }
 }
 
@@ -243,9 +257,8 @@ class OutlookPendingAuthSession {
       state: (json['state'] as String? ?? '').trim(),
       requestedMode:
           outlookSyncModeFromStorage(json['requested_mode'] as String?),
-      createdAt:
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
-              DateTime.now(),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -293,6 +306,19 @@ class OutlookNetworkDiagnostics {
   bool get isReady => canResolveMicrosoftHost && canReachMicrosoftServer;
 }
 
+typedef OutlookNetworkDiagnosticsRunner = Future<OutlookNetworkDiagnostics>
+    Function();
+typedef OutlookTokenPost = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+  Encoding? encoding,
+});
+typedef OutlookAddressLookup = Future<List<InternetAddress>> Function(
+  String host,
+);
+typedef OutlookHttpClientFactory = HttpClient Function();
+
 class OutlookAuthService {
   static const _tokenKey = 'outlook_auth_token';
   static const _configClientIdKey = 'outlook_client_id';
@@ -302,6 +328,31 @@ class OutlookAuthService {
   static const _pkceAlphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
   static const _microsoftLoginHost = '';
+  static OutlookNetworkDiagnosticsRunner _networkDiagnosticsRunner =
+      _runMicrosoftNetworkDiagnostics;
+  static OutlookTokenPost _tokenPost = http.post;
+  static OutlookAddressLookup _addressLookup = InternetAddress.lookup;
+  static OutlookHttpClientFactory _httpClientFactory = HttpClient.new;
+
+  static void debugSetTestOverrides({
+    OutlookNetworkDiagnosticsRunner? networkDiagnostics,
+    OutlookTokenPost? tokenPost,
+    OutlookAddressLookup? addressLookup,
+    OutlookHttpClientFactory? httpClientFactory,
+  }) {
+    _networkDiagnosticsRunner =
+        networkDiagnostics ?? _runMicrosoftNetworkDiagnostics;
+    _tokenPost = tokenPost ?? http.post;
+    _addressLookup = addressLookup ?? InternetAddress.lookup;
+    _httpClientFactory = httpClientFactory ?? HttpClient.new;
+  }
+
+  static void debugResetTestOverrides() {
+    _networkDiagnosticsRunner = _runMicrosoftNetworkDiagnostics;
+    _tokenPost = http.post;
+    _addressLookup = InternetAddress.lookup;
+    _httpClientFactory = HttpClient.new;
+  }
 
   static Future<void> saveConfig(String clientId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -423,7 +474,7 @@ class OutlookAuthService {
 
     http.Response response;
     try {
-      response = await http.post(
+      response = await _tokenPost(
         Uri.parse(config.tokenUrl),
         headers: const <String, String>{
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -499,7 +550,7 @@ class OutlookAuthService {
 
     http.Response response;
     try {
-      response = await http.post(
+      response = await _tokenPost(
         Uri.parse(config.tokenUrl),
         headers: const <String, String>{
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -641,10 +692,15 @@ class OutlookAuthService {
     return token.supportsMode(mode);
   }
 
-  static Future<OutlookNetworkDiagnostics> runMicrosoftNetworkDiagnostics() async {
+  static Future<OutlookNetworkDiagnostics> runMicrosoftNetworkDiagnostics() {
+    return _networkDiagnosticsRunner();
+  }
+
+  static Future<OutlookNetworkDiagnostics>
+      _runMicrosoftNetworkDiagnostics() async {
     List<InternetAddress> addresses;
     try {
-      addresses = await InternetAddress.lookup(_microsoftLoginHost);
+      addresses = await _addressLookup(_microsoftLoginHost);
     } on SocketException catch (error) {
       return OutlookNetworkDiagnostics(
         canResolveMicrosoftHost: false,
@@ -667,7 +723,8 @@ class OutlookAuthService {
       );
     }
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final client = _httpClientFactory()
+      ..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(
         Uri.parse(OutlookOAuthPlatformConfig.authority),
@@ -675,34 +732,29 @@ class OutlookAuthService {
       request.followRedirects = false;
       final response = await request.close();
       await response.drain<void>();
-      final reachable =
-          response.statusCode >= 200 && response.statusCode < 500;
+      final reachable = response.statusCode >= 200 && response.statusCode < 500;
       return OutlookNetworkDiagnostics(
         canResolveMicrosoftHost: true,
         canReachMicrosoftServer: reachable,
-        resolvedAddresses: addresses
-            .map((address) => address.address)
-            .toList(growable: false),
-        failureReason: reachable
-            ? null
-            : 'Microsoft 登录服务器返回异常状态：${response.statusCode}',
+        resolvedAddresses:
+            addresses.map((address) => address.address).toList(growable: false),
+        failureReason:
+            reachable ? null : 'Microsoft 登录服务器返回异常状态：${response.statusCode}',
       );
     } on SocketException catch (error) {
       return OutlookNetworkDiagnostics(
         canResolveMicrosoftHost: true,
         canReachMicrosoftServer: false,
-        resolvedAddresses: addresses
-            .map((address) => address.address)
-            .toList(growable: false),
+        resolvedAddresses:
+            addresses.map((address) => address.address).toList(growable: false),
         failureReason: error.message,
       );
     } catch (error) {
       return OutlookNetworkDiagnostics(
         canResolveMicrosoftHost: true,
         canReachMicrosoftServer: false,
-        resolvedAddresses: addresses
-            .map((address) => address.address)
-            .toList(growable: false),
+        resolvedAddresses:
+            addresses.map((address) => address.address).toList(growable: false),
         failureReason: error.toString(),
       );
     } finally {

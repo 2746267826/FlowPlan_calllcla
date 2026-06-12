@@ -59,15 +59,15 @@ export function JobsPage(props: { api: AdminApiClient; onDataRefresh: () => void
                 extra={<Tag color={statusColors[status] ?? 'default'}>{status}</Tag>}
                 actions={[
                   <Popconfirm key="trigger" title="确认手动触发此任务？" onConfirm={() => action(String(job.name), 'trigger')}>
-                    <Button type="link" icon={<CaretRightOutlined />} size="small">触发</Button>
+                    <Button aria-label={`Trigger job ${String(job.name)}`} type="link" icon={<CaretRightOutlined />} size="small">触发</Button>
                   </Popconfirm>,
                   job.running
-                    ? <Button key="pause" type="link" icon={<PauseCircleOutlined />} size="small" disabled>运行中</Button>
+                    ? <Button aria-label={`Pause job ${String(job.name)}`} key="pause" type="link" icon={<PauseCircleOutlined />} size="small" disabled>运行中</Button>
                     : <Popconfirm key="pause" title="确认暂停此任务？" onConfirm={() => action(String(job.name), 'pause')}>
-                        <Button type="link" icon={<PauseCircleOutlined />} size="small">暂停</Button>
+                        <Button aria-label={`Pause job ${String(job.name)}`} type="link" icon={<PauseCircleOutlined />} size="small">暂停</Button>
                       </Popconfirm>,
                   <Popconfirm key="resume" title="确认恢复此任务？" onConfirm={() => action(String(job.name), 'resume')}>
-                    <Button type="link" icon={<PlayCircleOutlined />} size="small">恢复</Button>
+                    <Button aria-label={`Resume job ${String(job.name)}`} type="link" icon={<PlayCircleOutlined />} size="small">恢复</Button>
                   </Popconfirm>,
                 ]}
               >

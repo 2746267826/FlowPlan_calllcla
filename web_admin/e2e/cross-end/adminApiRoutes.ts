@@ -31,6 +31,20 @@ export async function installCrossEndAdminApiRoutes(page: Page): Promise<void> {
             platform: 'web-admin',
             status: 'online',
           },
+          {
+            id: 'device-offline-conflict',
+            deviceId: 'device-offline-conflict',
+            deviceName: 'Offline conflict handset',
+            platform: 'flutter',
+            status: 'offline',
+            lastSeenAt: '2026-06-08T08:50:00.000Z',
+            lastDisconnectedAt: '2026-06-08T08:55:00.000Z',
+            lastConnectionError: 'offline_conflict_ce_001',
+            syncPendingCount: 2,
+            syncFailedCount: 1,
+            openConflictCount: 1,
+            pullCursor: 'cursor-before-conflict',
+          },
         ],
       });
     }
@@ -44,6 +58,13 @@ export async function installCrossEndAdminApiRoutes(page: Page): Promise<void> {
             action: 'task.completed',
             entityType: 'task',
             summary: 'Cross-end task completed',
+            occurredAt: now,
+          },
+          {
+            id: 'audit-ce-report',
+            action: 'report.generated',
+            entityType: 'report',
+            summary: 'Cross-end evidence report generated',
             occurredAt: now,
           },
         ],
@@ -100,6 +121,114 @@ export async function installCrossEndAdminApiRoutes(page: Page): Promise<void> {
             entityId: 'task-ce-001',
             summary: 'Cross-end task completed from Web Admin',
             occurredAt: now,
+          },
+          {
+            id: 'audit-ce-file',
+            action: 'file.drive.root.scan',
+            entityType: 'file_root',
+            entityId: 'drive-root-ce-001',
+            summary: 'Cross-end Drive root scan completed',
+            occurredAt: now,
+          },
+          {
+            id: 'audit-ce-ai-001',
+            action: 'ai.operation.confirm',
+            entityType: 'ai_operation',
+            entityId: 'recompute-report-summary',
+            summary: 'Cross-end AI operation confirmed',
+            occurredAt: now,
+          },
+          {
+            id: 'audit-ce-report',
+            action: 'report.generated',
+            entityType: 'report',
+            entityId: 'report-ce-001',
+            summary: 'Cross-end evidence report generated',
+            occurredAt: now,
+          },
+        ],
+      });
+    }
+
+    if (path === '/api/admin/devices/device-offline-conflict/connection-history' && method === 'GET') {
+      return json(route, {
+        rows: [
+          {
+            id: 'history-ce-offline-001',
+            type: 'disconnect',
+            status: 'offline',
+            summary: 'Device disconnected before pushing local task edit',
+            createdAt: '2026-06-08T08:55:00.000Z',
+          },
+        ],
+      });
+    }
+
+    if (path === '/api/admin/data/sync-mutations' && method === 'GET') {
+      return json(route, {
+        rows: [
+          {
+            id: 'mutation-ce-offline-001',
+            mutationUid: 'mutation-ce-offline-001',
+            objectType: 'task_item',
+            action: 'update',
+            status: 'conflict',
+            result: 'conflict',
+            summary: 'mutation-ce-offline-001: Offline task title edit collided with server version 3',
+            createdAt: now,
+          },
+        ],
+      });
+    }
+
+    if (path === '/api/admin/data/conflicts' && method === 'GET') {
+      return json(route, {
+        rows: [
+          {
+            id: 'conflict-ce-offline-001',
+            conflictId: 'conflict-ce-offline-001',
+            objectType: 'task_item',
+            status: 'open',
+            summary: 'conflict-ce-offline-001: Offline title conflict',
+            fields: [
+              {
+                field: 'title',
+                base: 'Cross-end task',
+                local: 'Cross-end task from phone',
+                server: 'Cross-end task from web',
+              },
+            ],
+            createdAt: now,
+          },
+        ],
+      });
+    }
+
+    if (path === '/api/admin/data/reports' && method === 'GET') {
+      return json(route, {
+        rows: [
+          {
+            id: 'report-ce-001',
+            title: 'Cross-end evidence report',
+            period: '2026-06-08',
+            status: 'draft',
+            generatedAt: now,
+            summary: 'Includes task, file, AI, and sync evidence links',
+          },
+        ],
+      });
+    }
+
+    if (path === '/api/admin/data/push-deliveries' && method === 'GET') {
+      return json(route, {
+        rows: [
+          {
+            id: 'delivery-ce-report-001',
+            channel: 'manual-preview',
+            target: 'cross-end-acceptance',
+            status: 'queued',
+            createdAt: now,
+            error: null,
           },
         ],
       });

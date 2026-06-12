@@ -155,7 +155,7 @@ class _AndroidTrackerAccessTile extends ConsumerWidget {
         ),
         trailing: TextButton(
           onPressed: () async {
-            await const AndroidUsageStatsService().openUsageAccessSettings();
+            await AndroidUsageStatsService().openUsageAccessSettings();
             ref.invalidate(androidUsageAccessStatusProvider);
           },
           child: Text(granted ? '重新检查' : '去开启'),
@@ -274,6 +274,21 @@ class _AndroidReminderSystemTile extends ConsumerWidget {
   }
 }
 
+@visibleForTesting
+Widget settingsAndroidStatusSectionForTesting({
+  required AsyncValue<ReminderSystemStatus> reminderStatus,
+}) {
+  return _SettingsSection(
+    title: 'Android status',
+    icon: Icons.phone_android_outlined,
+    children: [
+      const _AndroidTrackerAccessTile(),
+      const _AndroidDeviceIdentityTile(),
+      _AndroidReminderSystemTile(status: reminderStatus),
+    ],
+  );
+}
+
 class _WorkScheduleEditorDialog extends StatefulWidget {
   const _WorkScheduleEditorDialog({
     required this.initial,
@@ -388,10 +403,12 @@ class _WorkScheduleEditorDialogState extends State<_WorkScheduleEditorDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => _applySchedule(
-            WeeklyWorkSchedule.defaults(),
-            closeAfterSave: false,
-          ),
+          onPressed: _saving
+              ? null
+              : () => _applySchedule(
+                    WeeklyWorkSchedule.defaults(),
+                    closeAfterSave: false,
+                  ),
           child: const Text('恢复默认'),
         ),
         TextButton(

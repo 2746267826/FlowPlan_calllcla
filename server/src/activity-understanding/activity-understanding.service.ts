@@ -759,7 +759,7 @@ export class ActivityUnderstandingService {
 
   private inferTitle(appName: string, windowTitle: string, filePath?: string) {
     if (filePath) {
-      const fileName = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+      const fileName = filePath.replace(/\\/g, '/').split('/').pop();
       if (fileName && windowTitle) return `${appName}: ${fileName} - ${windowTitle}`.slice(0, 160);
       if (fileName) return `${appName}: ${fileName}`.slice(0, 160);
     }

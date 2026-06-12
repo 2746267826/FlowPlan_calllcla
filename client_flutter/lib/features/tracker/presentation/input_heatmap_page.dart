@@ -18,6 +18,18 @@ class InputHeatmapPage extends ConsumerStatefulWidget {
   ConsumerState<InputHeatmapPage> createState() => _InputHeatmapPageState();
 }
 
+@visibleForTesting
+InputEventQuery debugBuildCustomInputHeatmapQueryWithoutRange({
+  required DateTime now,
+  String? processName,
+}) {
+  return _customInputHeatmapQuery(
+    now: now,
+    range: null,
+    processName: processName,
+  );
+}
+
 class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
   _InputRangePreset _rangePreset = _InputRangePreset.today;
   String? _selectedProcess;
@@ -48,7 +60,9 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
         title: const Text('\u952e\u9f20\u70ed\u529b\u56fe'),
         actions: [
           IconButton(
-            tooltip: _isRefreshing ? '\u6b63\u5728\u5237\u65b0' : '\u624b\u52a8\u5237\u65b0',
+            tooltip: _isRefreshing
+                ? '\u6b63\u5728\u5237\u65b0'
+                : '\u624b\u52a8\u5237\u65b0',
             onPressed: _isRefreshing ? null : _reloadPage,
             icon: _isRefreshing
                 ? const SizedBox(
@@ -116,7 +130,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
                       _RangeChip(
                         label: '\u4eca\u5929',
                         selected: _rangePreset == _InputRangePreset.today,
-                        onSelected: () => _setRangePreset(_InputRangePreset.today),
+                        onSelected: () =>
+                            _setRangePreset(_InputRangePreset.today),
                       ),
                       _RangeChip(
                         label: '\u6700\u8fd1 7 \u5929',
@@ -133,7 +148,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
                       _RangeChip(
                         label: '\u5168\u90e8\u65f6\u95f4',
                         selected: _rangePreset == _InputRangePreset.all,
-                        onSelected: () => _setRangePreset(_InputRangePreset.all),
+                        onSelected: () =>
+                            _setRangePreset(_InputRangePreset.all),
                       ),
                       _RangeChip(
                         label: '\u81ea\u5b9a\u4e49',
@@ -201,7 +217,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
                 child: SizedBox(
                   height: 180,
                   child: Center(
-                    child: Text('\u52a0\u8f7d\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$error'),
+                    child: Text(
+                        '\u52a0\u8f7d\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$error'),
                   ),
                 ),
               ),
@@ -257,8 +274,9 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
       return;
     }
 
-    final processOptions =
-        nextProcessOptions.valueOrNull ?? _processOptionsAsync.valueOrNull ?? const <String>[];
+    final processOptions = nextProcessOptions.valueOrNull ??
+        _processOptionsAsync.valueOrNull ??
+        const <String>[];
     final effectiveProcess =
         processOptions.contains(_selectedProcess) ? _selectedProcess : null;
     final nextQuery = _buildQuery(processName: effectiveProcess);
@@ -293,10 +311,12 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     });
 
     if (processError != null) {
-      _showMessage('\u52a0\u8f7d\u5e94\u7528\u5217\u8868\u5931\u8d25\uff1a$processError');
+      _showMessage(
+          '\u52a0\u8f7d\u5e94\u7528\u5217\u8868\u5931\u8d25\uff1a$processError');
     }
     if (summaryError != null) {
-      _showMessage('\u5237\u65b0\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$summaryError');
+      _showMessage(
+          '\u5237\u65b0\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$summaryError');
     }
   }
 
@@ -310,7 +330,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     });
 
     final query = _buildQuery(
-      processName: _effectiveProcess(_processOptionsAsync.valueOrNull ?? const <String>[]),
+      processName: _effectiveProcess(
+          _processOptionsAsync.valueOrNull ?? const <String>[]),
     );
     ref.invalidate(inputHeatmapSummaryProvider(query));
     final nextSummary = await AsyncValue.guard(
@@ -334,7 +355,8 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     });
 
     if (summaryError != null) {
-      _showMessage('\u5237\u65b0\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$summaryError');
+      _showMessage(
+          '\u5237\u65b0\u952e\u9f20\u70ed\u529b\u56fe\u5931\u8d25\uff1a$summaryError');
     }
   }
 
@@ -486,18 +508,9 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
       case _InputRangePreset.all:
         return InputEventQuery(processName: processName);
       case _InputRangePreset.custom:
-        final range = _customRange;
-        if (range == null) {
-          final start = _startOfDay(now).subtract(const Duration(days: 6));
-          return InputEventQuery(
-            start: start,
-            end: _startOfDay(now).add(const Duration(days: 1)),
-            processName: processName,
-          );
-        }
-        return InputEventQuery(
-          start: _startOfDay(range.start),
-          end: _startOfDay(range.end).add(const Duration(days: 1)),
+        return _customInputHeatmapQuery(
+          now: now,
+          range: _customRange,
           processName: processName,
         );
     }
@@ -513,8 +526,9 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
           ? '\u81ea\u5b9a\u4e49\u8303\u56f4'
           : '${_formatDate(_customRange!.start)} \u81f3 ${_formatDate(_customRange!.end)}',
     };
-    final processLabel =
-        query.processName == null ? '\u5168\u90e8\u5e94\u7528' : query.processName!;
+    final processLabel = query.processName == null
+        ? '\u5168\u90e8\u5e94\u7528'
+        : query.processName!;
     return '$timeLabel \u00b7 $processLabel';
   }
 
@@ -535,6 +549,28 @@ class _InputHeatmapPageState extends ConsumerState<InputHeatmapPage> {
     final second = date.second.toString().padLeft(2, '0');
     return '$base $hour:$minute:$second';
   }
+}
+
+InputEventQuery _customInputHeatmapQuery({
+  required DateTime now,
+  required DateTimeRange? range,
+  required String? processName,
+}) {
+  if (range == null) {
+    final start = _InputHeatmapPageState._startOfDay(now)
+        .subtract(const Duration(days: 6));
+    return InputEventQuery(
+      start: start,
+      end: _InputHeatmapPageState._startOfDay(now).add(const Duration(days: 1)),
+      processName: processName,
+    );
+  }
+  return InputEventQuery(
+    start: _InputHeatmapPageState._startOfDay(range.start),
+    end: _InputHeatmapPageState._startOfDay(range.end)
+        .add(const Duration(days: 1)),
+    processName: processName,
+  );
 }
 
 class _SectionCard extends StatelessWidget {
@@ -909,17 +945,17 @@ class _HourlyDistributionAnalysisPanel extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: (List<InputHourDistributionBucket>.from(
-                      summary.hourlyDistribution.where(
-                        (item) => item.totalEvents > 0,
-                      ),
-                    )..sort((left, right) {
-                      final byScore =
-                          right.intensityScore.compareTo(left.intensityScore);
-                      if (byScore != 0) {
-                        return byScore;
-                      }
-                      return right.totalEvents.compareTo(left.totalEvents);
-                    }))
+              summary.hourlyDistribution.where(
+                (item) => item.totalEvents > 0,
+              ),
+            )..sort((left, right) {
+                    final byScore =
+                        right.intensityScore.compareTo(left.intensityScore);
+                    if (byScore != 0) {
+                      return byScore;
+                    }
+                    return right.totalEvents.compareTo(left.totalEvents);
+                  }))
                 .take(5)
                 .map(
                   (item) => _StatChip(
@@ -1002,7 +1038,8 @@ class _KeyRankingTile extends StatelessWidget {
               value: widthFactor,
               minHeight: 8,
               backgroundColor: const Color(0xFFE8EBF0),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFCC6100)),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(Color(0xFFCC6100)),
             ),
           ),
           const SizedBox(height: 6),
@@ -1030,7 +1067,8 @@ class _ProcessIntensityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = maxScore <= 0 ? 0.0 : item.intensityScore / maxScore;
-    final share = totalEventCount <= 0 ? 0.0 : item.totalEvents / totalEventCount;
+    final share =
+        totalEventCount <= 0 ? 0.0 : item.totalEvents / totalEventCount;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1071,7 +1109,8 @@ class _ProcessIntensityTile extends StatelessWidget {
               value: progress.clamp(0.0, 1.0),
               minHeight: 8,
               backgroundColor: const Color(0xFFE8EBF0),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0E8A75)),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(Color(0xFF0E8A75)),
             ),
           ),
           const SizedBox(height: 10),
@@ -1087,7 +1126,8 @@ class _ProcessIntensityTile extends StatelessWidget {
                     '\u70b9\u51fb ${item.mouseButtonEvents + item.wheelEvents}',
               ),
               _StatChip(label: '\u79fb\u52a8 ${item.moveDistance}'),
-              _StatChip(label: '\u6d3b\u8dc3 ${item.activeMinutes}\u5206\u949f'),
+              _StatChip(
+                  label: '\u6d3b\u8dc3 ${item.activeMinutes}\u5206\u949f'),
             ],
           ),
         ],
@@ -1253,7 +1293,8 @@ class _KeyboardHeatmap extends StatelessWidget {
                               padding: const EdgeInsets.only(right: 8),
                               child: _KeyboardKeyTile(
                                 spec: spec,
-                                count: _sumKeyCounts(summary.keyCounts, spec.keyCodes),
+                                count: _sumKeyCounts(
+                                    summary.keyCounts, spec.keyCodes),
                                 maxCount: maxCount,
                               ),
                             ),
@@ -1425,7 +1466,8 @@ class _MouseHeatmap extends StatelessWidget {
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFFFFF),
                     borderRadius: BorderRadius.circular(18),
@@ -1548,7 +1590,6 @@ class _MouseKeyTile extends StatelessWidget {
         : const Color(0xFF24303F);
     return Container(
       height: height,
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: background,
         borderRadius: radius ?? BorderRadius.circular(18),
@@ -1558,13 +1599,42 @@ class _MouseKeyTile extends StatelessWidget {
               : const Color(0xFFDADFE6),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: foreground)),
-          const Spacer(),
-          Text('$count', style: TextStyle(color: foreground)),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxHeight < 46;
+          final padding = compact ? 3.0 : 10.0;
+          final fontSize = compact ? 10.0 : 14.0;
+          return Padding(
+            padding: EdgeInsets.all(padding),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    height: 1,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+                Text(
+                  '$count',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    height: 1,
+                    color: foreground,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

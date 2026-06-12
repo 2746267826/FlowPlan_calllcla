@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   decrypt,
   encrypt,
@@ -79,6 +79,28 @@ describe('crypto utilities', () => {
 
     expect(encryptionKey()).toEqual(digest('postgres://localhost/flowplantest'));
     expect(isEncryptionKeySecure()).toBe(false);
+  });
+
+  it('falls back to the dev-only key and warns when no configured secret exists', () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key];
+    }
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    expect(encryptionKey()).toEqual(
+      digest('flowplanv2-local-fallback-key-for-dev-only'),
+    );
+    expect(isEncryptionKeySecure()).toBe(false);
+    expect(consoleWarn).toHaveBeenCalledWith(
+      '[FlowPlanV2] WARNING: Encryption key is derived from DATABASE_URL. Set FLOWPLANV2_ENCRYPTION_KEY for production.',
+    );
+  });
+
+  it('accepts a pre-derived Buffer key for encryption and decryption', () => {
+    const key = Buffer.from('k'.repeat(32));
+    const encrypted = encrypt('buffer secret', key);
+
+    expect(decrypt(encrypted, key)).toBe('buffer secret');
   });
 
   it('generates UUID-shaped identifiers', () => {

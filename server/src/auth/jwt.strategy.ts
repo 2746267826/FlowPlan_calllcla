@@ -10,17 +10,22 @@ export interface JwtPayload {
   exp: number;
 }
 
+export function resolveJwtStrategySecret(): string {
+  return (
+    process.env.JWT_ACCESS_SECRET ??
+    process.env.FLOWPLANV2_DATABASE_URL ??
+    process.env.DATABASE_URL ??
+    'flowplanv2-jwt-access-secret'
+  );
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey:
-        process.env.JWT_ACCESS_SECRET ??
-        process.env.FLOWPLANV2_DATABASE_URL ??
-        process.env.DATABASE_URL ??
-        'flowplanv2-jwt-access-secret',
+      secretOrKey: resolveJwtStrategySecret(),
     });
   }
 

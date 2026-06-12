@@ -28,9 +28,9 @@ export function loadConfig(): AppConfig {
     bodyLimit: process.env.FLOWPLANV2_BODY_LIMIT ?? '50mb',
     corsOrigin: process.env.ADMIN_CORS_ORIGIN ?? true,
     jwtAccessSecret:
-      process.env.JWT_ACCESS_SECRET ?? databaseUrl ?? 'flowplanv2-jwt-access-secret',
+      process.env.JWT_ACCESS_SECRET ?? databaseUrl,
     jwtRefreshSecret:
-      process.env.JWT_REFRESH_SECRET ?? process.env.JWT_ACCESS_SECRET ?? databaseUrl ?? 'flowplanv2-jwt-refresh-secret',
+      process.env.JWT_REFRESH_SECRET ?? process.env.JWT_ACCESS_SECRET ?? databaseUrl,
     jwtAccessExpires: process.env.JWT_ACCESS_EXPIRES ?? '24h',
     jwtRefreshExpires: process.env.JWT_REFRESH_EXPIRES ?? '7d',
     logLevel: process.env.LOG_LEVEL ?? 'debug',

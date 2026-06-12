@@ -60,7 +60,7 @@ export class SchedulerService {
     const mode = clean(body.mode) ?? 'initial_plan';
     const strategy = clean(body.strategy) ?? 'balanced';
     const activeModel = await this.modelsService.activeProfile(userId, 'scheduler.v1');
-    const profile = asRecord(activeModel.ruleProfile);
+    const profile = asRecord(asRecord(activeModel).ruleProfile);
     const schedulerSettings = await this.readSchedulerSettings(userId);
     const tasks = await this.readTasks(userId);
     const busyBlocks = await this.readBusyBlocks(userId, start, end);
@@ -134,7 +134,7 @@ export class SchedulerService {
     const averageConfidence =
       planned.length === 0
         ? 0
-        : planned.reduce((sum, item) => sum + Number(item.confidence ?? 0), 0) / planned.length;
+        : planned.reduce((sum, item) => sum + Number(item.confidence), 0) / planned.length;
 
     const run = await this.database.transaction(async (client) => {
       const runResult = await client.query<QueryResultRow>(
@@ -742,7 +742,7 @@ export class SchedulerService {
         unplanned.push({
           taskId: task.id,
           title: task.title,
-          remainingMinutes: minutesLeft > 0 ? minutesLeft : task.remainingMinutes,
+          remainingMinutes: minutesLeft,
           reason: freeBlocks.length === 0 ? '没有可用时间块' : '可用时间不足或被更高优先级任务占用',
         });
       }

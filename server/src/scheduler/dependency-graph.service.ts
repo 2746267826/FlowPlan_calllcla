@@ -43,7 +43,7 @@ export class DependencyGraphService {
         }
         adjIn.get(t.id)!.add(dep);
         adjOut.get(dep)!.add(t.id);
-        inDegree.set(t.id, (inDegree.get(t.id) ?? 0) + 1);
+        inDegree.set(t.id, inDegree.get(t.id)! + 1);
       }
     }
     return { adjIn, adjOut, inDegree };
@@ -75,14 +75,12 @@ export class DependencyGraphService {
         sorted.push(node);
         layer.push(node);
 
-        const deps = this.buildGraph(tasks).adjOut.get(node);
-        if (deps) {
-          for (const dependent of deps) {
-            const newDeg = (indeg.get(dependent) ?? 1) - 1;
-            indeg.set(dependent, newDeg);
-            if (newDeg === 0) {
-              nextQueue.push(dependent);
-            }
+        const deps = this.buildGraph(tasks).adjOut.get(node)!;
+        for (const dependent of deps) {
+          const newDeg = indeg.get(dependent)! - 1;
+          indeg.set(dependent, newDeg);
+          if (newDeg === 0) {
+            nextQueue.push(dependent);
           }
         }
       }

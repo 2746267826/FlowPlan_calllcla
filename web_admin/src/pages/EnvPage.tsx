@@ -50,7 +50,7 @@ export function EnvPage(props: { api: AdminApiClient; onDataRefresh: () => void 
               onChange={(e) => setEnvContent(e.target.value)}
               placeholder="粘贴 .env 文件内容..."
             />
-            <Button type="primary" icon={<UploadOutlined />} onClick={uploadEnv} style={{ marginTop: 8 }}>
+            <Button aria-label="Upload env content" type="primary" icon={<UploadOutlined />} onClick={uploadEnv} style={{ marginTop: 8 }}>
               上传到服务端
             </Button>
           </Card>

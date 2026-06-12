@@ -38,7 +38,8 @@ class InputActivityEventService {
     return days;
   }
 
-  Future<List<TrackedInputEvent>> readArchivedEventsForDate(DateTime date) async {
+  Future<List<TrackedInputEvent>> readArchivedEventsForDate(
+      DateTime date) async {
     await _ensureInitialized();
     final file = await _resolveDailyArchiveFileForDayKey(_formatDate(date));
     if (!await file.exists()) {
@@ -73,7 +74,9 @@ class InputActivityEventService {
       });
 
     const maxBatchSize = 40;
-    for (var offset = 0; offset < orderedEvents.length; offset += maxBatchSize) {
+    for (var offset = 0;
+        offset < orderedEvents.length;
+        offset += maxBatchSize) {
       final batch = orderedEvents.skip(offset).take(maxBatchSize);
       final createdAtIso = DateTime.now().toIso8601String();
       final statements = <String>[];
@@ -326,7 +329,8 @@ class InputActivityEventService {
 
     final query = InputEventQuery(
       start: data.firstOccurredAt ?? DateTime.now(),
-      end: data.lastOccurredAt?.add(const Duration(seconds: 1)) ?? DateTime.now(),
+      end: data.lastOccurredAt?.add(const Duration(seconds: 1)) ??
+          DateTime.now(),
     );
     return _buildSummaryFromAggregateData(query: query, data: data);
   }
@@ -447,7 +451,8 @@ class InputActivityEventService {
         .list()
         .where((entity) => entity is File)
         .cast<File>()
-        .where((file) => _tryParseDayKeyFromFileName(p.basename(file.path)) != null)
+        .where((file) =>
+            _tryParseDayKeyFromFileName(p.basename(file.path)) != null)
         .toList();
 
     final days = <ActivityLogArchiveDay>[];
@@ -705,9 +710,9 @@ class InputActivityEventService {
       sequenceId: row.read<int>('sequence_id'),
       timestamp: DateTime.tryParse(row.read<String>('occurred_at')) ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      kind: TrackedInputEventKindValue.fromValue(row.read<String>('event_kind')),
-      eventCount:
-          row.read<int?>('event_count') ??
+      kind:
+          TrackedInputEventKindValue.fromValue(row.read<String>('event_kind')),
+      eventCount: row.read<int?>('event_count') ??
           ((payload?['eventCount']) as num?)?.toInt() ??
           1,
       recordId: row.read<int?>('record_id'),
@@ -721,18 +726,15 @@ class InputActivityEventService {
       keyLabel: row.read<String?>('key_label'),
       mouseButton: row.read<String?>('mouse_button'),
       wheelDelta: row.read<int?>('wheel_delta') ?? 0,
-      deltaX:
-          row.read<int?>('delta_x') ??
+      deltaX: row.read<int?>('delta_x') ??
           ((payload?['deltaX']) as num?)?.toInt() ??
           0,
-      deltaY:
-          row.read<int?>('delta_y') ??
+      deltaY: row.read<int?>('delta_y') ??
           ((payload?['deltaY']) as num?)?.toInt() ??
           0,
       moveDistance: row.read<int?>('move_distance') ?? 0,
       tokenText: _cleanTokenText(
-        row.read<String?>('token_text') ??
-            ((payload?['tokenText']) as String?),
+        row.read<String?>('token_text') ?? ((payload?['tokenText']) as String?),
       ),
     );
   }
@@ -744,9 +746,6 @@ class InputActivityEventService {
     }
     try {
       final decoded = jsonDecode(trimmed);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
       if (decoded is Map) {
         return Map<String, dynamic>.from(decoded);
       }
@@ -754,6 +753,10 @@ class InputActivityEventService {
       // Ignore malformed historical payloads and fall back to structured columns.
     }
     return null;
+  }
+
+  Map<String, dynamic>? debugDecodePayloadJsonForTesting(String? payloadJson) {
+    return _decodePayloadJson(payloadJson);
   }
 
   String _trackedInputEventProjection({String tableAlias = ''}) {
@@ -831,9 +834,8 @@ class InputActivityEventService {
     for (final entry in grouped.entries) {
       final file = await _resolveDailyArchiveFileForDayKey(entry.key);
       await file.parent.create(recursive: true);
-      final contents = entry.value
-          .map((event) => jsonEncode(event.toJson()))
-          .join('\n');
+      final contents =
+          entry.value.map((event) => jsonEncode(event.toJson())).join('\n');
       await file.writeAsString(
         '$contents\n',
         mode: FileMode.append,
@@ -867,8 +869,8 @@ class InputActivityEventService {
   }
 
   static String? _tryParseDayKeyFromFileName(String fileName) {
-    final match =
-        RegExp(r'^(\d{4}-\d{2}-\d{2})\.input-events\.jsonl$').firstMatch(fileName);
+    final match = RegExp(r'^(\d{4}-\d{2}-\d{2})\.input-events\.jsonl$')
+        .firstMatch(fileName);
     return match?.group(1);
   }
 
@@ -881,6 +883,10 @@ class InputActivityEventService {
     final month = int.tryParse(parts[1]) ?? 1;
     final day = int.tryParse(parts[2]) ?? 1;
     return DateTime(year, month, day);
+  }
+
+  static DateTime debugParseDayKeyForTesting(String dayKey) {
+    return _parseDayKey(dayKey);
   }
 
   InputEventContextBinding? _pickBinding({
@@ -910,7 +916,8 @@ class InputActivityEventService {
           explicitProcess == _normalize(binding.processName)) {
         score += 4;
       }
-      if (explicitClass != null && explicitClass == _normalize(binding.className)) {
+      if (explicitClass != null &&
+          explicitClass == _normalize(binding.className)) {
         score += 2;
       }
       final bindingTitle = _normalize(binding.windowTitle);
@@ -965,7 +972,8 @@ class InputActivityEventService {
     required bool includeIgnored,
     String tableAlias = '',
   }) {
-    final qualifiedPrefix = tableAlias.trim().isEmpty ? '' : '${tableAlias.trim()}.';
+    final qualifiedPrefix =
+        tableAlias.trim().isEmpty ? '' : '${tableAlias.trim()}.';
     final clauses = <String>[];
     final variables = <Variable>[];
 

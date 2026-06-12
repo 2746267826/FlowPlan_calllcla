@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { resolve } from 'node:path';
 import { JwtModule } from '@nestjs/jwt';
+import type { JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -59,6 +60,30 @@ import { AuditService } from './common/audit/audit.service';
 import { SyncObjectRepository } from './common/repositories/sync-object.repository';
 import { VectorService } from './common/utils/vector.service';
 
+type JwtConfigReader = Pick<ConfigService, 'get'>;
+type JwtExpiresIn = NonNullable<JwtModuleOptions['signOptions']>['expiresIn'];
+
+export function resolveJwtModuleOptions(config: JwtConfigReader): JwtModuleOptions {
+  const expiresIn = config.get<string>('jwtAccessExpires', '24h') as JwtExpiresIn;
+  return {
+    secret:
+      config.get<string>('jwtAccessSecret') ??
+      process.env.JWT_ACCESS_SECRET ??
+      process.env.FLOWPLANV2_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      'flowplanv2-jwt-access-secret',
+    signOptions: { expiresIn },
+  };
+}
+
+export function createAppValidationPipe(): ValidationPipe {
+  return new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    forbidNonWhitelisted: false,
+  });
+}
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -67,10 +92,7 @@ import { VectorService } from './common/utils/vector.service';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get('jwtAccessSecret', process.env.JWT_ACCESS_SECRET ?? process.env.FLOWPLANV2_DATABASE_URL ?? process.env.DATABASE_URL ?? 'flowplanv2-jwt-access-secret'),
-        signOptions: { expiresIn: config.get('jwtAccessExpires', '24h') },
-      }),
+      useFactory: resolveJwtModuleOptions,
     }),
     ThrottlerModule.forRoot([
       {
@@ -119,12 +141,7 @@ import { VectorService } from './common/utils/vector.service';
     },
     {
       provide: APP_PIPE,
-      useFactory: () =>
-        new ValidationPipe({
-          whitelist: true,
-          transform: true,
-          forbidNonWhitelisted: false,
-        }),
+      useFactory: createAppValidationPipe,
     },
     DevicesService,
     SyncService,

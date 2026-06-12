@@ -7,11 +7,9 @@ part of 'tracker_service.dart';
 // **************************************************************************
 
 String _$trackerServiceNotifierHash() =>
-    r'0ec7e5c28749e647be138d81f19092a581d6246e';
+    r'15f3579de4addf1731e3f51b6fe1543ca2e53bec';
 
-/// 后台追踪服务 Notifier
-///
-/// Copied from [TrackerServiceNotifier].
+/// See also [TrackerServiceNotifier].
 @ProviderFor(TrackerServiceNotifier)
 final trackerServiceNotifierProvider =
     NotifierProvider<TrackerServiceNotifier, TrackerState>.internal(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -22,7 +23,8 @@ final reminderServiceProvider = Provider<ReminderService>((ref) {
 
 final reminderScheduleRefreshTickProvider = StateProvider<int>((ref) => 0);
 
-final reminderSystemStatusProvider = FutureProvider<ReminderSystemStatus>((ref) {
+final reminderSystemStatusProvider =
+    FutureProvider<ReminderSystemStatus>((ref) {
   ref.watch(reminderScheduleRefreshTickProvider);
   final service = ref.watch(reminderServiceProvider);
   return service.getSystemStatus();
@@ -46,7 +48,7 @@ class ReminderSystemStatus {
   final DateTime? lastRebuiltAt;
 
   bool get needsAndroidExactAlarmPermission =>
-      Platform.isAndroid && supportsSystemSchedule && !canScheduleExactAlarms;
+      supportsSystemSchedule && !canScheduleExactAlarms;
 }
 
 class ReminderRebuildResult {
@@ -59,12 +61,120 @@ class ReminderRebuildResult {
   final bool canScheduleExactAlarms;
 }
 
+abstract class ReminderRuntimeEnvironment {
+  bool get isAndroid;
+  bool get isWindows;
+  DateTime now();
+}
+
+class SystemReminderRuntimeEnvironment implements ReminderRuntimeEnvironment {
+  const SystemReminderRuntimeEnvironment();
+
+  @override
+  bool get isAndroid => Platform.isAndroid;
+
+  @override
+  bool get isWindows => Platform.isWindows;
+
+  @override
+  DateTime now() => DateTime.now();
+}
+
+abstract class ReminderNotificationGateway {
+  Future<void> initialize();
+  Future<bool> canScheduleExactAlarms();
+  Future<void> openAndroidExactAlarmSettings();
+  Future<int> pendingSystemReminderCount();
+  Future<bool> scheduleSystemReminder(ReminderRequest request);
+  Future<void> cancelAllSystemReminders();
+  Future<void> showReminder({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  });
+}
+
+abstract final class ReminderPayloadCodec {
+  static String encode(Map<String, Object?> payload) {
+    return jsonEncode(normalize(payload));
+  }
+
+  static Map<String, Object?> decode(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return <String, Object?>{};
+    }
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map) {
+        return _normalizeMap(decoded);
+      }
+    } catch (_) {
+      return <String, Object?>{};
+    }
+    return <String, Object?>{};
+  }
+
+  static Map<String, Object?> normalize(Map<String, Object?> payload) {
+    return _normalizeMap(payload);
+  }
+
+  static Map<String, Object?> _normalizeMap(Map<dynamic, dynamic> source) {
+    final normalized = <String, Object?>{};
+    for (final entry in source.entries) {
+      normalized['${entry.key}'] = _normalizeValue(entry.value);
+    }
+    return normalized;
+  }
+
+  static Object? _normalizeValue(Object? value) {
+    if (value == null || value is String || value is num || value is bool) {
+      return value;
+    }
+    if (value is DateTime) {
+      return value.toUtc().toIso8601String();
+    }
+    if (value is Map) {
+      return _normalizeMap(value);
+    }
+    if (value is Iterable) {
+      return value.map(_normalizeValue).toList(growable: false);
+    }
+    return value.toString();
+  }
+}
+
+class ReminderRequest {
+  ReminderRequest({
+    required this.id,
+    required this.triggerAt,
+    required this.title,
+    required this.body,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) : payload = Map.unmodifiable(ReminderPayloadCodec.normalize(payload));
+
+  final int id;
+  final DateTime triggerAt;
+  final String title;
+  final String body;
+  final Map<String, Object?> payload;
+
+  String get encodedPayload => ReminderPayloadCodec.encode(payload);
+}
+
 class ReminderService {
   ReminderService({
     required AppDatabase database,
     required int Function() defaultEventReminderMinutes,
+    ReminderNotificationGateway? gateway,
+    ReminderRuntimeEnvironment? environment,
   })  : _db = database,
-        _defaultEventReminderMinutes = defaultEventReminderMinutes;
+        _defaultEventReminderMinutes = defaultEventReminderMinutes,
+        _environment = environment ?? const SystemReminderRuntimeEnvironment(),
+        _gateway = gateway ??
+            SystemReminderNotificationGateway(
+              environment ?? const SystemReminderRuntimeEnvironment(),
+            );
 
   static const _scanInterval = Duration(minutes: 1);
   static const _systemScheduleRefreshInterval = Duration(minutes: 15);
@@ -79,7 +189,8 @@ class ReminderService {
 
   final AppDatabase _db;
   final int Function() _defaultEventReminderMinutes;
-  final _gateway = _ReminderNotificationGateway();
+  final ReminderRuntimeEnvironment _environment;
+  final ReminderNotificationGateway _gateway;
   final Set<String> _deliveredKeys = <String>{};
 
   Timer? _timer;
@@ -113,7 +224,7 @@ class ReminderService {
     }
     _isScanning = true;
     try {
-      final now = DateTime.now();
+      final now = _environment.now();
       await _scanEvents(now);
       await _scanTasks(now);
       await _scanPlanDeviation(now);
@@ -133,11 +244,11 @@ class ReminderService {
 
     _isRebuildingSystemSchedule = true;
     try {
-      if (!Platform.isAndroid) {
+      if (!_environment.isAndroid) {
         await _db.setIntSetting(_lastSystemScheduledCountSettingKey, 0);
         await _db.setSetting(
           _lastSystemRebuiltAtSettingKey,
-          DateTime.now().toIso8601String(),
+          _environment.now().toIso8601String(),
         );
         return const ReminderRebuildResult(
           scheduledCount: 0,
@@ -151,7 +262,7 @@ class ReminderService {
         await _db.setIntSetting(_lastSystemScheduledCountSettingKey, 0);
         await _db.setSetting(
           _lastSystemRebuiltAtSettingKey,
-          DateTime.now().toIso8601String(),
+          _environment.now().toIso8601String(),
         );
         return const ReminderRebuildResult(
           scheduledCount: 0,
@@ -159,13 +270,13 @@ class ReminderService {
         );
       }
 
-      final now = DateTime.now();
+      final now = _environment.now();
       final requests = await _collectSystemReminderRequests(now);
       await _gateway.cancelAllSystemReminders();
 
       var scheduledCount = 0;
       for (final request in requests.take(128)) {
-        final scheduled = await _gateway.scheduleSystemReminder(request);
+        final scheduled = await _tryScheduleSystemReminder(request);
         if (scheduled) {
           scheduledCount++;
         }
@@ -177,7 +288,7 @@ class ReminderService {
       );
       await _db.setSetting(
         _lastSystemRebuiltAtSettingKey,
-        DateTime.now().toIso8601String(),
+        _environment.now().toIso8601String(),
       );
       return ReminderRebuildResult(
         scheduledCount: scheduledCount,
@@ -185,6 +296,14 @@ class ReminderService {
       );
     } finally {
       _isRebuildingSystemSchedule = false;
+    }
+  }
+
+  Future<bool> _tryScheduleSystemReminder(ReminderRequest request) async {
+    try {
+      return await _gateway.scheduleSystemReminder(request);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -196,19 +315,19 @@ class ReminderService {
       _lastSystemScheduledCountSettingKey,
       defaultValue: 0,
     );
-    final pendingCount = Platform.isAndroid
+    final pendingCount = _environment.isAndroid
         ? await _gateway.pendingSystemReminderCount()
         : fallbackCount;
     final canSchedule = await _gateway.canScheduleExactAlarms();
 
     return ReminderSystemStatus(
-      platformLabel: Platform.isAndroid
-          ? 'Android 精准闹钟'
-          : Platform.isWindows
-              ? 'Windows 运行时强提醒'
-              : '当前平台暂未接入系统级提醒',
+      platformLabel: _environment.isAndroid
+          ? 'Android 绮惧噯闂归挓'
+          : _environment.isWindows
+              ? 'Windows 杩愯鏃跺己鎻愰啋'
+              : 'System reminders are not available on this platform',
       runtimeScannerEnabled: _started,
-      supportsSystemSchedule: Platform.isAndroid,
+      supportsSystemSchedule: _environment.isAndroid,
       canScheduleExactAlarms: canSchedule,
       pendingSystemReminderCount: pendingCount,
       lastRebuiltAt: lastRebuiltAt,
@@ -243,31 +362,54 @@ class ReminderService {
     ]);
     query.where(
       _db.eventCalendars.isVisible.equals(true) &
-          _db.calendarEvents.dtstart.isBiggerOrEqualValue(lower) &
-          _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper) &
-          _db.calendarEvents.status.isNotIn(['CANCELLED']),
+          _db.calendarEvents.status.isNotIn(['CANCELLED']) &
+          ((_db.calendarEvents.dtstart.isBiggerOrEqualValue(lower) &
+                  _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper)) |
+              (_db.calendarEvents.rrule.isNotNull() &
+                  _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper))),
     );
     query.orderBy([OrderingTerm.asc(_db.calendarEvents.dtstart)]);
 
     final rows = await query.get();
+    await _scanEventRows(now, reminderMinutes, lower, upper, rows);
+  }
+
+  Future<void> _scanEventRows(
+    DateTime now,
+    int reminderMinutes,
+    DateTime lower,
+    DateTime upper,
+    List<TypedResult> rows,
+  ) async {
     for (final row in rows) {
       final event = row.readTable(_db.calendarEvents);
-      final triggerAt =
-          event.dtstart.subtract(Duration(minutes: reminderMinutes));
-      if (!_shouldTrigger(now, triggerAt)) {
-        continue;
-      }
+      for (final occurrenceAt
+          in _eventOccurrencesInRange(event, lower, upper)) {
+        final triggerAt = occurrenceAt.subtract(
+          Duration(minutes: reminderMinutes),
+        );
+        if (!_shouldTrigger(now, triggerAt)) {
+          continue;
+        }
 
-      final key = 'event:${event.id}:${triggerAt.toIso8601String()}';
-      if (!_deliveredKeys.add(key)) {
-        continue;
-      }
+        final key = 'event:${event.id}:${triggerAt.toIso8601String()}';
+        if (!_deliveredKeys.add(key)) {
+          continue;
+        }
 
-      await _gateway.showReminder(
-        id: _stableNotificationId(key),
-        title: '日程提醒',
-        body: '${event.summary} 将在 ${_formatTime(event.dtstart)} 开始',
-      );
+        await _gateway.showReminder(
+          id: _stableNotificationId(key),
+          title: 'Event reminder',
+          body: '${event.summary} starts at ${_formatTime(occurrenceAt)}',
+          payload: ReminderPayloadCodec.encode(
+            _eventPayload(
+              event,
+              occurrenceAt: occurrenceAt,
+              triggerAt: triggerAt,
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -306,15 +448,14 @@ class ReminderService {
       if (startAt != null &&
           startAt.isAfter(lower) &&
           startAt.isBefore(upper)) {
-        final triggerAt =
-            startAt.subtract(Duration(minutes: reminderMinutes));
+        final triggerAt = startAt.subtract(Duration(minutes: reminderMinutes));
         if (_shouldTrigger(now, triggerAt)) {
           final key = 'task-start:${task.id}:${triggerAt.toIso8601String()}';
           if (_deliveredKeys.add(key)) {
             await _gateway.showReminder(
               id: _stableNotificationId(key),
-              title: '任务开始提醒',
-              body: '${task.summary} 计划在 ${_formatTime(startAt)} 开始',
+              title: 'Task start reminder',
+              body: '${task.summary} starts at ${_formatTime(startAt)}',
             );
           }
         }
@@ -325,15 +466,14 @@ class ReminderService {
         continue;
       }
 
-      final dueTriggerAt =
-          dueAt.subtract(Duration(minutes: reminderMinutes));
+      final dueTriggerAt = dueAt.subtract(Duration(minutes: reminderMinutes));
       if (_shouldTrigger(now, dueTriggerAt)) {
         final key = 'task-due:${task.id}:${dueTriggerAt.toIso8601String()}';
         if (_deliveredKeys.add(key)) {
           await _gateway.showReminder(
             id: _stableNotificationId(key),
-            title: '任务截止提醒',
-            body: '${task.summary} 将在 ${_formatTime(dueAt)} 截止',
+            title: '浠诲姟鎴鎻愰啋',
+            body: '${task.summary} 灏嗗湪 ${_formatTime(dueAt)} 鎴',
           );
         }
       }
@@ -343,8 +483,8 @@ class ReminderService {
         if (_deliveredKeys.add(key)) {
           await _gateway.showReminder(
             id: _stableNotificationId(key),
-            title: '任务风险提醒',
-            body: '${task.summary} 距离截止时间不足 2 小时，建议尽快安排处理',
+            title: '浠诲姟椋庨櫓鎻愰啋',
+            body: '${task.summary} has less than 2 hours before the deadline.',
           );
         }
       }
@@ -379,7 +519,8 @@ class ReminderService {
       }
 
       final scheduledEnd = startAt.add(
-        Duration(minutes: task.durationMinutes <= 0 ? 30 : task.durationMinutes),
+        Duration(
+            minutes: task.durationMinutes <= 0 ? 30 : task.durationMinutes),
       );
       if (now.isAfter(scheduledEnd)) {
         continue;
@@ -403,9 +544,9 @@ class ReminderService {
       _deliveredKeys.add(key);
       await _gateway.showReminder(
         id: _stableNotificationId(key),
-        title: '计划偏离提醒',
+        title: '璁″垝鍋忕鎻愰啋',
         body:
-            '${task.summary} 已计划在 ${_formatTime(startAt)} 开始，但当前还没有看到与该任务绑定的追踪记录。',
+            '${task.summary} was planned to start at ${_formatTime(startAt)}, but no linked activity has been recorded yet.',
       );
     }
   }
@@ -428,10 +569,10 @@ class ReminderService {
     return (row.read(countExpression) ?? 0) > 0;
   }
 
-  Future<List<_ReminderRequest>> _collectSystemReminderRequests(
+  Future<List<ReminderRequest>> _collectSystemReminderRequests(
     DateTime now,
   ) async {
-    final requests = <_ReminderRequest>[];
+    final requests = <ReminderRequest>[];
     await _collectSystemEventReminderRequests(now, requests);
     await _collectSystemTaskReminderRequests(now, requests);
     requests.sort((left, right) => left.triggerAt.compareTo(right.triggerAt));
@@ -440,7 +581,7 @@ class ReminderService {
 
   Future<void> _collectSystemEventReminderRequests(
     DateTime now,
-    List<_ReminderRequest> requests,
+    List<ReminderRequest> requests,
   ) async {
     final reminderMinutes = _defaultEventReminderMinutes();
     if (reminderMinutes <= 0) {
@@ -458,36 +599,21 @@ class ReminderService {
     ]);
     query.where(
       _db.eventCalendars.isVisible.equals(true) &
-          _db.calendarEvents.dtstart.isBiggerOrEqualValue(now) &
-          _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper) &
-          _db.calendarEvents.status.isNotIn(['CANCELLED']),
+          _db.calendarEvents.status.isNotIn(['CANCELLED']) &
+          ((_db.calendarEvents.dtstart.isBiggerOrEqualValue(now) &
+                  _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper)) |
+              (_db.calendarEvents.rrule.isNotNull() &
+                  _db.calendarEvents.dtstart.isSmallerOrEqualValue(upper))),
     );
     query.orderBy([OrderingTerm.asc(_db.calendarEvents.dtstart)]);
 
     final rows = await query.get();
-    for (final row in rows) {
-      final event = row.readTable(_db.calendarEvents);
-      final triggerAt =
-          event.dtstart.subtract(Duration(minutes: reminderMinutes));
-      if (!_isFutureSystemTrigger(now, triggerAt)) {
-        continue;
-      }
-
-      final key = 'event:${event.id}:${triggerAt.toIso8601String()}';
-      requests.add(
-        _ReminderRequest(
-          id: _stableNotificationId(key),
-          triggerAt: triggerAt,
-          title: '日程提醒',
-          body: '${event.summary} 将在 ${_formatTime(event.dtstart)} 开始',
-        ),
-      );
-    }
+    _collectSystemEventRows(now, reminderMinutes, rows, requests);
   }
 
   Future<void> _collectSystemTaskReminderRequests(
     DateTime now,
-    List<_ReminderRequest> requests,
+    List<ReminderRequest> requests,
   ) async {
     final upper = now.add(_systemScheduleLookAhead);
     final query = _db.select(_db.taskItems).join([
@@ -520,16 +646,15 @@ class ReminderService {
 
       final startAt = task.dtstart;
       if (startAt != null) {
-        final triggerAt =
-            startAt.subtract(Duration(minutes: reminderMinutes));
+        final triggerAt = startAt.subtract(Duration(minutes: reminderMinutes));
         if (_isFutureSystemTrigger(now, triggerAt)) {
           final key = 'task-start:${task.id}:${triggerAt.toIso8601String()}';
           requests.add(
-            _ReminderRequest(
+            ReminderRequest(
               id: _stableNotificationId(key),
               triggerAt: triggerAt,
-              title: '任务开始提醒',
-              body: '${task.summary} 计划在 ${_formatTime(startAt)} 开始',
+              title: 'Task start reminder',
+              body: '${task.summary} starts at ${_formatTime(startAt)}',
             ),
           );
         }
@@ -540,16 +665,15 @@ class ReminderService {
         continue;
       }
 
-      final dueTriggerAt =
-          dueAt.subtract(Duration(minutes: reminderMinutes));
+      final dueTriggerAt = dueAt.subtract(Duration(minutes: reminderMinutes));
       if (_isFutureSystemTrigger(now, dueTriggerAt)) {
         final key = 'task-due:${task.id}:${dueTriggerAt.toIso8601String()}';
         requests.add(
-          _ReminderRequest(
+          ReminderRequest(
             id: _stableNotificationId(key),
             triggerAt: dueTriggerAt,
-            title: '任务截止提醒',
-            body: '${task.summary} 将在 ${_formatTime(dueAt)} 截止',
+            title: '浠诲姟鎴鎻愰啋',
+            body: '${task.summary} 灏嗗湪 ${_formatTime(dueAt)} 鎴',
           ),
         );
       }
@@ -559,15 +683,110 @@ class ReminderService {
           (startAt == null || startAt.isAfter(riskTriggerAt))) {
         final key = 'task-risk:${task.id}:${_dayKey(riskTriggerAt)}';
         requests.add(
-          _ReminderRequest(
+          ReminderRequest(
             id: _stableNotificationId(key),
             triggerAt: riskTriggerAt,
-            title: '任务风险提醒',
-            body: '${task.summary} 距离截止时间不足 2 小时，建议尽快安排处理',
+            title: '浠诲姟椋庨櫓鎻愰啋',
+            body: '${task.summary} has less than 2 hours before the deadline.',
           ),
         );
       }
     }
+  }
+
+  void _collectSystemEventRows(
+    DateTime now,
+    int reminderMinutes,
+    List<TypedResult> rows,
+    List<ReminderRequest> requests,
+  ) {
+    final upper = now.add(_systemScheduleLookAhead);
+    for (final row in rows) {
+      final event = row.readTable(_db.calendarEvents);
+      for (final occurrenceAt in _eventOccurrencesInRange(event, now, upper)) {
+        final triggerAt =
+            occurrenceAt.subtract(Duration(minutes: reminderMinutes));
+        if (!_isFutureSystemTrigger(now, triggerAt)) {
+          continue;
+        }
+
+        final key = 'event:${event.id}:${triggerAt.toIso8601String()}';
+        requests.add(
+          ReminderRequest(
+            id: _stableNotificationId(key),
+            triggerAt: triggerAt,
+            title: 'Event reminder',
+            body: '${event.summary} starts at ${_formatTime(occurrenceAt)}',
+            payload: _eventPayload(
+              event,
+              occurrenceAt: occurrenceAt,
+              triggerAt: triggerAt,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Iterable<DateTime> _eventOccurrencesInRange(
+    CalendarEvent event,
+    DateTime lower,
+    DateTime upper,
+  ) sync* {
+    final rule = _ParsedReminderRrule.parse(event.rrule);
+    if (rule == null) {
+      if (!event.dtstart.isBefore(lower) && !event.dtstart.isAfter(upper)) {
+        yield event.dtstart;
+      }
+      return;
+    }
+
+    var occurrence = event.dtstart;
+    var occurrenceIndex = 0;
+    final fastForward = rule.fastForwardSteps(event.dtstart, lower);
+    if (fastForward > 0) {
+      occurrenceIndex = fastForward;
+      occurrence = rule.addSteps(event.dtstart, fastForward);
+      while (occurrence.isBefore(lower)) {
+        occurrenceIndex++;
+        occurrence = rule.next(occurrence);
+      }
+    }
+
+    var guard = 0;
+    while (!occurrence.isAfter(upper) && guard < 8192) {
+      if (rule.count != null && occurrenceIndex >= rule.count!) {
+        break;
+      }
+      if (rule.until != null && occurrence.isAfter(rule.until!)) {
+        break;
+      }
+      if (!occurrence.isBefore(lower)) {
+        yield occurrence;
+      }
+      occurrenceIndex++;
+      occurrence = rule.next(occurrence);
+      guard++;
+    }
+  }
+
+  Map<String, Object?> _eventPayload(
+    CalendarEvent event, {
+    required DateTime occurrenceAt,
+    required DateTime triggerAt,
+  }) {
+    return <String, Object?>{
+      'entityType': 'event',
+      'entityId': event.id,
+      'uid': event.uid,
+      'summary': event.summary,
+      'occurrenceAt': occurrenceAt,
+      'triggerAt': triggerAt,
+      'triggerAtMillis': triggerAt.millisecondsSinceEpoch,
+      'timezoneOffsetMinutes': triggerAt.timeZoneOffset.inMinutes,
+      if (event.rrule != null && event.rrule!.trim().isNotEmpty)
+        'rrule': event.rrule,
+    };
   }
 
   bool _isFutureSystemTrigger(DateTime now, DateTime triggerAt) {
@@ -625,21 +844,143 @@ class ReminderService {
   }
 }
 
-class _ReminderRequest {
-  const _ReminderRequest({
-    required this.id,
-    required this.triggerAt,
-    required this.title,
-    required this.body,
+class _ParsedReminderRrule {
+  const _ParsedReminderRrule({
+    required this.frequency,
+    required this.interval,
+    this.count,
+    this.until,
   });
 
-  final int id;
-  final DateTime triggerAt;
-  final String title;
-  final String body;
+  final String frequency;
+  final int interval;
+  final int? count;
+  final DateTime? until;
+
+  static _ParsedReminderRrule? parse(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+
+    final parts = <String, String>{};
+    for (final segment in raw.split(';')) {
+      final index = segment.indexOf('=');
+      if (index <= 0) {
+        continue;
+      }
+      parts[segment.substring(0, index).trim().toUpperCase()] =
+          segment.substring(index + 1).trim();
+    }
+
+    final frequency = parts['FREQ']?.toUpperCase();
+    if (frequency == null ||
+        !const <String>{'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'}
+            .contains(frequency)) {
+      return null;
+    }
+
+    final interval = int.tryParse(parts['INTERVAL'] ?? '') ?? 1;
+    return _ParsedReminderRrule(
+      frequency: frequency,
+      interval: interval <= 0 ? 1 : interval,
+      count: int.tryParse(parts['COUNT'] ?? ''),
+      until: _parseUntil(parts['UNTIL']),
+    );
+  }
+
+  DateTime next(DateTime value) => addSteps(value, 1);
+
+  DateTime addSteps(DateTime value, int steps) {
+    final amount = interval * steps;
+    switch (frequency) {
+      case 'DAILY':
+        return value.add(Duration(days: amount));
+      case 'WEEKLY':
+        return value.add(Duration(days: amount * 7));
+      case 'MONTHLY':
+        return _addMonths(value, amount);
+      case 'YEARLY':
+        return _addMonths(value, amount * 12);
+      default:
+        return value;
+    }
+  }
+
+  int fastForwardSteps(DateTime start, DateTime lower) {
+    if (!start.isBefore(lower)) {
+      return 0;
+    }
+    switch (frequency) {
+      case 'DAILY':
+        return lower.difference(start).inDays ~/ interval;
+      case 'WEEKLY':
+        return lower.difference(start).inDays ~/ (interval * 7);
+      case 'MONTHLY':
+        return _wholeMonthsBetween(start, lower) ~/ interval;
+      case 'YEARLY':
+        return _wholeMonthsBetween(start, lower) ~/ (interval * 12);
+      default:
+        return 0;
+    }
+  }
+
+  static DateTime? _parseUntil(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+    final value = raw.trim();
+    if (value.length == 8) {
+      final year = int.tryParse(value.substring(0, 4));
+      final month = int.tryParse(value.substring(4, 6));
+      final day = int.tryParse(value.substring(6, 8));
+      if (year != null && month != null && day != null) {
+        return DateTime(year, month, day, 23, 59, 59);
+      }
+    }
+    if (value.endsWith('Z') && value.length >= 16) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) {
+        return parsed.toLocal();
+      }
+    }
+    return DateTime.tryParse(value);
+  }
+
+  static DateTime _addMonths(DateTime value, int months) {
+    final targetMonthIndex = value.month - 1 + months;
+    final year = value.year + targetMonthIndex ~/ 12;
+    final month = targetMonthIndex % 12 + 1;
+    final day = value.day.clamp(1, _daysInMonth(year, month));
+    return DateTime(
+      year,
+      month,
+      day,
+      value.hour,
+      value.minute,
+      value.second,
+      value.millisecond,
+      value.microsecond,
+    );
+  }
+
+  static int _wholeMonthsBetween(DateTime start, DateTime lower) {
+    var months = (lower.year - start.year) * 12 + lower.month - start.month;
+    final candidate = _addMonths(start, months);
+    if (candidate.isAfter(lower)) {
+      months--;
+    }
+    return months < 0 ? 0 : months;
+  }
+
+  static int _daysInMonth(int year, int month) {
+    return DateTime(year, month + 1, 0).day;
+  }
 }
 
-class _ReminderNotificationGateway {
+class SystemReminderNotificationGateway implements ReminderNotificationGateway {
+  SystemReminderNotificationGateway(this._environment);
+
+  final ReminderRuntimeEnvironment _environment;
   final _notifications = FlutterLocalNotificationsPlugin();
   final _desktopShell = const DesktopShellService();
 
@@ -648,13 +989,14 @@ class _ReminderNotificationGateway {
 
   bool _initialized = false;
 
+  @override
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
     _initialized = true;
 
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return;
     }
 
@@ -668,8 +1010,9 @@ class _ReminderNotificationGateway {
         ?.requestNotificationsPermission();
   }
 
+  @override
   Future<bool> canScheduleExactAlarms() async {
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return false;
     }
     try {
@@ -682,8 +1025,9 @@ class _ReminderNotificationGateway {
     }
   }
 
+  @override
   Future<void> openAndroidExactAlarmSettings() async {
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return;
     }
     try {
@@ -691,12 +1035,13 @@ class _ReminderNotificationGateway {
         'openExactAlarmSettings',
       );
     } catch (_) {
-      // 权限页打开失败不应阻塞设置页。
+      // Opening the permission page should not block settings flows.
     }
   }
 
+  @override
   Future<int> pendingSystemReminderCount() async {
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return 0;
     }
     try {
@@ -709,8 +1054,9 @@ class _ReminderNotificationGateway {
     }
   }
 
-  Future<bool> scheduleSystemReminder(_ReminderRequest request) async {
-    if (!Platform.isAndroid) {
+  @override
+  Future<bool> scheduleSystemReminder(ReminderRequest request) async {
+    if (!_environment.isAndroid) {
       return false;
     }
     try {
@@ -721,6 +1067,7 @@ class _ReminderNotificationGateway {
           'triggerAtMillis': request.triggerAt.millisecondsSinceEpoch,
           'title': request.title,
           'body': request.body,
+          'payload': request.encodedPayload,
         },
       );
       return scheduled ?? false;
@@ -729,8 +1076,9 @@ class _ReminderNotificationGateway {
     }
   }
 
+  @override
   Future<void> cancelAllSystemReminders() async {
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return;
     }
     try {
@@ -738,38 +1086,41 @@ class _ReminderNotificationGateway {
         'cancelAllExactReminders',
       );
     } catch (_) {
-      // 系统级调度是增强能力，失败时仍保留运行时扫描提醒。
+      // System scheduling is best-effort; runtime scanning remains available.
     }
   }
 
+  @override
   Future<void> showReminder({
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
-    if (Platform.isWindows) {
+    if (_environment.isWindows) {
       await _desktopShell.showReminder(title: title, body: body);
       return;
     }
 
-    if (!Platform.isAndroid) {
+    if (!_environment.isAndroid) {
       return;
     }
 
     const androidDetails = AndroidNotificationDetails(
       'flowplanv2_reminders',
-      'FlowPlanV2 提醒',
-      channelDescription: '日程和任务提醒',
+      'FlowPlanV2 鎻愰啋',
+      channelDescription: 'Calendar and task reminders',
       importance: Importance.max,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
-      ticker: 'FlowPlanV2 提醒',
+      ticker: 'FlowPlanV2 鎻愰啋',
     );
     await _notifications.show(
       id,
       title,
       body,
       const NotificationDetails(android: androidDetails),
+      payload: payload,
     );
   }
 }

@@ -1,4 +1,4 @@
-﻿part of 'app_providers.dart';
+part of 'app_providers.dart';
 
 // 鈹€鈹€ Tracker Repository 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -90,8 +90,9 @@ final activityDaySummaryProvider =
 
   final start = DateTime(date.year, date.month, date.day);
   final end = start.add(const Duration(days: 1));
-  final localRecords =
-      await ref.read(activityLogServiceProvider).readEntriesBetween(start, end, limit: 5000);
+  final localRecords = await ref
+      .read(activityLogServiceProvider)
+      .readEntriesBetween(start, end, limit: 5000);
   final localMinutes = localRecords
       .where((e) => !e.isIgnored && e.durationMinutes != null)
       .fold<int>(0, (sum, e) => sum + (e.durationMinutes ?? 0));
@@ -105,8 +106,8 @@ final activityDaySummaryProvider =
       ORDER BY start_time ASC
       ''',
       variables: [
-        Variable<String>(end.toIso8601String()),
-        Variable<String>(start.toIso8601String()),
+        Variable<DateTime>(end),
+        Variable<DateTime>(start),
       ],
     ).get();
     final localRecordsList = localRows.map((row) {
@@ -114,16 +115,21 @@ final activityDaySummaryProvider =
       final startTime = _dateValue(data['start_time']) ?? start;
       final endTime = _dateValue(data['end_time']);
       final dur = _intValue(data['duration_minutes']);
+      final metricMinutes = _localActivityRecordMinutes(
+        startTime: startTime,
+        endTime: endTime,
+        durationMinutes: dur,
+      );
       return <String, Object?>{
         'serverId': 'local-${data['id']}',
         'objectType': 'activity_record',
         'occurredAt': startTime.toIso8601String(),
-        'metricMinutes': dur > 0 ? dur : (endTime != null ? endTime.difference(startTime).inMinutes : 1),
+        'metricMinutes': metricMinutes,
         'metricCount': 1,
         'payload': <String, Object?>{
           'startTime': startTime.toIso8601String(),
           if (endTime != null) 'endTime': endTime.toIso8601String(),
-          'durationMinutes': dur > 0 ? dur : (endTime != null ? endTime.difference(startTime).inMinutes : 1),
+          'durationMinutes': metricMinutes,
           'processName': data['process_name'],
           'windowTitle': data['window_title'],
           'packageName': data['package_name'],
@@ -184,8 +190,23 @@ final activityDaySummaryProvider =
   return serverResponse;
 });
 
+int _localActivityRecordMinutes({
+  required DateTime startTime,
+  required DateTime? endTime,
+  required int durationMinutes,
+}) {
+  if (durationMinutes > 0) {
+    return durationMinutes;
+  }
+  if (endTime != null) {
+    return endTime.difference(startTime).inMinutes;
+  }
+  return 1;
+}
+
 final inputHeatmapSummaryProvider =
-    FutureProvider.family<InputHeatmapSummary, InputEventQuery>((ref, query) async {
+    FutureProvider.family<InputHeatmapSummary, InputEventQuery>(
+        (ref, query) async {
   ref.watch(activityLogRefreshTickProvider);
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
   final response = await store.inputHeatmap(
@@ -379,8 +400,7 @@ final trackerHistorySelectedCategoryProvider =
 
 final trackerHistorySelectedTaskIdProvider = StateProvider<int?>((ref) => null);
 
-final trackerHistoryOnlyWithInputProvider =
-    StateProvider<bool>((ref) => false);
+final trackerHistoryOnlyWithInputProvider = StateProvider<bool>((ref) => false);
 
 final trackerHistorySelectedHeatmapBucketProvider =
     StateProvider<ActivityHeatmapBucket?>((ref) => null);
@@ -477,7 +497,8 @@ final trackerHistoryFilterOptionsProvider =
 final trackerServerFilterOptionsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final selectedDate = ref.watch(selectedDateProvider);
-  final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+  final start =
+      DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
   final end = start.add(const Duration(days: 1));
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
   return store.filterOptions(start: start, end: end);
@@ -521,8 +542,7 @@ ActivityInsights _activityInsightsFromServer(Map<String, dynamic> response) {
     totalMovePx: _intValue(insights['totalMovePx']),
     totalScrollPx: _intValue(insights['totalScrollPx']),
     sequenceRecordCount: _intValue(insights['sequenceRecordCount']),
-    productiveRecordCountOverride:
-        _intValue(insights['productiveRecordCount']),
+    productiveRecordCountOverride: _intValue(insights['productiveRecordCount']),
     topProcesses: _insightSlices(insights['topProcesses']),
     topCategories: _insightSlices(insights['topCategories']),
     busiestRecords: busiestRecords,
@@ -546,41 +566,39 @@ List<ActivityInsightSlice> _insightSlices(Object? value) {
 }
 
 List<WorkSession> _workSessionsFromServer(Map<String, dynamic> response) {
-  return _mapList(response['sessions'])
-      .map((item) {
-        final start = _dateValue(item['startTime']) ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final duration = _intValue(item['durationMinutes'], fallback: 1);
-        final end = _dateValue(item['endTime']) ??
-            start.add(Duration(minutes: duration));
-        final processNames = _stringList(item['processNames']);
-        final categories = _stringList(item['categories']);
-        return WorkSession(
-          startTime: start,
-          endTime: end,
-          label: _stringValue(item['label']) ??
-              (categories.isNotEmpty
-                  ? categories.first
-                  : processNames.isNotEmpty
-                      ? processNames.first
-                      : '服务端工作会话'),
-          processName: _stringValue(item['processName']) ??
-              (processNames.isEmpty ? null : processNames.first),
-          category: _stringValue(item['category']) ??
-              (categories.isEmpty ? null : categories.first),
-          records: const <ActivityRecord>[],
-          durationMinutes: duration,
-          keyCount: _intValue(item['keyCount']),
-          mouseClicks: _intValue(item['mouseClicks']),
-          mouseMovePx: _intValue(item['mouseMovePx']),
-          scrollPx: _intValue(item['scrollPx']),
-          processNames: processNames,
-          categories: categories,
-          interruptionCount: _intValue(item['interruptionCount']),
-          rawRecordCountOverride: _intValue(item['rawRecordCount']),
-        );
-      })
-      .toList(growable: false);
+  return _mapList(response['sessions']).map((item) {
+    final start =
+        _dateValue(item['startTime']) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final duration = _intValue(item['durationMinutes'], fallback: 1);
+    final end =
+        _dateValue(item['endTime']) ?? start.add(Duration(minutes: duration));
+    final processNames = _stringList(item['processNames']);
+    final categories = _stringList(item['categories']);
+    return WorkSession(
+      startTime: start,
+      endTime: end,
+      label: _stringValue(item['label']) ??
+          (categories.isNotEmpty
+              ? categories.first
+              : processNames.isNotEmpty
+                  ? processNames.first
+                  : '服务端工作会话'),
+      processName: _stringValue(item['processName']) ??
+          (processNames.isEmpty ? null : processNames.first),
+      category: _stringValue(item['category']) ??
+          (categories.isEmpty ? null : categories.first),
+      records: const <ActivityRecord>[],
+      durationMinutes: duration,
+      keyCount: _intValue(item['keyCount']),
+      mouseClicks: _intValue(item['mouseClicks']),
+      mouseMovePx: _intValue(item['mouseMovePx']),
+      scrollPx: _intValue(item['scrollPx']),
+      processNames: processNames,
+      categories: categories,
+      interruptionCount: _intValue(item['interruptionCount']),
+      rawRecordCountOverride: _intValue(item['rawRecordCount']),
+    );
+  }).toList(growable: false);
 }
 
 List<ActivityRecord> _activityRecordsFromServerPreview(
@@ -640,7 +658,10 @@ ActivityHistorySummary _activityHistorySummaryFromServer(
       return (start: start, end: start.add(const Duration(days: 1)));
     case ActivityHeatmapScale.day:
       final start = DateTime(anchorDate.year, anchorDate.month);
-      return (start: start, end: DateTime(anchorDate.year, anchorDate.month + 1));
+      return (
+        start: start,
+        end: DateTime(anchorDate.year, anchorDate.month + 1)
+      );
     case ActivityHeatmapScale.month:
     case ActivityHeatmapScale.year:
       final start = DateTime(anchorDate.year);
@@ -690,8 +711,8 @@ ActivityHeatmapSeries _activityHeatmapSeriesFromServer(
     minutesByBucket[key] =
         (minutesByBucket[key] ?? 0) + _intValue(row['totalMinutes']);
   }
-  final buckets = _activityHeatmapSkeletonBuckets(scale, anchorDate)
-      .map((bucket) {
+  final buckets =
+      _activityHeatmapSkeletonBuckets(scale, anchorDate).map((bucket) {
     final key = _activityBucketKey(scale, bucket.start);
     return ActivityHeatmapBucket(
       start: bucket.start,
@@ -740,8 +761,9 @@ List<ActivityHeatmapBucket> _activityHeatmapSkeletonBuckets(
       break;
     case ActivityHeatmapScale.day:
       final monthStart = DateTime(anchorDate.year, anchorDate.month);
-      final daysInMonth =
-          DateTime(anchorDate.year, anchorDate.month + 1).difference(monthStart).inDays;
+      final daysInMonth = DateTime(anchorDate.year, anchorDate.month + 1)
+          .difference(monthStart)
+          .inDays;
       for (var day = 1; day <= daysInMonth; day++) {
         final bucketStart = DateTime(anchorDate.year, anchorDate.month, day);
         buckets.add(
@@ -810,7 +832,8 @@ List<ActivityRecord> _activityRecordsFromServer(Map<String, dynamic> response) {
         start.add(Duration(minutes: durationMinutes));
     records.add(
       ActivityRecord(
-        id: _stablePositiveId(_stringValue(item['serverId']) ?? start.toIso8601String()),
+        id: _stablePositiveId(
+            _stringValue(item['serverId']) ?? start.toIso8601String()),
         startTime: start,
         endTime: end,
         durationMinutes: durationMinutes,
@@ -818,18 +841,24 @@ List<ActivityRecord> _activityRecordsFromServer(Map<String, dynamic> response) {
           payload['manualLabel'] ?? payload['manual_label'] ?? payload['label'],
         ),
         processName: _stringValue(
-          payload['processName'] ?? payload['process_name'] ?? payload['packageName'],
+          payload['processName'] ??
+              payload['process_name'] ??
+              payload['packageName'],
         ),
         windowTitle: _stringValue(
           payload['windowTitle'] ?? payload['window_title'] ?? payload['title'],
         ),
-        packageName: _stringValue(payload['packageName'] ?? payload['package_name']),
+        packageName:
+            _stringValue(payload['packageName'] ?? payload['package_name']),
         category: _stringValue(payload['category']),
         appUsageRuleId: _stringValue(payload['appUsageRuleId']),
-        linkedTaskId: _intOrNull(payload['linkedTaskId'] ?? payload['linked_task_id']),
+        linkedTaskId:
+            _intOrNull(payload['linkedTaskId'] ?? payload['linked_task_id']),
         keyCount: _intValue(payload['keyCount'] ?? payload['key_count']),
-        mouseClicks: _intValue(payload['mouseClicks'] ?? payload['mouse_clicks']),
-        mouseMovePx: _intValue(payload['mouseMovePx'] ?? payload['mouse_move_px']),
+        mouseClicks:
+            _intValue(payload['mouseClicks'] ?? payload['mouse_clicks']),
+        mouseMovePx:
+            _intValue(payload['mouseMovePx'] ?? payload['mouse_move_px']),
         scrollPx: _intValue(payload['scrollPx'] ?? payload['scroll_px']),
         keySequence: _stringValue(payload['keySequence']),
         isAuto: payload['isAuto'] is bool ? payload['isAuto'] as bool : true,
@@ -881,7 +910,8 @@ InputHeatmapSummary _inputHeatmapSummaryFromServer(
   final keyCounts = _intMap(response['keyCounts']);
   final mouseCounts = _stringIntMap(response['mouseCounts']);
   final topKeys = _inputKeyStats(response['topKeys'], keyboard);
-  final processIntensities = _inputProcessIntensities(response['processIntensities']);
+  final processIntensities =
+      _inputProcessIntensities(response['processIntensities']);
   return InputHeatmapSummary(
     query: query,
     totalEventCount: total,
@@ -963,7 +993,8 @@ List<InputProcessIntensity> _inputProcessIntensities(Object? value) {
   }
   return items
       .map((item) {
-        final processName = _stringValue(item['processName'] ?? item['process_name']);
+        final processName =
+            _stringValue(item['processName'] ?? item['process_name']);
         if (processName == null) {
           return null;
         }
@@ -971,10 +1002,14 @@ List<InputProcessIntensity> _inputProcessIntensities(Object? value) {
           processName: processName,
           totalEvents: _intValue(item['totalEvents'] ?? item['eventCount']),
           keyEvents: _intValue(item['keyEvents'] ?? item['keyboardEventCount']),
-          mouseButtonEvents: _intValue(item['mouseButtonEvents'] ?? item['mouseButtonEventCount']),
-          wheelEvents: _intValue(item['wheelEvents'] ?? item['wheelEventCount']),
-          mouseMoveEvents: _intValue(item['mouseMoveEvents'] ?? item['mouseMoveEventCount']),
-          moveDistance: _intValue(item['moveDistance'] ?? item['mouseMoveDistance']),
+          mouseButtonEvents: _intValue(
+              item['mouseButtonEvents'] ?? item['mouseButtonEventCount']),
+          wheelEvents:
+              _intValue(item['wheelEvents'] ?? item['wheelEventCount']),
+          mouseMoveEvents:
+              _intValue(item['mouseMoveEvents'] ?? item['mouseMoveEventCount']),
+          moveDistance:
+              _intValue(item['moveDistance'] ?? item['mouseMoveDistance']),
           activeMinutes: _intValue(item['activeMinutes']),
           intensityScore: _intValue(item['intensityScore']),
         );
@@ -1008,12 +1043,16 @@ List<TrackedInputEvent> _trackedInputEventsFromServer(
         kind: TrackedInputEventKindValue.fromValue(
           _stringValue(payload['eventKind'] ?? payload['kind']) ?? 'key_down',
         ),
-        eventCount: _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
+        eventCount: _intValue(payload['eventCount'] ?? item['metricCount'],
+            fallback: 1),
         recordId: _intOrNull(payload['recordId']),
-        isIgnored: payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
-        processName: _stringValue(payload['processName'] ?? payload['process_name']),
+        isIgnored:
+            payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
+        processName:
+            _stringValue(payload['processName'] ?? payload['process_name']),
         className: _stringValue(payload['className']),
-        windowTitle: _stringValue(payload['windowTitle'] ?? payload['window_title']),
+        windowTitle:
+            _stringValue(payload['windowTitle'] ?? payload['window_title']),
         category: _stringValue(payload['category']),
         activityLabel: _stringValue(payload['activityLabel']),
         keyCode: _intOrNull(payload['keyCode']),
@@ -1022,7 +1061,8 @@ List<TrackedInputEvent> _trackedInputEventsFromServer(
         wheelDelta: _intValue(payload['wheelDelta']),
         deltaX: _intValue(payload['deltaX']),
         deltaY: _intValue(payload['deltaY']),
-        moveDistance: _intValue(payload['moveDistance'] ?? payload['move_distance']),
+        moveDistance:
+            _intValue(payload['moveDistance'] ?? payload['move_distance']),
         tokenText: _stringValue(payload['tokenText']),
       ),
     );
@@ -1101,6 +1141,12 @@ DateTime? _dateValue(Object? value) {
   if (value is DateTime) {
     return value;
   }
+  if (value is num) {
+    final timestamp = value.round();
+    final milliseconds =
+        timestamp.abs() > 1000000000000 ? timestamp : timestamp * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
   if (value is String && value.isNotEmpty) {
     return DateTime.tryParse(value);
   }
@@ -1176,10 +1222,8 @@ String _bucketLongLabel(ActivityHeatmapScale scale, DateTime start) {
 
 String _heatmapTitle(ActivityHeatmapScale scale, DateTime anchorDate) {
   return switch (scale) {
-    ActivityHeatmapScale.hour =>
-      '${anchorDate.month}月${anchorDate.day}日逐小时分布',
-    ActivityHeatmapScale.day =>
-      '${anchorDate.year}年${anchorDate.month}月每日分布',
+    ActivityHeatmapScale.hour => '${anchorDate.month}月${anchorDate.day}日逐小时分布',
+    ActivityHeatmapScale.day => '${anchorDate.year}年${anchorDate.month}月每日分布',
     ActivityHeatmapScale.month => '${anchorDate.year}年每月分布',
     ActivityHeatmapScale.year => '${anchorDate.year}年每月分布',
   };
@@ -1246,7 +1290,8 @@ class ServerRecordQuery {
   }
 
   @override
-  int get hashCode => Object.hash(start, end, processName, category, taskId, limit, offset);
+  int get hashCode =>
+      Object.hash(start, end, processName, category, taskId, limit, offset);
 }
 
 class ServerInputEventQuery {
@@ -1282,11 +1327,13 @@ class ServerInputEventQuery {
   }
 
   @override
-  int get hashCode => Object.hash(start, end, processName, category, eventKind, limit, offset);
+  int get hashCode =>
+      Object.hash(start, end, processName, category, eventKind, limit, offset);
 }
 
 final serverActivityRecordsPageProvider =
-    FutureProvider.family<Map<String, dynamic>, ServerRecordQuery>((ref, query) async {
+    FutureProvider.family<Map<String, dynamic>, ServerRecordQuery>(
+        (ref, query) async {
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
   return store.activityRecords(
     start: query.start,
@@ -1300,7 +1347,8 @@ final serverActivityRecordsPageProvider =
 });
 
 final serverInputEventsPageProvider =
-    FutureProvider.family<Map<String, dynamic>, ServerInputEventQuery>((ref, query) async {
+    FutureProvider.family<Map<String, dynamic>, ServerInputEventQuery>(
+        (ref, query) async {
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
   return store.inputEvents(
     start: query.start,

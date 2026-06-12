@@ -10,6 +10,8 @@ import 'activity_classifier.dart';
 import 'activity_log_service.dart';
 import 'android_usage_stats_service.dart';
 
+bool _defaultIsAndroid() => Platform.isAndroid;
+
 class AndroidUsageImportResult {
   const AndroidUsageImportResult({
     required this.supported,
@@ -50,13 +52,15 @@ class AndroidUsageImportService {
     ActivityClassifier? classifier,
     AndroidUsageStatsService? usageStatsService,
     DeviceIdentityService? deviceIdentityService,
+    bool Function()? isAndroid,
   })  : _database = database,
         _activityRecordRepository = activityRecordRepository,
         _activityLogService = activityLogService,
         _classifier = classifier ?? ActivityClassifier(),
-        _usageStatsService = usageStatsService ?? const AndroidUsageStatsService(),
+        _usageStatsService = usageStatsService ?? AndroidUsageStatsService(),
         _deviceIdentityService =
-            deviceIdentityService ?? DeviceIdentityService();
+            deviceIdentityService ?? DeviceIdentityService(),
+        _isAndroid = isAndroid ?? _defaultIsAndroid;
 
   static const _cursorSettingKey = 'tracker.android_usage_stats_cursor_millis';
   static const _androidSource = 'android_usage_stats';
@@ -69,13 +73,15 @@ class AndroidUsageImportService {
   final ActivityClassifier _classifier;
   final AndroidUsageStatsService _usageStatsService;
   final DeviceIdentityService _deviceIdentityService;
+  final bool Function() _isAndroid;
 
   Future<AndroidUsageImportResult> importLatest() async {
-    if (!Platform.isAndroid) {
+    if (!_isAndroid()) {
       return const AndroidUsageImportResult.unsupported();
     }
 
-    final permissionGranted = await _usageStatsService.hasUsageAccessPermission();
+    final permissionGranted =
+        await _usageStatsService.hasUsageAccessPermission();
     if (!permissionGranted) {
       return const AndroidUsageImportResult(
         supported: true,
@@ -108,7 +114,8 @@ class AndroidUsageImportService {
       rangeStart: importStart,
       rangeEnd: now,
     );
-    final deviceId = await _deviceIdentityService.getOrCreateDeviceId(_database);
+    final deviceId =
+        await _deviceIdentityService.getOrCreateDeviceId(_database);
 
     var importedRecordCount = 0;
     var importedLogCount = 0;
@@ -135,6 +142,7 @@ class AndroidUsageImportService {
         processName: displayLabel,
         windowTitle: displayLabel,
         packageName: session.packageName,
+        className: session.className,
         category: classification.category,
         deviceId: deviceId,
         platform: _deviceIdentityService.currentPlatform,
@@ -245,7 +253,9 @@ class AndroidUsageImportService {
         }
 
         current = _OpenAndroidUsageSession(
-          start: event.timestamp.isBefore(rangeStart) ? rangeStart : event.timestamp,
+          start: event.timestamp.isBefore(rangeStart)
+              ? rangeStart
+              : event.timestamp,
           packageName: packageName,
           className: _cleanText(event.className),
           appLabel: _cleanText(event.appLabel),
@@ -267,7 +277,8 @@ class AndroidUsageImportService {
 
     final filtered = sessions
         .where((session) => session.end.isAfter(session.start))
-        .where((session) => session.end.difference(session.start) >= _minimumSessionDuration)
+        .where((session) =>
+            session.end.difference(session.start) >= _minimumSessionDuration)
         .where((session) => !_shouldIgnorePackage(session.packageName))
         .toList(growable: false);
     return _mergeAdjacentSessions(filtered);
@@ -343,8 +354,11 @@ class AndroidUsageImportService {
       appLabel: displayLabel,
       category: classification.category,
       label: classification.label,
-      durationMinutes:
-          session.end.difference(session.start).inMinutes.clamp(0, 1 << 31).toInt(),
+      durationMinutes: session.end
+          .difference(session.start)
+          .inMinutes
+          .clamp(0, 1 << 31)
+          .toInt(),
       deviceId: deviceId,
       platform: _deviceIdentityService.currentPlatform,
       source: _androidSource,
@@ -388,6 +402,61 @@ class AndroidUsageImportService {
     }
     return normalizedLeft == normalizedRight;
   }
+
+  static Map<String, Object?> debugCopyOpenSessionForTesting({
+    required DateTime start,
+    required String packageName,
+    String? className,
+    String? appLabel,
+    String? newClassName,
+    String? newAppLabel,
+  }) {
+    final copied = _OpenAndroidUsageSession(
+      start: start,
+      packageName: packageName,
+      className: className,
+      appLabel: appLabel,
+    ).copyWith(
+      className: newClassName,
+      appLabel: newAppLabel,
+    );
+    return <String, Object?>{
+      'start': copied.start,
+      'packageName': copied.packageName,
+      'className': copied.className,
+      'appLabel': copied.appLabel,
+    };
+  }
+
+  static Map<String, Object?> debugCopyClosedSessionForTesting({
+    required DateTime start,
+    required DateTime end,
+    required String packageName,
+    String? className,
+    String? appLabel,
+    DateTime? newEnd,
+    String? newClassName,
+    String? newAppLabel,
+  }) {
+    final copied = _AndroidUsageSession(
+      start: start,
+      end: end,
+      packageName: packageName,
+      className: className,
+      appLabel: appLabel,
+    ).copyWith(
+      end: newEnd,
+      className: newClassName,
+      appLabel: newAppLabel,
+    );
+    return <String, Object?>{
+      'start': copied.start,
+      'end': copied.end,
+      'packageName': copied.packageName,
+      'className': copied.className,
+      'appLabel': copied.appLabel,
+    };
+  }
 }
 
 class _OpenAndroidUsageSession {
@@ -416,9 +485,8 @@ class _OpenAndroidUsageSession {
   }
 
   _AndroidUsageSession closeAt(DateTime end) {
-    final normalizedEnd = end.isAfter(start)
-        ? end
-        : start.add(const Duration(seconds: 1));
+    final normalizedEnd =
+        end.isAfter(start) ? end : start.add(const Duration(seconds: 1));
     return _AndroidUsageSession(
       start: start,
       end: normalizedEnd,

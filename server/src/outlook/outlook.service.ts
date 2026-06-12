@@ -17,11 +17,10 @@ import { clean, iso, encrypt, decrypt, encryptionKey, isEncryptionKeySecure } fr
 import { ObjectType } from '../common/constants/object-types';
 import { GraphClientService } from './graph-client.service';
 
-const DEFAULT_SCOPE_READONLY = 'openid profile offline_access User.Read Calendars.Read';
-const DEFAULT_SCOPE_READWRITE = 'openid profile offline_access User.Read Calendars.ReadWrite';
+const DEFAULT_SCOPE = 'openid profile offline_access User.Read Calendars.Read';
 function outlookAuthority(): string { return process.env.OUTLOOK_AUTHORITY ?? 'https://login.microsoftonline.com/consumers'; }
 function outlookRedirectUri(): string { return process.env.OUTLOOK_REDIRECT_URI ?? 'https://login.microsoftonline.com/common/oauth2/nativeclient'; }
-function outlookScope(syncMode?: string): string { return syncMode === 'readwrite' ? DEFAULT_SCOPE_READWRITE : DEFAULT_SCOPE_READONLY; }
+function outlookScope(): string { return DEFAULT_SCOPE; }
 const SYNC_INTERVAL_MINUTES = 15;
 const GRAPH_CALENDAR_VIEW_PAGE_SIZE = 50;
 

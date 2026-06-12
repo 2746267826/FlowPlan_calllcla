@@ -9,12 +9,28 @@ import '../../../shared/providers/settings_provider.dart';
 import '../data/calendar_books_repository.dart';
 import '../../sync/outlook_auth_service.dart';
 import '../../sync/outlook_managed_container_service.dart';
+import '../../sync/outlook_sync_bindings_repository.dart';
 import '../../sync/outlook_task_list_binding.dart';
 
 part 'calendar_books_widgets.dart';
 
 class CalendarBooksPage extends ConsumerWidget {
   const CalendarBooksPage({super.key});
+
+  @visibleForTesting
+  static bool debugTreatOutlookTaskMirrorsAsServerManaged = true;
+
+  @visibleForTesting
+  static Future<OutlookConfig?> Function() debugLoadOutlookConfig =
+      OutlookAuthService.loadConfig;
+
+  @visibleForTesting
+  static Future<OutlookTaskListBinding> Function(
+    TaskList taskList,
+    OutlookConfig config,
+    OutlookSyncBindingsRepository bindingsRepository,
+  ) debugEnsureOutlookTaskListMirrorBinding =
+      _ensureOutlookTaskListMirrorBinding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -52,7 +68,8 @@ class CalendarBooksPage extends ConsumerWidget {
             data: (items) {
               if (items.isEmpty) {
                 return const _EmptyHint(
-                  message: '\u6682\u65e0\u65e5\u5386\u672c\uff0c\u70b9\u51fb\u53f3\u4e0a\u89d2\u521b\u5efa',
+                  message:
+                      '\u6682\u65e0\u65e5\u5386\u672c\uff0c\u70b9\u51fb\u53f3\u4e0a\u89d2\u521b\u5efa',
                 );
               }
               return Column(
@@ -72,7 +89,8 @@ class CalendarBooksPage extends ConsumerWidget {
                         .toggleEventCalendarVisible(calendar.id, value),
                     onSetDefault: () =>
                         _setDefaultEventCalendar(context, ref, calendar),
-                    onEdit: () => _showEditEventCalendar(context, ref, calendar),
+                    onEdit: () =>
+                        _showEditEventCalendar(context, ref, calendar),
                     onDelete: () =>
                         _confirmDeleteEventCalendar(context, ref, calendar),
                   );
@@ -100,12 +118,12 @@ class CalendarBooksPage extends ConsumerWidget {
             data: (items) {
               if (items.isEmpty) {
                 return const _EmptyHint(
-                  message: '\u6682\u65e0\u4efb\u52a1\u672c\uff0c\u70b9\u51fb\u53f3\u4e0a\u89d2\u521b\u5efa',
+                  message:
+                      '\u6682\u65e0\u4efb\u52a1\u672c\uff0c\u70b9\u51fb\u53f3\u4e0a\u89d2\u521b\u5efa',
                 );
               }
-              final bindings =
-                  outlookTaskListBindings.asData?.value ??
-                      const <int, OutlookTaskListBinding>{};
+              final bindings = outlookTaskListBindings.asData?.value ??
+                  const <int, OutlookTaskListBinding>{};
               return Column(
                 children: items.map((taskList) {
                   final binding = bindings[taskList.id];
@@ -147,9 +165,8 @@ class CalendarBooksPage extends ConsumerWidget {
               if (items.isEmpty) {
                 return const SizedBox.shrink();
               }
-              final bindings =
-                  outlookTaskListBindings.asData?.value ??
-                      const <int, OutlookTaskListBinding>{};
+              final bindings = outlookTaskListBindings.asData?.value ??
+                  const <int, OutlookTaskListBinding>{};
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -338,8 +355,7 @@ class CalendarBooksPage extends ConsumerWidget {
         initialEmoji:
             existing?.emoji?.isNotEmpty == true ? existing!.emoji! : '\u6536',
         initialDefaultIsAutoScheduled: defaults.defaultIsAutoScheduled,
-        initialDefaultReminderMinutes:
-            defaults.defaultReminderMinutesBefore,
+        initialDefaultReminderMinutes: defaults.defaultReminderMinutesBefore,
         onSave: (
           name,
           color,
@@ -488,8 +504,11 @@ class CalendarBooksPage extends ConsumerWidget {
         action: '\u5f52\u6863',
       ),
       onConfirm: () async {
-        await ref.read(calendarBooksRepositoryProvider).archiveTaskList(taskList.id);
-        final refreshNotifier = ref.read(outlookBindingRefreshTickProvider.notifier);
+        await ref
+            .read(calendarBooksRepositoryProvider)
+            .archiveTaskList(taskList.id);
+        final refreshNotifier =
+            ref.read(outlookBindingRefreshTickProvider.notifier);
         refreshNotifier.state = refreshNotifier.state + 1;
       },
     );
@@ -505,7 +524,8 @@ class CalendarBooksPage extends ConsumerWidget {
       title: '\u6062\u590d\u4efb\u52a1\u672c',
       message:
           '\u4efb\u52a1\u672c\u201c${taskList.name}\u201d\u5c06\u91cd\u65b0\u56de\u5230\u53ef\u7528\u5217\u8868\u4e2d\u3002\n\n\u8bf7\u6ce8\u610f\uff0c\u8fd9\u4e2a\u4efb\u52a1\u672c\u5728\u5f52\u6863\u65f6\uff0c\u5176\u4e2d\u4efb\u52a1\u5df2\u7ecf\u8fc1\u79fb\u5230\u5176\u4ed6\u53ef\u7528\u4efb\u52a1\u672c\uff0c\u6062\u590d\u540e\u4e0d\u4f1a\u81ea\u52a8\u628a\u4efb\u52a1\u79fb\u56de\u6765\u3002',
-      successMessage: '\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u5df2\u6062\u590d',
+      successMessage:
+          '\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u5df2\u6062\u590d',
       onConfirm: () => ref
           .read(calendarBooksRepositoryProvider)
           .unarchiveTaskList(taskList.id),
@@ -544,8 +564,11 @@ class CalendarBooksPage extends ConsumerWidget {
         action: isArchived ? '\u5f7b\u5e95\u5220\u9664' : '\u5220\u9664',
       ),
       onConfirm: () async {
-        await ref.read(calendarBooksRepositoryProvider).deleteTaskList(taskList.id);
-        final refreshNotifier = ref.read(outlookBindingRefreshTickProvider.notifier);
+        await ref
+            .read(calendarBooksRepositoryProvider)
+            .deleteTaskList(taskList.id);
+        final refreshNotifier =
+            ref.read(outlookBindingRefreshTickProvider.notifier);
         refreshNotifier.state = refreshNotifier.state + 1;
       },
     );
@@ -600,7 +623,8 @@ class CalendarBooksPage extends ConsumerWidget {
       if (taskCount > 0) '$taskCount \u6761\u4efb\u52a1\u5df2\u8fc1\u79fb',
       if (mirrorCount > 0)
         '$mirrorCount \u6761\u65e7 Outlook \u955c\u50cf\u5c06\u5728\u4e0b\u6b21\u53cc\u5411\u540c\u6b65\u65f6\u6536\u53e3',
-      if (wasDefault) '\u9ed8\u8ba4\u4efb\u52a1\u672c\u5df2\u81ea\u52a8\u5207\u6362',
+      if (wasDefault)
+        '\u9ed8\u8ba4\u4efb\u52a1\u672c\u5df2\u81ea\u52a8\u5207\u6362',
     ];
     if (suffix.isEmpty) {
       return '\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u5df2$action';
@@ -613,7 +637,8 @@ class CalendarBooksPage extends ConsumerWidget {
     WidgetRef ref,
     TaskList taskList,
   ) async {
-    final serverManagedOutlook = DateTime.now().millisecondsSinceEpoch >= 0;
+    final serverManagedOutlook =
+        CalendarBooksPage.debugTreatOutlookTaskMirrorsAsServerManaged;
     if (serverManagedOutlook) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -622,7 +647,7 @@ class CalendarBooksPage extends ConsumerWidget {
       );
       return;
     }
-    final config = await OutlookAuthService.loadConfig();
+    final config = await CalendarBooksPage.debugLoadOutlookConfig();
     if (config == null) {
       if (!context.mounted) {
         return;
@@ -637,13 +662,15 @@ class CalendarBooksPage extends ConsumerWidget {
       return;
     }
 
-    final service = OutlookManagedContainerService(
-      config: config,
-      bindingsRepository: ref.read(outlookSyncBindingsRepositoryProvider),
-    );
+    final bindingsRepository = ref.read(outlookSyncBindingsRepositoryProvider);
 
     try {
-      final binding = await service.ensureTaskListMirrorBinding(taskList);
+      final binding =
+          await CalendarBooksPage.debugEnsureOutlookTaskListMirrorBinding(
+        taskList,
+        config,
+        bindingsRepository,
+      );
       final refreshNotifier =
           ref.read(outlookBindingRefreshTickProvider.notifier);
       refreshNotifier.state = refreshNotifier.state + 1;
@@ -663,10 +690,23 @@ class CalendarBooksPage extends ConsumerWidget {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('\u7ed1\u5b9a Outlook \u5bb9\u5668\u5931\u8d25\uff1a$error'),
+          content:
+              Text('\u7ed1\u5b9a Outlook \u5bb9\u5668\u5931\u8d25\uff1a$error'),
         ),
       );
     }
+  }
+
+  static Future<OutlookTaskListBinding> _ensureOutlookTaskListMirrorBinding(
+    TaskList taskList,
+    OutlookConfig config,
+    OutlookSyncBindingsRepository bindingsRepository,
+  ) {
+    final service = OutlookManagedContainerService(
+      config: config,
+      bindingsRepository: bindingsRepository,
+    );
+    return service.ensureTaskListMirrorBinding(taskList);
   }
 
   Future<void> _unbindTaskListFromOutlook(
@@ -735,10 +775,10 @@ class CalendarBooksPage extends ConsumerWidget {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('\u89e3\u9664 Outlook \u7ed1\u5b9a\u5931\u8d25\uff1a$error'),
+          content:
+              Text('\u89e3\u9664 Outlook \u7ed1\u5b9a\u5931\u8d25\uff1a$error'),
         ),
       );
     }
   }
 }
-

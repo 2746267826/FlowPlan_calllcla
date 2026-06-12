@@ -33,11 +33,13 @@ describe('number utilities', () => {
     expect(readLimit('999', 20, 1, 100)).toBe(100);
     expect(readOffset('-10')).toBe(0);
     expect(readOffset('12.9')).toBe(12);
+    expect(readOffset('not-a-number')).toBe(0);
   });
 
   it('coerces supported values to finite numbers', () => {
     expect(toNumber(3.5)).toBe(3.5);
     expect(toNumber('8')).toBe(8);
+    expect(toNumber('not-a-number')).toBe(0);
     expect(toNumber(Number.NaN)).toBe(0);
     expect(toNumber({})).toBe(0);
   });

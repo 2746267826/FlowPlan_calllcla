@@ -94,7 +94,8 @@ class ActivityLogEntry {
       if (key == null) {
         continue;
       }
-      keyDistribution[key] = (entry.value as num?)?.toInt() ?? 0;
+      final value = entry.value;
+      keyDistribution[key] = value is num ? value.toInt() : 0;
     }
 
     return ActivityLogEntry(

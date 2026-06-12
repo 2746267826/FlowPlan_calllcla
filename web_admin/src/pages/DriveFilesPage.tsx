@@ -150,7 +150,7 @@ export function DriveFilesPage(props: {
       const detail = errorMessage(error);
       setPageError(`扫描 Drive root 失败：${detail}`);
       messageApi.error('扫描 Drive root 失败');
-      await load();
+      await load({ silent: true });
     } finally {
       setScanningRootId(null);
     }
@@ -255,6 +255,7 @@ export function DriveFilesPage(props: {
         render: (_, row) => (
           <Space>
             <Button
+              aria-label={`Scan drive root ${displayRootName(row)}`}
               icon={<CloudSyncOutlined />}
               loading={scanningRootId === row.id}
               onClick={() => void scanRoot(row)}
@@ -270,6 +271,7 @@ export function DriveFilesPage(props: {
               onConfirm={() => void deleteRoot(row)}
             >
               <Button
+                aria-label={`Delete drive root ${displayRootName(row)}`}
                 danger
                 icon={<DeleteOutlined />}
                 loading={deletingRootId === row.id}
@@ -372,7 +374,7 @@ export function DriveFilesPage(props: {
   );
 }
 
-function RootDiagnostics(props: { root: DriveRootRecord }) {
+export function RootDiagnostics(props: { root: DriveRootRecord }) {
   const { root } = props;
   const lastScan = asRecord(root.metadata?.lastScan);
   return (
@@ -454,7 +456,7 @@ function RootDiagnostics(props: { root: DriveRootRecord }) {
   );
 }
 
-function readRoots(payload: unknown): DriveRootRecord[] {
+export function readRoots(payload: unknown): DriveRootRecord[] {
   if (!payload || typeof payload !== 'object' || !('roots' in payload)) {
     return [];
   }
@@ -471,20 +473,24 @@ function readRoots(payload: unknown): DriveRootRecord[] {
     .filter((item) => item.id.length > 0);
 }
 
-function asRecord(value: unknown): ApiRecord {
+export function asRecord(value: unknown): ApiRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as ApiRecord) : {};
 }
 
-function errorMessage(error: unknown) {
+export function displayRootName(root: DriveRootRecord) {
+  return String(root.name ?? root.rootDisplayPath ?? root.rootUri ?? root.id);
+}
+
+export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function formatCount(value: unknown) {
+export function formatCount(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed).toLocaleString('zh-CN') : '0';
 }
 
-function formatBytes(value: unknown) {
+export function formatBytes(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return '0 B';
@@ -499,7 +505,7 @@ function formatBytes(value: unknown) {
   return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-function formatDuration(value: unknown) {
+export function formatDuration(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return '无';
@@ -510,7 +516,7 @@ function formatDuration(value: unknown) {
   return `${(parsed / 1000).toFixed(2)} s`;
 }
 
-function scanStatusColor(status: string) {
+export function scanStatusColor(status: string) {
   if (status === 'completed') return 'green';
   if (status === 'failed') return 'red';
   if (status === 'scanning' || status === 'running') return 'blue';

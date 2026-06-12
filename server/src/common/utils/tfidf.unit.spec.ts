@@ -21,11 +21,28 @@ describe('TfidfMatcher', () => {
     matcher.addDocument('task-calendar', 'calendar planning schedule timeline');
     matcher.addDocument('task-files', 'file upload transfer storage');
 
+    expect(matcher.bestMatch('a')).toBeNull();
+    expect(matcher.matches('a')).toEqual([]);
+
     const best = matcher.bestMatch('weekly calendar schedule review');
 
     expect(best).not.toBeNull();
     expect(best?.id).toBe('task-calendar');
     expect(best?.score).toBeGreaterThan(0);
+
+    expect(matcher.bestMatch('unindexed-term-only')).toEqual({
+      id: 'task-calendar',
+      score: 0,
+    });
+  });
+
+  it('indexes CJK bigrams so adjacent Chinese terms can match across separators', () => {
+    const matcher = new TfidfMatcher();
+
+    matcher.addDocument('machine-learning', '机械 学习');
+    matcher.addDocument('calendar-review', '日程 复盘');
+
+    expect(matcher.bestMatch('械学')?.id).toBe('machine-learning');
   });
 
   it('returns matches sorted by descending score and applies thresholds', () => {

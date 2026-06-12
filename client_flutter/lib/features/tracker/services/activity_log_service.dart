@@ -41,7 +41,8 @@ class ActivityLogService {
     return _readEntriesForDayKey(_formatDate(date));
   }
 
-  Future<List<ActivityLogEntry>> readArchivedEntriesForDate(DateTime date) async {
+  Future<List<ActivityLogEntry>> readArchivedEntriesForDate(
+      DateTime date) async {
     await _ensureInitialized();
     final file = await _resolveDailyArchiveFile(date);
     if (!await file.exists()) {
@@ -75,7 +76,8 @@ class ActivityLogService {
         .list()
         .where((entity) => entity is File)
         .cast<File>()
-        .where((file) => _tryParseDayKeyFromFileName(p.basename(file.path)) != null)
+        .where((file) =>
+            _tryParseDayKeyFromFileName(p.basename(file.path)) != null)
         .toList();
 
     final days = <ActivityLogArchiveDay>[];
@@ -129,12 +131,10 @@ class ActivityLogService {
 
   Future<List<ActivityLogEntry>> readEntriesBetween(
     DateTime start,
-    DateTime end,
-    {
+    DateTime end, {
     int limit = 200,
     int offset = 0,
-  }
-  ) async {
+  }) async {
     await _ensureInitialized();
     final normalizedLimit = limit.clamp(1, 1000).toInt();
     final normalizedOffset = offset < 0 ? 0 : offset;
@@ -199,8 +199,7 @@ class ActivityLogService {
 
     final normalizedLimit = limit.clamp(1, 1000).toInt();
     final normalizedOffset = offset < 0 ? 0 : offset;
-    final whereSql =
-        clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
+    final whereSql = clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}';
     final rows = await _database.customSelect(
       '''
       SELECT payload_json
@@ -479,7 +478,8 @@ class ActivityLogService {
   }
 
   static String? _tryParseDayKeyFromFileName(String fileName) {
-    final match = RegExp(r'^(\d{4}-\d{2}-\d{2})\.activity\.jsonl$').firstMatch(fileName);
+    final match =
+        RegExp(r'^(\d{4}-\d{2}-\d{2})\.activity\.jsonl$').firstMatch(fileName);
     return match?.group(1);
   }
 
@@ -492,5 +492,9 @@ class ActivityLogService {
     final month = int.tryParse(parts[1]) ?? 1;
     final day = int.tryParse(parts[2]) ?? 1;
     return DateTime(year, month, day);
+  }
+
+  static DateTime debugParseDayKeyForTesting(String dayKey) {
+    return _parseDayKey(dayKey);
   }
 }

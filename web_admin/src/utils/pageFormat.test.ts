@@ -27,4 +27,19 @@ describe('flattenHealth', () => {
       },
     ]);
   });
+
+  it('keeps primitive fallback health values without JSON formatting', () => {
+    expect(flattenHealth({ custom: 'plain', count: 2 })).toEqual([
+      {
+        key: 'custom',
+        label: 'custom',
+        value: 'plain',
+      },
+      {
+        key: 'count',
+        label: 'count',
+        value: 2,
+      },
+    ]);
+  });
 });

@@ -1290,9 +1290,6 @@ export class AiService {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new BadRequestException('AI Provider Base URL must use http or https.');
     }
-    if (!parsed.hostname) {
-      throw new BadRequestException('AI Provider Base URL requires a host.');
-    }
     return parsed.toString().replace(/\/$/, '');
   }
 

@@ -46,7 +46,7 @@ export function DashboardPage(props: {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [props.api]);
 
   const overview = asRecord(dashboard?.overview);
   const pending = asRecord(dashboard?.pending);

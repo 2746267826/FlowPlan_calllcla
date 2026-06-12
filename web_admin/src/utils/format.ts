@@ -140,7 +140,7 @@ export function statusLabel(value: unknown): string {
 }
 
 export function statusColor(value: unknown): string {
-  const normalized = statusLabel(value).toLowerCase();
+  const normalized = `${displayValue(value)} ${statusLabel(value)}`.toLowerCase();
   if (['在线', '成功', '已完成', '已确认', '启用', '是', 'online', 'ok', 'success', 'completed', 'active'].some((item) => normalized.includes(item.toLowerCase()))) return 'success';
   if (['待处理', '进行中', '暂定', '异常', 'pending', 'draft', 'running', 'open', 'degraded'].some((item) => normalized.includes(item.toLowerCase()))) return 'warning';
   if (['失败', '离线', '错误', '冲突', '已取消', 'failed', 'offline', 'error', 'conflict', 'cancelled'].some((item) => normalized.includes(item.toLowerCase()))) return 'error';

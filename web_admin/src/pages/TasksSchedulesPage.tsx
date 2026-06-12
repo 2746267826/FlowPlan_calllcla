@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { datasets } from '../app/constants';
 import type { AdminApiClient } from '../api/adminApi';
 import type { ApiRecord, ManagementItem } from '../types';
-import { compareManagementItems, displayValue, extractRows, matchesManagementFilters, toManagementItem } from '../utils/format';
+import { compareManagementItems, displayValue, extractRows, matchesManagementFilters, statusLabel, toManagementItem } from '../utils/format';
 import { StatusTag } from '../components/StatusTag';
 import { RawDataCollapse } from '../components/RawDataCollapse';
 
@@ -55,7 +55,7 @@ export function TasksSchedulesPage(props: {
 
   const selectedItems = filtered.filter((item) => selectedKeys.includes(item.key));
   const statusOptions = useMemo(
-    () => Array.from(new Set(items.map((item) => item.status))).map((value) => ({ label: items.find((item) => item.status === value)?.statusLabel ?? value, value })),
+    () => Array.from(new Set(items.map((item) => item.status))).map((value) => ({ label: statusLabel(value), value })),
     [items],
   );
 

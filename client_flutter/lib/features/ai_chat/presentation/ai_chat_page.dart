@@ -4,7 +4,7 @@ import 'package:flutter_chat_types/flutter_chat_types.dart' as types;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 
-import '../../../core/server_api/ai_api.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 
 class AiChatPage extends ConsumerStatefulWidget {
@@ -16,7 +16,7 @@ class AiChatPage extends ConsumerStatefulWidget {
 
 class _AiChatPageState extends ConsumerState<AiChatPage> {
   final List<types.Message> _messages = [];
-  types.User _user = const types.User(id: 'self');
+  final types.User _user = const types.User(id: 'self');
   String? _conversationId;
   bool _loading = true;
 
@@ -27,8 +27,8 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
   }
 
   Future<void> _startConversation() async {
-    final aiApi = await ref.read(aiApiProvider.future);
     try {
+      final aiApi = await ref.read(aiApiProvider.future);
       final result = await aiApi.createConversation(
         title: 'AI 对话',
         source: 'flowplanv2_client',
@@ -39,8 +39,11 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       }
     } catch (_) {
       // Conversation creation may fail if AI provider not configured.
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
-    setState(() => _loading = false);
   }
 
   Future<void> _handleSendPressed(types.PartialText message) async {
@@ -66,7 +69,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       final reply = result['message'] as Map<String, dynamic>?;
       final content = reply?['content'] as String?;
 
-      if (content != null && content.isNotEmpty) {
+      if (content != null && content.isNotEmpty && mounted) {
         final aiMsg = types.TextMessage(
           author: const types.User(id: 'ai', firstName: 'AI'),
           createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -76,6 +79,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
         setState(() => _messages.insert(0, aiMsg));
       }
     } catch (e) {
+      if (!mounted) return;
       final errorMsg = types.TextMessage(
         author: const types.User(id: 'system', firstName: 'System'),
         createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -92,15 +96,17 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // Use markdown widget to render AI replies with rich formatting
-    final defaultBubbleBuilder = Chat(
-      messages: [],
-      onSendPressed: (_) {},
-      user: _user,
-    ).bubbleBuilder;
-
     return Scaffold(
       appBar: AppBar(title: const Text('AI 对话')),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
+      floatingActionButton: _messages.isEmpty
+          ? null
+          : FloatingActionButton.small(
+              key: AppKeys.aiChatClearButton,
+              tooltip: 'Clear chat',
+              onPressed: () => setState(_messages.clear),
+              child: const Icon(Icons.delete_sweep_outlined),
+            ),
       body: Chat(
         messages: _messages,
         onSendPressed: _handleSendPressed,
@@ -112,8 +118,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
           required types.Message message,
           required bool nextMessageInGroup,
         }) {
-          if (message.author.id != _user.id &&
-              message is types.TextMessage) {
+          if (message.author.id != _user.id && message is types.TextMessage) {
             return Container(
               constraints: const BoxConstraints(maxWidth: 300),
               margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
@@ -122,7 +127,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: MarkdownWidget(data: message.text),
+              child: MarkdownBlock(data: message.text),
             );
           }
           return child;

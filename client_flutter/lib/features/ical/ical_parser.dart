@@ -60,8 +60,8 @@ class ICalParser {
 
     final dtend = _parseDateTime(props['DTEND']);
     final uid = props['UID'] ?? const Uuid().v4();
-    final description = props['DESCRIPTION'];
-    final location = props['LOCATION'];
+    final description = _optionalText(props['DESCRIPTION']);
+    final location = _optionalText(props['LOCATION']);
     final status = props['STATUS'] ?? 'CONFIRMED';
     final rrule = props['RRULE'];
     final now = DateTime.now();
@@ -70,9 +70,8 @@ class ICalParser {
       uid: uid,
       dtstamp: now,
       summary: _unescapeText(summary),
-      description:
-          Value(description != null ? _unescapeText(description) : null),
-      location: Value(location != null ? _unescapeText(location) : null),
+      description: Value(description),
+      location: Value(location),
       dtstart: dtstart,
       dtend: Value(dtend),
       status: Value(status),
@@ -110,8 +109,10 @@ class ICalParser {
         final minute = int.parse(dateStr.substring(10, 12));
         final second = int.parse(dateStr.substring(12, 14));
 
-        final dt = DateTime(year, month, day, hour, minute, second);
-        return isUtc ? dt.toLocal() : dt;
+        if (isUtc) {
+          return DateTime.utc(year, month, day, hour, minute, second).toLocal();
+        }
+        return DateTime(year, month, day, hour, minute, second);
       }
 
       return null;
@@ -128,5 +129,13 @@ class ICalParser {
         .replaceAll('\\,', ',')
         .replaceAll('\\;', ';')
         .replaceAll('\\\\', '\\');
+  }
+
+  String? _optionalText(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final unescaped = _unescapeText(value).trim();
+    return unescaped.isEmpty ? null : unescaped;
   }
 }

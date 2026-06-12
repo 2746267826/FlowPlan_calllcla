@@ -9,10 +9,20 @@ class OutlookManagedContainerService {
   OutlookManagedContainerService({
     required this.config,
     required this.bindingsRepository,
-  });
+    MsGraphServiceFactory? graphServiceFactory,
+  }) : _graphServiceFactory =
+            graphServiceFactory ?? _defaultGraphServiceFactory;
 
   final OutlookConfig config;
   final OutlookSyncBindingsRepository bindingsRepository;
+  final MsGraphServiceFactory _graphServiceFactory;
+
+  static MsGraphService _defaultGraphServiceFactory(
+    OutlookConfig config, {
+    required OutlookSyncMode syncMode,
+  }) {
+    return MsGraphService(config, syncMode: syncMode);
+  }
 
   Future<OutlookTaskListBinding> ensureTaskListMirrorBinding(
     TaskList taskList,
@@ -38,7 +48,7 @@ class OutlookManagedContainerService {
       );
     }
 
-    final graphService = MsGraphService(
+    final graphService = _graphServiceFactory(
       config,
       syncMode: OutlookSyncMode.bidirectional,
     );

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../core/platform/device_identity_service.dart';
@@ -18,6 +18,34 @@ import 'tracker_platform_source.dart';
 import 'window_sensor.dart';
 
 part 'tracker_service.g.dart';
+
+@visibleForTesting
+TrackerPlatformSource? debugTrackerPlatformOverride;
+
+@visibleForTesting
+RawInputService? debugRawInputServiceOverride;
+
+@visibleForTesting
+WindowSnapshot? Function()? debugTrackerWindowCaptureOverride;
+
+@visibleForTesting
+Duration? debugTrackerSampleIntervalOverride;
+
+@visibleForTesting
+Duration? debugTrackerInputEventPollIntervalOverride;
+
+@visibleForTesting
+Duration? debugTrackerAutoUploadIntervalOverride;
+
+@visibleForTesting
+Duration? debugTrackerSampleTimeoutOverride;
+
+@visibleForTesting
+Duration? debugTrackerInputEventPollTimeoutOverride;
+
+TrackerPlatformSource trackerPlatformSourceForRuntime() {
+  return debugTrackerPlatformOverride ?? TrackerPlatformSource.current();
+}
 
 class TrackerState {
   static const Object _unset = Object();
@@ -99,17 +127,15 @@ class TrackerState {
       displayTelemetry: identical(displayTelemetry, _unset)
           ? this.displayTelemetry
           : displayTelemetry as InputTelemetry?,
-      isViewingExcludedApp:
-          isViewingExcludedApp ?? this.isViewingExcludedApp,
+      isViewingExcludedApp: isViewingExcludedApp ?? this.isViewingExcludedApp,
       hasUsageStatsPermission: identical(hasUsageStatsPermission, _unset)
           ? this.hasUsageStatsPermission
           : hasUsageStatsPermission as bool?,
       lastSampleAt: identical(lastSampleAt, _unset)
           ? this.lastSampleAt
           : lastSampleAt as DateTime?,
-      lastError: identical(lastError, _unset)
-          ? this.lastError
-          : lastError as String?,
+      lastError:
+          identical(lastError, _unset) ? this.lastError : lastError as String?,
     );
   }
 }
@@ -122,10 +148,17 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   final WindowSensor _sensor = const WindowSensor();
   final ActivityClassifier _classifier = ActivityClassifier();
   final DeviceIdentityService _deviceIdentityService = DeviceIdentityService();
-  final TrackerPlatformSource _platform = TrackerPlatformSource.current();
-  final Duration _sampleInterval = const Duration(seconds: 5);
-  final Duration _inputEventPollInterval = const Duration(seconds: 1);
-  final Duration _autoUploadInterval = const Duration(minutes: 10);
+  final TrackerPlatformSource _platform = trackerPlatformSourceForRuntime();
+  final Duration _sampleInterval =
+      debugTrackerSampleIntervalOverride ?? const Duration(seconds: 5);
+  final Duration _inputEventPollInterval =
+      debugTrackerInputEventPollIntervalOverride ?? const Duration(seconds: 1);
+  final Duration _autoUploadInterval =
+      debugTrackerAutoUploadIntervalOverride ?? const Duration(minutes: 10);
+  final Duration _sampleTimeout =
+      debugTrackerSampleTimeoutOverride ?? const Duration(seconds: 15);
+  final Duration _inputEventPollTimeout =
+      debugTrackerInputEventPollTimeoutOverride ?? const Duration(seconds: 10);
   InputTelemetry? _telemetryBaseline;
   InputTelemetry _activeTelemetry = InputTelemetry.empty();
   bool _sampleInFlight = false;
@@ -133,6 +166,9 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   bool _autoUploadInFlight = false;
   DateTime? _lastAutoUploadAt;
   String? _lastAutoUploadError;
+
+  RawInputService get _rawInputService =>
+      debugRawInputServiceOverride ?? rawInputService;
 
   @override
   TrackerState build() {
@@ -143,12 +179,12 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     });
     ref.listen<bool>(sequenceRecordingProvider, (previous, next) {
       if (_platform.supportsSequenceRecording) {
-        unawaited(rawInputService.setSequenceRecording(next));
+        unawaited(_rawInputService.setSequenceRecording(next));
       }
     });
     if (_platform.supportsSequenceRecording) {
       unawaited(
-        rawInputService.setSequenceRecording(
+        _rawInputService.setSequenceRecording(
           ref.read(sequenceRecordingProvider),
         ),
       );
@@ -161,7 +197,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       return;
     }
 
-    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
+    if (_platform.collectionMode ==
+        TrackerCollectionMode.manualUsageStatsImport) {
       state = state.copyWith(isRunning: true);
       unawaited(_importAndroidUsage());
       return;
@@ -178,7 +215,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
 
   Future<void> _startWindowsTracking() async {
     try {
-      await rawInputService.start();
+      await _rawInputService.start();
     } catch (error) {
       state = state.copyWith(
         lastError: 'RawInput 启动失败（降级为仅窗口追踪）：$error',
@@ -210,13 +247,14 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     _autoUploadTimer?.cancel();
     _autoUploadTimer = null;
     if (_platform.supportsInputAnalytics) {
-      unawaited(rawInputService.stop());
+      unawaited(_rawInputService.stop());
     }
     unawaited(_stopAsync());
   }
 
   Future<void> refreshNow() async {
-    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
+    if (_platform.collectionMode ==
+        TrackerCollectionMode.manualUsageStatsImport) {
       await _importAndroidUsage();
       return;
     }
@@ -229,14 +267,17 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> openAndroidUsageAccessSettings() async {
-    if (!Platform.isAndroid) {
+    if (!_platform.isAndroid) {
       return;
     }
-    await const AndroidUsageStatsService().openUsageAccessSettings();
+    await AndroidUsageStatsService(
+      isAndroid: () => _platform.isAndroid,
+    ).openUsageAccessSettings();
   }
 
   Future<void> _stopAsync() async {
-    if (_platform.collectionMode == TrackerCollectionMode.manualUsageStatsImport) {
+    if (_platform.collectionMode ==
+        TrackerCollectionMode.manualUsageStatsImport) {
       state = const TrackerState(isRunning: false);
       return;
     }
@@ -258,13 +299,18 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
         activityLogService: ref.read(activityLogServiceProvider),
         classifier: _classifier,
         deviceIdentityService: _deviceIdentityService,
+        usageStatsService: AndroidUsageStatsService(
+          isAndroid: () => _platform.isAndroid,
+        ),
+        isAndroid: () => _platform.isAndroid,
       );
       final result = await importService.importLatest();
       final sampledAt = result.importedUntil ?? DateTime.now();
       final latestSnapshot = result.latestSnapshot ?? state.currentSnapshot;
       final latestClassification =
           result.latestClassification ?? state.currentClassification;
-      final latestSessionStart = result.latestSessionStart ?? state.sessionStart;
+      final latestSessionStart =
+          result.latestSessionStart ?? state.sessionStart;
       final emptyTelemetry = InputTelemetry.empty(sampledAt);
 
       state = state.copyWith(
@@ -302,7 +348,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
     _sampleInFlight = true;
     try {
       await _sampleOnce().timeout(
-        const Duration(seconds: 15),
+        _sampleTimeout,
         onTimeout: () {},
       );
     } catch (error) {
@@ -317,15 +363,18 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
 
   Future<void> _pollInputEvents() async {
     if (!_platform.supportsInputAnalytics ||
-        !rawInputService.isRunning ||
+        !_rawInputService.isRunning ||
         _inputEventPollInFlight) {
       return;
     }
     _inputEventPollInFlight = true;
     try {
-      final events = await rawInputService.getPendingInputEvents(
-        maxEvents: 1000,
-      ).timeout(const Duration(seconds: 10), onTimeout: () => const <RawInputEvent>[]);
+      final events = await _rawInputService
+          .getPendingInputEvents(
+            maxEvents: 1000,
+          )
+          .timeout(_inputEventPollTimeout,
+              onTimeout: () => const <RawInputEvent>[]);
       if (events.isEmpty) {
         return;
       }
@@ -337,8 +386,9 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
             snapshot: currentSnapshot,
             classification: state.currentClassification,
             recordId: state.activeRecordId,
-            isIgnored:
-                currentSnapshot == null ? false : _isSelfExcluded(currentSnapshot),
+            isIgnored: currentSnapshot == null
+                ? false
+                : _isSelfExcluded(currentSnapshot),
           ),
         ],
       );
@@ -348,7 +398,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
           maxSequenceId = event.sequenceId;
         }
       }
-      await rawInputService.ackInputEvents(maxSequenceId);
+      await _rawInputService.ackInputEvents(maxSequenceId);
       _notifyLogChanged();
     } catch (error) {
       state = state.copyWith(
@@ -377,15 +427,17 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   }
 
   Future<void> _sampleOnce() async {
-    final snapshot = _sensor.capture();
+    final captureOverride = debugTrackerWindowCaptureOverride;
+    final snapshot =
+        captureOverride == null ? _sensor.capture() : captureOverride();
     if (snapshot == null) {
       state = state.copyWith(lastSampleAt: DateTime.now());
       return;
     }
 
     final classification = _classifier.classify(snapshot);
-    final telemetry = await rawInputService.getStats();
-    final rawInputError = rawInputService.lastError;
+    final telemetry = await _rawInputService.getStats();
+    final rawInputError = _rawInputService.lastError;
     final previousSnapshot = state.currentSnapshot;
     final previousClassification = state.currentClassification;
     final previousRecordId = state.activeRecordId;
@@ -419,9 +471,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
           state.displayClassification ?? state.currentClassification;
       final frozenSessionStart =
           state.displaySessionStart ?? state.sessionStart;
-      final frozenTelemetry = state.displayTelemetry ??
-          state.currentTelemetry ??
-          _activeTelemetry;
+      final frozenTelemetry =
+          state.displayTelemetry ?? state.currentTelemetry ?? _activeTelemetry;
 
       wroteLog =
           await _finishCurrentRecord(endedAt: snapshot.timestamp) || wroteLog;
@@ -490,8 +541,7 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
           await _finishCurrentRecord(endedAt: snapshot.timestamp) || wroteLog;
       _telemetryBaseline = telemetry;
       _activeTelemetry = InputTelemetry.empty(snapshot.timestamp);
-      wroteLog =
-          await _startNewRecord(snapshot, classification) || wroteLog;
+      wroteLog = await _startNewRecord(snapshot, classification) || wroteLog;
 
       if (!hadPreviousContext) {
         wroteLog = await _persistInputEvents(

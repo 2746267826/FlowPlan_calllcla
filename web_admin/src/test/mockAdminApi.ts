@@ -16,6 +16,8 @@ export function createMockAdminApi(overrides: Record<string, unknown> = {}) {
     dashboard: vi.fn().mockResolvedValue({ pending: {}, recentAuditLogs: [] }),
     monitoringHealth: vi.fn().mockResolvedValue({ database: { status: 'ok' } }),
     syncHealth: vi.fn().mockResolvedValue({ devices: [] }),
+    deviceConnectionHistory: vi.fn().mockResolvedValue({ items: [] }),
+    request: vi.fn().mockResolvedValue({ items: [] }),
     adminData: vi.fn().mockResolvedValue({ items: [] }),
     adminRows: vi.fn().mockResolvedValue([]),
     adminDataDetail: vi.fn().mockResolvedValue({}),

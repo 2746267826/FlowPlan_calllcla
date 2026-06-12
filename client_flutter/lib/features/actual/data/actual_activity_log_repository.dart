@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:meta/meta.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
@@ -9,7 +11,7 @@ import '../../../core/sync/sync_write_recorder.dart';
 import '../../audit/data_operation_log_repository.dart';
 
 class ActualActivityStatus {
-  const ActualActivityStatus._();
+  const ActualActivityStatus();
 
   static const candidate = 'candidate';
   static const confirmed = 'confirmed';
@@ -18,7 +20,7 @@ class ActualActivityStatus {
 }
 
 class ActualActivitySourceType {
-  const ActualActivitySourceType._();
+  const ActualActivitySourceType();
 
   static const manual = 'manual';
   static const blockingEvent = 'blocking_event';
@@ -96,7 +98,7 @@ class ActualActivityLog {
       sourceType: row.read<String>('source_type'),
       sourceId: row.data['source_id'] as String?,
       sourcePayloadJson: row.read<String>('source_payload_json'),
-      confidence: (row.read<num>('confidence')).toDouble(),
+      confidence: _readDouble(row.data['confidence']),
       status: row.read<String>('status'),
       note: row.data['note'] as String?,
       createdAt: DateTime.parse(row.read<String>('created_at')),
@@ -113,6 +115,19 @@ class ActualActivityLog {
     }
     return null;
   }
+
+  static double _readDouble(Object? value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value) ?? 0;
+    }
+    return 0;
+  }
+
+  @visibleForTesting
+  static double readDoubleForTesting(Object? value) => _readDouble(value);
 }
 
 class ActualActivityLogRepository {
@@ -126,6 +141,7 @@ class ActualActivityLogRepository {
   final DataOperationLogRepository? _operationLogs;
   final SyncWriteRecorder? _syncWriteRecorder;
   final Uuid _uuid = const Uuid();
+  final StreamController<void> _changes = StreamController<void>.broadcast();
 
   Future<ActualActivityLog?> getById(int id) async {
     final row = await _db.customSelect(
@@ -160,29 +176,47 @@ class ActualActivityLogRepository {
     DateTime end, {
     Iterable<String>? statuses,
   }) {
-    final statusList = statuses?.toSet().toList(growable: false);
-    final sqlStatuses = statusList == null || statusList.isEmpty
-        ? ''
-        : 'AND status IN (${List.filled(statusList.length, '?').join(', ')})';
-    return _db
-        .customSelect(
-          '''
-          SELECT *
-          FROM actual_activity_logs
-          WHERE start_at < ? AND end_at > ?
-          $sqlStatuses
-          ORDER BY start_at ASC
-          ''',
-          variables: [
-            Variable<String>(end.toIso8601String()),
-            Variable<String>(start.toIso8601String()),
-            for (final status in statusList ?? const <String>[])
-              Variable<String>(status),
-          ],
-          readsFrom: const {},
-        )
-        .watch()
-        .map((rows) => rows.map(ActualActivityLog.fromRow).toList());
+    late StreamController<List<ActualActivityLog>> controller;
+    StreamSubscription<void>? subscription;
+    var cancelled = false;
+
+    Future<void> emit() async {
+      try {
+        final rows = await listInRange(start, end, statuses: statuses);
+        if (!cancelled) {
+          controller.add(rows);
+        }
+      } catch (error, stackTrace) {
+        if (!cancelled) {
+          controller.addError(error, stackTrace);
+        }
+      }
+    }
+
+    controller = StreamController<List<ActualActivityLog>>(
+      onListen: () {
+        subscription = _changes.stream.listen(
+          (_) {
+            unawaited(emit());
+          },
+          onDone: () {
+            if (!controller.isClosed) {
+              unawaited(controller.close());
+            }
+          },
+        );
+        unawaited(emit());
+      },
+      onCancel: () async {
+        cancelled = true;
+        await subscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  Future<void> dispose() {
+    return _changes.close();
   }
 
   Future<List<ActualActivityLog>> listInRange(
@@ -290,6 +324,7 @@ class ActualActivityLogRepository {
       ],
     );
     final id = await _lastInsertedId();
+    _notifyChanged();
     final created = await getById(id);
     if (created != null) {
       await _recordCreate(actor: actor, actual: created);
@@ -331,6 +366,7 @@ class ActualActivityLogRepository {
         id,
       ],
     );
+    _notifyChanged();
     await _recordUpdate(
       id,
       actor: actor,
@@ -373,6 +409,7 @@ class ActualActivityLogRepository {
         id,
       ],
     );
+    _notifyChanged();
     await _recordUpdate(
       id,
       actor: actor,
@@ -403,6 +440,7 @@ class ActualActivityLogRepository {
       ''',
       [ActualActivityStatus.merged, targetId, now, id],
     );
+    _notifyChanged();
     await _recordUpdate(
       id,
       actor: actor,
@@ -414,9 +452,11 @@ class ActualActivityLogRepository {
   }
 
   Future<int> _lastInsertedId() async {
-    final row = await _db.customSelect(
-      'SELECT last_insert_rowid() AS id',
-    ).getSingle();
+    final row = await _db
+        .customSelect(
+          'SELECT last_insert_rowid() AS id',
+        )
+        .getSingle();
     return row.read<int>('id');
   }
 
@@ -462,5 +502,11 @@ class ActualActivityLogRepository {
       payload: after.toJson(),
       changedFields: changedFields,
     );
+  }
+
+  void _notifyChanged() {
+    if (!_changes.isClosed) {
+      _changes.add(null);
+    }
   }
 }

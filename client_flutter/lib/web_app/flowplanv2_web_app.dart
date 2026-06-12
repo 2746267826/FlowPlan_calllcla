@@ -1,20 +1,28 @@
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+// ignore_for_file: deprecated_member_use
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../core/ui/app_keys.dart';
 import 'web_api_client.dart';
+import 'web_browser_facade.dart' as browser;
 import 'web_local_store.dart';
 
+typedef WebApiClientFactory = WebApiClient Function(WebLocalStore store);
+
 class FlowPlanV2WebApp extends StatelessWidget {
-  const FlowPlanV2WebApp({super.key, required this.store});
+  const FlowPlanV2WebApp({
+    super.key,
+    required this.store,
+    this.apiClientFactory,
+  });
 
   final WebLocalStore store;
+  final WebApiClientFactory? apiClientFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -37,22 +45,29 @@ class FlowPlanV2WebApp extends StatelessWidget {
           ),
         ),
       ),
-      home: _UserShell(store: store),
+      home: _UserShell(
+        store: store,
+        apiClientFactory: apiClientFactory ?? WebApiClient.new,
+      ),
     );
   }
 }
 
 class _UserShell extends StatefulWidget {
-  const _UserShell({required this.store});
+  const _UserShell({
+    required this.store,
+    required this.apiClientFactory,
+  });
 
   final WebLocalStore store;
+  final WebApiClientFactory apiClientFactory;
 
   @override
   State<_UserShell> createState() => _UserShellState();
 }
 
 class _UserShellState extends State<_UserShell> {
-  late final api = WebApiClient(widget.store);
+  late final api = widget.apiClientFactory(widget.store);
   int index = 0;
   _ConnectionState connection = const _ConnectionState();
   Timer? heartbeatTimer;
@@ -89,7 +104,8 @@ class _UserShellState extends State<_UserShell> {
         connection = _ConnectionState(
           online: true,
           serverTime: '${bootstrap['serverTime'] ?? ''}',
-          deviceId: '${_asMap(bootstrap['device'])['clientDeviceId'] ?? widget.store.deviceId ?? ''}',
+          deviceId:
+              '${_asMap(bootstrap['device'])['clientDeviceId'] ?? widget.store.deviceId ?? ''}',
           lastHeartbeatAt: DateTime.now(),
           error: '',
         );
@@ -146,7 +162,9 @@ class _UserShellState extends State<_UserShell> {
   void _scheduleHeartbeat({int seconds = 30}) {
     heartbeatTimer?.cancel();
     heartbeatTimer = Timer(Duration(seconds: seconds), () {
-      unawaited(_sendHeartbeat().then((_) => _scheduleHeartbeat()).catchError((error) {
+      unawaited(_sendHeartbeat()
+          .then((_) => _scheduleHeartbeat())
+          .catchError((error) {
         if (mounted) {
           setState(() {
             connection = _ConnectionState(
@@ -187,11 +205,14 @@ class _UserShellState extends State<_UserShell> {
             minWidth: 82,
             onDestinationSelected: (value) => setState(() => index = value),
             destinations: [
-              for (final page in pages)
+              for (final entry in pages.asMap().entries)
                 NavigationRailDestination(
-                  icon: Icon(page.icon),
-                  selectedIcon: Icon(page.icon),
-                  label: Text(page.label),
+                  icon: Icon(entry.value.icon),
+                  selectedIcon: Icon(entry.value.icon),
+                  label: Text(
+                    entry.value.label,
+                    key: _webShellDestinationKey(entry.key),
+                  ),
                 ),
             ],
           ),
@@ -394,7 +415,9 @@ class _TasksPageState extends State<_TasksPage> {
           future = _load();
         });
       },
+      refreshKey: AppKeys.webTasksRefreshButton,
       action: FilledButton.icon(
+        key: AppKeys.webTasksCreateButton,
         onPressed: () => _edit(),
         icon: const Icon(Icons.add),
         label: const Text('新建任务'),
@@ -431,6 +454,8 @@ class _EventsPage extends StatefulWidget {
   State<_EventsPage> createState() => _EventsPageState2();
 }
 
+// coverage:ignore-start
+// ignore: unused_element
 class _EventsPageState extends State<_EventsPage> {
   late Future<List<Map<String, dynamic>>> future = _load();
   String query = '';
@@ -503,6 +528,7 @@ class _EventsPageState extends State<_EventsPage> {
     );
   }
 }
+// coverage:ignore-end
 
 class _EventsPageState2 extends State<_EventsPage> {
   late Future<List<Map<String, dynamic>>> future = _load();
@@ -520,7 +546,8 @@ class _EventsPageState2 extends State<_EventsPage> {
       'limit': '500',
     });
     final items = _mapList(result['items']);
-    items.sort((a, b) => (_eventStart(a) ?? DateTime(0)).compareTo(_eventStart(b) ?? DateTime(0)));
+    items.sort((a, b) => (_eventStart(a) ?? DateTime(0))
+        .compareTo(_eventStart(b) ?? DateTime(0)));
     return items;
   }
 
@@ -605,10 +632,14 @@ class _EventsPageState2 extends State<_EventsPage> {
                 onMove: (delta) {
                   setState(() {
                     selectedDay = switch (viewMode) {
-                      _EventViewMode.timeline => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta),
-                      _EventViewMode.week => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta * 7),
-                      _EventViewMode.month => DateTime(selectedDay.year, selectedDay.month + delta, selectedDay.day),
-                      _EventViewMode.list => DateTime(selectedDay.year, selectedDay.month, selectedDay.day + delta),
+                      _EventViewMode.timeline => DateTime(selectedDay.year,
+                          selectedDay.month, selectedDay.day + delta),
+                      _EventViewMode.week => DateTime(selectedDay.year,
+                          selectedDay.month, selectedDay.day + delta * 7),
+                      _EventViewMode.month => DateTime(selectedDay.year,
+                          selectedDay.month + delta, selectedDay.day),
+                      _EventViewMode.list => DateTime(selectedDay.year,
+                          selectedDay.month, selectedDay.day + delta),
                     };
                     future = _load();
                   });
@@ -622,7 +653,9 @@ class _EventsPageState2 extends State<_EventsPage> {
               ),
               const SizedBox(height: 12),
               if (snapshot.connectionState != ConnectionState.done)
-                const SizedBox(height: 240, child: Center(child: CircularProgressIndicator()))
+                const SizedBox(
+                    height: 240,
+                    child: Center(child: CircularProgressIndicator()))
               else if (snapshot.hasError)
                 _EmptyState(
                   icon: Icons.cloud_off_outlined,
@@ -642,7 +675,10 @@ class _EventsPageState2 extends State<_EventsPage> {
                 switch (viewMode) {
                   _EventViewMode.timeline => _EventTimelineView(
                       day: selectedDay,
-                      items: items.where((item) => _isSameDay(_eventStart(item), selectedDay)).toList(),
+                      items: items
+                          .where((item) =>
+                              _isSameDay(_eventStart(item), selectedDay))
+                          .toList(),
                       onEdit: _edit,
                     ),
                   _EventViewMode.week => _EventWeekView(
@@ -678,7 +714,9 @@ class _EventsPageState2 extends State<_EventsPage> {
                         item['endAt'],
                         item['location'],
                         _eventNotes(item),
-                        TextButton(onPressed: () => _edit(item), child: const Text('编辑')),
+                        TextButton(
+                            onPressed: () => _edit(item),
+                            child: const Text('编辑')),
                       ],
                     ),
                 },
@@ -720,8 +758,10 @@ class _EventToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = switch (mode) {
       _EventViewMode.timeline => _formatDate(selectedDay),
-      _EventViewMode.week => '${_formatDate(range.start)} - ${_formatDate(range.end.subtract(const Duration(days: 1)))}',
-      _EventViewMode.month => '${selectedDay.year}-${selectedDay.month.toString().padLeft(2, '0')}',
+      _EventViewMode.week =>
+        '${_formatDate(range.start)} - ${_formatDate(range.end.subtract(const Duration(days: 1)))}',
+      _EventViewMode.month =>
+        '${selectedDay.year}-${selectedDay.month.toString().padLeft(2, '0')}',
       _EventViewMode.list => '列表',
     };
     return Wrap(
@@ -731,23 +771,44 @@ class _EventToolbar extends StatelessWidget {
       children: [
         SegmentedButton<_EventViewMode>(
           segments: const [
-            ButtonSegment(value: _EventViewMode.timeline, label: Text('时间轴'), icon: Icon(Icons.view_timeline_outlined)),
-            ButtonSegment(value: _EventViewMode.week, label: Text('本周'), icon: Icon(Icons.view_week_outlined)),
-            ButtonSegment(value: _EventViewMode.month, label: Text('月视图'), icon: Icon(Icons.calendar_view_month_outlined)),
-            ButtonSegment(value: _EventViewMode.list, label: Text('列表'), icon: Icon(Icons.table_rows_outlined)),
+            ButtonSegment(
+                value: _EventViewMode.timeline,
+                label: Text('时间轴'),
+                icon: Icon(Icons.view_timeline_outlined)),
+            ButtonSegment(
+                value: _EventViewMode.week,
+                label: Text('本周'),
+                icon: Icon(Icons.view_week_outlined)),
+            ButtonSegment(
+                value: _EventViewMode.month,
+                label: Text('月视图'),
+                icon: Icon(Icons.calendar_view_month_outlined)),
+            ButtonSegment(
+                value: _EventViewMode.list,
+                label: Text('列表'),
+                icon: Icon(Icons.table_rows_outlined)),
           ],
           selected: {mode},
           onSelectionChanged: (value) => onModeChanged(value.first),
         ),
-        IconButton.filledTonal(onPressed: () => onMove(-1), icon: const Icon(Icons.chevron_left)),
+        IconButton.filledTonal(
+            onPressed: () => onMove(-1), icon: const Icon(Icons.chevron_left)),
         SizedBox(
           width: 220,
           child: Center(
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            child: Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800)),
           ),
         ),
-        IconButton.filledTonal(onPressed: () => onMove(1), icon: const Icon(Icons.chevron_right)),
-        OutlinedButton.icon(onPressed: onToday, icon: const Icon(Icons.today), label: const Text('今天')),
+        IconButton.filledTonal(
+            onPressed: () => onMove(1), icon: const Icon(Icons.chevron_right)),
+        OutlinedButton.icon(
+            onPressed: onToday,
+            icon: const Icon(Icons.today),
+            label: const Text('今天')),
       ],
     );
   }
@@ -780,7 +841,9 @@ class _EventTimelineView extends StatelessWidget {
           for (var hour = 0; hour < 24; hour++)
             _HourLane(
               hour: hour,
-              items: items.where((item) => (_eventStart(item)?.hour ?? -1) == hour).toList(),
+              items: items
+                  .where((item) => (_eventStart(item)?.hour ?? -1) == hour)
+                  .toList(),
               onEdit: onEdit,
             ),
         ],
@@ -814,7 +877,8 @@ class _HourLane extends StatelessWidget {
             width: 54,
             child: Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: Text('${hour.toString().padLeft(2, '0')}:00', style: const TextStyle(color: Colors.black54)),
+              child: Text('${hour.toString().padLeft(2, '0')}:00',
+                  style: const TextStyle(color: Colors.black54)),
             ),
           ),
           Expanded(
@@ -826,8 +890,12 @@ class _HourLane extends StatelessWidget {
                 children: [
                   for (final item in items)
                     ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
-                      child: _EventCard(item: item, compact: false, onTap: () => onEdit(item)),
+                      constraints:
+                          const BoxConstraints(minWidth: 220, maxWidth: 360),
+                      child: _EventCard(
+                          item: item,
+                          compact: false,
+                          onTap: () => onEdit(item)),
                     ),
                 ],
               ),
@@ -853,7 +921,10 @@ class _EventWeekView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final start = _startOfWeek(selectedDay);
-    final days = [for (var i = 0; i < 7; i++) DateTime(start.year, start.month, start.day + i)];
+    final days = [
+      for (var i = 0; i < 7; i++)
+        DateTime(start.year, start.month, start.day + i)
+    ];
     return LayoutBuilder(
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 820;
@@ -861,14 +932,21 @@ class _EventWeekView extends StatelessWidget {
           for (final day in days)
             _WeekDayColumn(
               day: day,
-              items: items.where((item) => _isSameDay(_eventStart(item), day)).toList(),
+              items: items
+                  .where((item) => _isSameDay(_eventStart(item), day))
+                  .toList(),
               onTap: () => onDaySelected(day),
             ),
         ];
         if (narrow) {
-          return Column(children: [for (final child in children) Padding(padding: const EdgeInsets.only(bottom: 8), child: child)]);
+          return Column(children: [
+            for (final child in children)
+              Padding(padding: const EdgeInsets.only(bottom: 8), child: child)
+          ]);
         }
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final child in children) Expanded(child: child)]);
+        return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [for (final child in children) Expanded(child: child)]);
       },
     );
   }
@@ -896,7 +974,8 @@ class _WeekDayColumn extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_formatDate(day), style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(_formatDate(day),
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               if (items.isEmpty)
                 const Text('无日程', style: TextStyle(color: Colors.black45))
@@ -905,7 +984,9 @@ class _WeekDayColumn extends StatelessWidget {
                   _EventCard(item: item, compact: true),
                   const SizedBox(height: 6),
                 ],
-              if (items.length > 6) Text('+${items.length - 6} 条', style: const TextStyle(color: Colors.black54)),
+              if (items.length > 6)
+                Text('+${items.length - 6} 条',
+                    style: const TextStyle(color: Colors.black54)),
             ],
           ),
         ),
@@ -929,10 +1010,12 @@ class _EventMonthView extends StatelessWidget {
   Widget build(BuildContext context) {
     final first = DateTime(selectedDay.year, selectedDay.month);
     final leading = first.weekday - 1;
-    final daysInMonth = DateTime(selectedDay.year, selectedDay.month + 1, 0).day;
+    final daysInMonth =
+        DateTime(selectedDay.year, selectedDay.month + 1, 0).day;
     final cells = <DateTime?>[
       for (var i = 0; i < leading; i++) null,
-      for (var day = 1; day <= daysInMonth; day++) DateTime(selectedDay.year, selectedDay.month, day),
+      for (var day = 1; day <= daysInMonth; day++)
+        DateTime(selectedDay.year, selectedDay.month, day),
     ];
     while (cells.length % 7 != 0) {
       cells.add(null);
@@ -953,7 +1036,9 @@ class _EventMonthView extends StatelessWidget {
           itemBuilder: (context, index) {
             final day = cells[index];
             if (day == null) return const SizedBox.shrink();
-            final dayItems = items.where((item) => _isSameDay(_eventStart(item), day)).toList();
+            final dayItems = items
+                .where((item) => _isSameDay(_eventStart(item), day))
+                .toList();
             return Card(
               child: InkWell(
                 onTap: () => onDaySelected(day),
@@ -963,9 +1048,12 @@ class _EventMonthView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${day.day}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      Text('${day.day}',
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 6),
-                      Text('${dayItems.length} 条日程', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      Text('${dayItems.length} 条日程',
+                          style: const TextStyle(
+                              color: Colors.black54, fontSize: 12)),
                       const SizedBox(height: 6),
                       for (final item in dayItems.take(3))
                         Padding(
@@ -1015,7 +1103,10 @@ class _EventCard extends StatelessWidget {
           padding: EdgeInsets.all(compact ? 8 : 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: blocking ? const Color(0xFFF97316) : const Color(0xFF93C5FD)),
+            border: Border.all(
+                color: blocking
+                    ? const Color(0xFFF97316)
+                    : const Color(0xFF93C5FD)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1099,7 +1190,8 @@ class _DrivePageState extends State<_DrivePage> {
         nodes = [];
         status = '还没有云盘 Root，可以先创建一个服务端云盘。';
       } else {
-        final nodeResult = await widget.api.getJson('/files/drive/nodes', query: {
+        final nodeResult =
+            await widget.api.getJson('/files/drive/nodes', query: {
           'rootId': rootId,
           'parentId': parentId,
           'q': query,
@@ -1139,7 +1231,8 @@ class _DrivePageState extends State<_DrivePage> {
     if (file == null || bytes == null) return;
     const chunkSize = 768 * 1024;
     setState(() => status = '正在上传 ${file.name}');
-    final sessionResult = await widget.api.postJson('/files/upload-sessions', body: {
+    final sessionResult =
+        await widget.api.postJson('/files/upload-sessions', body: {
       'providerKey': 'server_storage',
       'fileName': file.name,
       'totalBytes': bytes.length,
@@ -1157,8 +1250,10 @@ class _DrivePageState extends State<_DrivePage> {
         ((bytes.length + chunkSize - 1) ~/ chunkSize);
     for (var index = 0; index < expected; index += 1) {
       final start = index * chunkSize;
-      final end = (start + chunkSize > bytes.length) ? bytes.length : start + chunkSize;
-      await widget.api.putJson('/files/upload-sessions/$sessionId/chunks/$index', body: {
+      final end =
+          (start + chunkSize > bytes.length) ? bytes.length : start + chunkSize;
+      await widget.api
+          .putJson('/files/upload-sessions/$sessionId/chunks/$index', body: {
         'payloadBase64': encodeBytes(Uint8List.sublistView(bytes, start, end)),
         'startByte': start,
         'endByte': end - 1,
@@ -1175,17 +1270,11 @@ class _DrivePageState extends State<_DrivePage> {
     try {
       final bytes = await _downloadNodeBytes(node, previewOnly: false);
       if (!mounted) return;
-      final blob = html.Blob(
-        [bytes],
-        '${node['mimeType'] ?? 'application/octet-stream'}',
+      await browser.downloadBytes(
+        bytes: bytes,
+        fileName: '${node['name'] ?? 'download'}',
+        mimeType: '${node['mimeType'] ?? 'application/octet-stream'}',
       );
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..download = '${node['name'] ?? 'download'}';
-      html.document.body?.append(anchor);
-      anchor.click();
-      anchor.remove();
-      html.Url.revokeObjectUrl(url);
       setState(() => status = '已开始下载：${node['name']}');
     } catch (error) {
       if (!mounted) return;
@@ -1202,7 +1291,9 @@ class _DrivePageState extends State<_DrivePage> {
   }) async {
     final request = await widget.api.postJson(
       '/files/drive/nodes/${node['id']}/download-request',
-      body: {'targetMode': previewOnly ? 'browser_preview' : 'browser_download'},
+      body: {
+        'targetMode': previewOnly ? 'browser_preview' : 'browser_download'
+      },
     );
     if (request['ok'] == false) {
       final reason = request['reason']?.toString() ?? 'unknown';
@@ -1219,8 +1310,12 @@ class _DrivePageState extends State<_DrivePage> {
     final chunkSize = (session['chunkSize'] as num?)?.toInt() ?? 768 * 1024;
     final targetBytes = previewOnly && total > 512 * 1024 ? 512 * 1024 : total;
     final chunks = <int>[];
-    for (var start = 0; start < targetBytes || (targetBytes == 0 && start == 0); start += chunkSize) {
-      final end = targetBytes == 0 ? chunkSize - 1 : (start + chunkSize - 1).clamp(0, targetBytes - 1);
+    for (var start = 0;
+        start < targetBytes || (targetBytes == 0 && start == 0);
+        start += chunkSize) {
+      final end = targetBytes == 0
+          ? chunkSize - 1
+          : (start + chunkSize - 1).clamp(0, targetBytes - 1);
       final range = await widget.api.getJson(
         '/files/download-sessions/$sessionId/range',
         query: {'start': '$start', 'end': '$end'},
@@ -1250,7 +1345,9 @@ class _DrivePageState extends State<_DrivePage> {
       return;
     }
     final mime = '${node['mimeType'] ?? ''}';
-    if (!(mime.startsWith('text/') || mime.contains('markdown') || mime.startsWith('image/'))) {
+    if (!(mime.startsWith('text/') ||
+        mime.contains('markdown') ||
+        mime.startsWith('image/'))) {
       await _download(node);
       return;
     }
@@ -1266,11 +1363,14 @@ class _DrivePageState extends State<_DrivePage> {
           child: mime.startsWith('image/')
               ? Image.memory(bytes, fit: BoxFit.contain)
               : SingleChildScrollView(
-                  child: SelectableText(utf8.decode(bytes, allowMalformed: true)),
+                  child:
+                      SelectableText(utf8.decode(bytes, allowMalformed: true)),
                 ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭')),
           FilledButton(
             onPressed: () {
               Navigator.of(context).pop();
@@ -1299,7 +1399,8 @@ class _DrivePageState extends State<_DrivePage> {
           icon: const Icon(Icons.upload_file),
           label: const Text('上传'),
         ),
-        IconButton.filledTonal(onPressed: _load, icon: const Icon(Icons.refresh)),
+        IconButton.filledTonal(
+            onPressed: _load, icon: const Icon(Icons.refresh)),
       ],
       scrollable: false,
       child: Column(
@@ -1425,15 +1526,20 @@ class _TrackingPage extends StatefulWidget {
   State<_TrackingPage> createState() => _TrackingPageServerFirstState();
 }
 
+// coverage:ignore-start
+// ignore: unused_element
 class _TrackingPageState extends State<_TrackingPage> {
   late Future<Map<String, dynamic>> future = _load();
 
   Future<Map<String, dynamic>> _load() async {
     return {
-      'summary': await _safe(() => widget.api.getJson('/analytics/activity-range-summary')),
+      'summary': await _safe(
+          () => widget.api.getJson('/analytics/activity-range-summary')),
       'apps': await _safe(() => widget.api.getJson('/analytics/top-apps')),
-      'categories': await _safe(() => widget.api.getJson('/analytics/top-categories')),
-      'work': await _safe(() => widget.api.getJson('/analytics/task-work-summary')),
+      'categories':
+          await _safe(() => widget.api.getJson('/analytics/top-categories')),
+      'work':
+          await _safe(() => widget.api.getJson('/analytics/task-work-summary')),
     };
   }
 
@@ -1459,8 +1565,12 @@ class _TrackingPageState extends State<_TrackingPage> {
               _SummaryPanel(
                 tasks: _readInt(summary['recordCount'] ?? summary['records']),
                 events: _readInt(summary['totalMinutes']),
-                actuals: _mapList(_asMap(data['apps'])['items'] ?? _asMap(data['apps'])['apps']).length,
-                reminders: _mapList(_asMap(data['categories'])['items'] ?? _asMap(data['categories'])['categories']).length,
+                actuals: _mapList(_asMap(data['apps'])['items'] ??
+                        _asMap(data['apps'])['apps'])
+                    .length,
+                reminders: _mapList(_asMap(data['categories'])['items'] ??
+                        _asMap(data['categories'])['categories'])
+                    .length,
                 labels: const ['记录', '分钟', '应用', '分类'],
               ),
               const SizedBox(height: 12),
@@ -1468,7 +1578,8 @@ class _TrackingPageState extends State<_TrackingPage> {
                 left: _ItemSection2(
                   title: 'Top Apps',
                   emptyText: '暂无应用统计。',
-                  items: _mapList(_asMap(data['apps'])['items'] ?? _asMap(data['apps'])['apps']),
+                  items: _mapList(_asMap(data['apps'])['items'] ??
+                      _asMap(data['apps'])['apps']),
                   columns: const ['应用', '分钟', '记录'],
                   row: (item) => [
                     item['processName'] ?? item['app'] ?? item['name'],
@@ -1479,7 +1590,8 @@ class _TrackingPageState extends State<_TrackingPage> {
                 right: _ItemSection2(
                   title: '任务投入',
                   emptyText: '暂无任务投入统计。',
-                  items: _mapList(_asMap(data['work'])['items'] ?? _asMap(data['work'])['tasks']),
+                  items: _mapList(_asMap(data['work'])['items'] ??
+                      _asMap(data['work'])['tasks']),
                   columns: const ['任务', '分钟', '记录'],
                   row: (item) => [
                     item['taskTitle'] ?? item['title'] ?? item['linkedTaskId'],
@@ -1495,6 +1607,7 @@ class _TrackingPageState extends State<_TrackingPage> {
     );
   }
 }
+// coverage:ignore-end
 
 enum _WebTrackingTab { overview, activity, input, details, understanding }
 
@@ -1504,7 +1617,8 @@ class _TrackingPageServerFirstState extends State<_TrackingPage> {
   int refreshSeed = 0;
 
   _EventRange get range {
-    final start = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+    final start =
+        DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
     return _EventRange(start, start.add(const Duration(days: 1)));
   }
 
@@ -1543,25 +1657,40 @@ class _TrackingPageServerFirstState extends State<_TrackingPage> {
           icon: const Icon(Icons.chevron_right),
           label: const Text('后一天'),
         ),
-        IconButton.filledTonal(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+        IconButton.filledTonal(
+            onPressed: _refresh, icon: const Icon(Icons.refresh)),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _InfoStrip(
-            text:
-                '追踪数据由原生客户端采集后上传服务端。浏览器只读取服务端聚合结果、分页明细和活动理解候选，不读取本地追踪缓冲。',
+            text: '追踪数据由原生客户端采集后上传服务端。浏览器只读取服务端聚合结果、分页明细和活动理解候选，不读取本地追踪缓冲。',
           ),
           const SizedBox(height: 12),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SegmentedButton<_WebTrackingTab>(
               segments: const [
-                ButtonSegment(value: _WebTrackingTab.overview, icon: Icon(Icons.dashboard_outlined), label: Text('总览')),
-                ButtonSegment(value: _WebTrackingTab.activity, icon: Icon(Icons.timeline_outlined), label: Text('活动分析')),
-                ButtonSegment(value: _WebTrackingTab.input, icon: Icon(Icons.keyboard_outlined), label: Text('输入行为')),
-                ButtonSegment(value: _WebTrackingTab.details, icon: Icon(Icons.subject_outlined), label: Text('详细数据')),
-                ButtonSegment(value: _WebTrackingTab.understanding, icon: Icon(Icons.psychology_alt_outlined), label: Text('活动理解')),
+                ButtonSegment(
+                    value: _WebTrackingTab.overview,
+                    icon: Icon(Icons.dashboard_outlined),
+                    label: Text('总览')),
+                ButtonSegment(
+                    value: _WebTrackingTab.activity,
+                    icon: Icon(Icons.timeline_outlined),
+                    label: Text('活动分析')),
+                ButtonSegment(
+                    value: _WebTrackingTab.input,
+                    icon: Icon(Icons.keyboard_outlined),
+                    label: Text('输入行为')),
+                ButtonSegment(
+                    value: _WebTrackingTab.details,
+                    icon: Icon(Icons.subject_outlined),
+                    label: Text('详细数据')),
+                ButtonSegment(
+                    value: _WebTrackingTab.understanding,
+                    icon: Icon(Icons.psychology_alt_outlined),
+                    label: Text('活动理解')),
               ],
               selected: {tab},
               onSelectionChanged: (value) => setState(() => tab = value.first),
@@ -1659,21 +1788,27 @@ class _TrackingOverviewTab extends StatelessWidget {
                 title: 'Top Apps',
                 emptyText: '服务端暂未返回应用统计。',
                 items: topApps,
-                nameReader: (item) => '${item['name'] ?? item['processName'] ?? 'unknown'}',
-                valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
+                nameReader: (item) =>
+                    '${item['name'] ?? item['processName'] ?? 'unknown'}',
+                valueReader: (item) =>
+                    '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
               ),
               right: _TrackingMetricList(
                 title: 'Top Categories',
                 emptyText: '服务端暂未返回分类统计。',
                 items: topCategories,
-                nameReader: (item) => '${item['name'] ?? item['category'] ?? 'uncategorized'}',
-                valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
+                nameReader: (item) =>
+                    '${item['name'] ?? item['category'] ?? 'uncategorized'}',
+                valueReader: (item) =>
+                    '${_readInt(item['totalMinutes'])} 分钟 / ${_readInt(item['recordCount'])} 条',
               ),
             ),
             const SizedBox(height: 12),
             _TwoColumn(
-              left: _TrackingWorkSummaryPanel(api: api, range: range, refreshSeed: refreshSeed),
-              right: _TrackingRecordPreviewPanel(title: '最近活动预览', items: preview),
+              left: _TrackingWorkSummaryPanel(
+                  api: api, range: range, refreshSeed: refreshSeed),
+              right:
+                  _TrackingRecordPreviewPanel(title: '最近活动预览', items: preview),
             ),
           ],
         );
@@ -1704,8 +1839,10 @@ class _TrackingActivityTab extends StatelessWidget {
     return Column(
       children: [
         _TrackingFuturePanel(
-          key: ValueKey('activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed'),
-          reloadKey: 'activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed',
+          key: ValueKey(
+              'activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed'),
+          reloadKey:
+              'activity-heatmap-${selectedDay.year}-${selectedDay.month}-$refreshSeed',
           loader: () => api.getJson('/analytics/activity-heatmap', query: {
             'start': monthStart.toIso8601String(),
             'end': monthEnd.toIso8601String(),
@@ -1721,8 +1858,10 @@ class _TrackingActivityTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _TrackingFuturePanel(
-          key: ValueKey('range-analysis-${range.start.toIso8601String()}-$refreshSeed'),
-          reloadKey: 'range-analysis-${range.start.toIso8601String()}-$refreshSeed',
+          key: ValueKey(
+              'range-analysis-${range.start.toIso8601String()}-$refreshSeed'),
+          reloadKey:
+              'range-analysis-${range.start.toIso8601String()}-$refreshSeed',
           loader: () => api.getJson('/analytics/range-analysis', query: {
             'start': range.start.toIso8601String(),
             'end': range.end.toIso8601String(),
@@ -1745,7 +1884,8 @@ class _TrackingActivityTab extends StatelessWidget {
                 const SizedBox(height: 12),
                 _TwoColumn(
                   left: _TrackingSessionsPanel(items: sessions),
-                  right: _TrackingRecordPreviewPanel(title: '区间活动预览', items: preview),
+                  right: _TrackingRecordPreviewPanel(
+                      title: '区间活动预览', items: preview),
                 ),
               ],
             );
@@ -1770,7 +1910,8 @@ class _TrackingInputTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _TrackingFuturePanel(
-      key: ValueKey('input-heatmap-${range.start.toIso8601String()}-$refreshSeed'),
+      key: ValueKey(
+          'input-heatmap-${range.start.toIso8601String()}-$refreshSeed'),
       reloadKey: 'input-heatmap-${range.start.toIso8601String()}-$refreshSeed',
       loader: () => api.getJson('/analytics/input-heatmap', query: {
         'start': range.start.toIso8601String(),
@@ -1794,9 +1935,14 @@ class _TrackingInputTab extends StatelessWidget {
             _TrackingMetricGrid(
               metrics: {
                 '输入桶': buckets.length,
-                '键盘事件': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['keyboardEventCount'])),
-                '鼠标点击': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['mouseButtonEventCount'])),
-                '滚轮事件': buckets.fold<int>(0, (sum, item) => sum + _readInt(item['wheelEventCount'])),
+                '键盘事件': buckets.fold<int>(0,
+                    (sum, item) => sum + _readInt(item['keyboardEventCount'])),
+                '鼠标点击': buckets.fold<int>(
+                    0,
+                    (sum, item) =>
+                        sum + _readInt(item['mouseButtonEventCount'])),
+                '滚轮事件': buckets.fold<int>(
+                    0, (sum, item) => sum + _readInt(item['wheelEventCount'])),
               },
             ),
             const SizedBox(height: 12),
@@ -1805,14 +1951,16 @@ class _TrackingInputTab extends StatelessWidget {
                 title: '键盘按键分布',
                 emptyText: '服务端尚无按键分布数据。',
                 items: topKeys,
-                nameReader: (item) => '${item['label'] ?? item['keyCode'] ?? ''}',
+                nameReader: (item) =>
+                    '${item['label'] ?? item['keyCode'] ?? ''}',
                 valueReader: (item) => '${_readInt(item['count'])} 次',
               ),
               right: _TrackingMetricList(
                 title: '鼠标行为分布',
                 emptyText: '服务端尚无鼠标行为数据。',
                 items: [
-                  for (final entry in mouseCounts.entries) {'name': entry.key, 'count': entry.value},
+                  for (final entry in mouseCounts.entries)
+                    {'name': entry.key, 'count': entry.value},
                 ],
                 nameReader: (item) => _mouseLabel('${item['name']}'),
                 valueReader: (item) => '${_readInt(item['count'])} 次',
@@ -1828,7 +1976,9 @@ class _TrackingInputTab extends StatelessWidget {
                 item['processName'],
                 item['intensityScore'],
                 item['keyEvents'],
-                _readInt(item['mouseButtonEvents']) + _readInt(item['wheelEvents']) + _readInt(item['mouseMoveEvents']),
+                _readInt(item['mouseButtonEvents']) +
+                    _readInt(item['wheelEvents']) +
+                    _readInt(item['mouseMoveEvents']),
                 item['activeMinutes'],
               ],
             ),
@@ -1895,7 +2045,8 @@ class _TrackingDetailsTabState extends State<_TrackingDetailsTab> {
         ),
         const SizedBox(height: 12),
         _TrackingPagedDetailsPanel(
-          key: ValueKey('activity-detail-${widget.range.start.toIso8601String()}-$activityOffset-${widget.refreshSeed}'),
+          key: ValueKey(
+              'activity-detail-${widget.range.start.toIso8601String()}-$activityOffset-${widget.refreshSeed}'),
           title: '活动记录明细',
           emptyText: '服务端没有返回活动记录。',
           api: widget.api,
@@ -1912,20 +2063,28 @@ class _TrackingDetailsTabState extends State<_TrackingDetailsTab> {
             final payload = _asMap(item['payload']);
             return [
               _formatDateTime(_parseDate(item['occurredAt'])),
-              _payloadText(payload, const ['processName', 'process_name', 'packageName', 'appName']),
+              _payloadText(payload, const [
+                'processName',
+                'process_name',
+                'packageName',
+                'appName'
+              ]),
               _payloadText(payload, const ['category']),
               item['metricMinutes'],
-              _payloadText(payload, const ['windowTitle', 'window_title', 'title', 'summary']),
+              _payloadText(payload,
+                  const ['windowTitle', 'window_title', 'title', 'summary']),
             ];
           },
           onPrevious: activityOffset == 0
               ? null
-              : () => setState(() => activityOffset = activityOffset - limit < 0 ? 0 : activityOffset - limit),
+              : () => setState(() => activityOffset =
+                  activityOffset - limit < 0 ? 0 : activityOffset - limit),
           onNext: () => setState(() => activityOffset += limit),
         ),
         const SizedBox(height: 12),
         _TrackingPagedDetailsPanel(
-          key: ValueKey('input-detail-${widget.range.start.toIso8601String()}-$inputOffset-${widget.refreshSeed}'),
+          key: ValueKey(
+              'input-detail-${widget.range.start.toIso8601String()}-$inputOffset-${widget.refreshSeed}'),
           title: '输入事件明细',
           emptyText: '服务端没有返回输入事件。',
           api: widget.api,
@@ -1951,7 +2110,8 @@ class _TrackingDetailsTabState extends State<_TrackingDetailsTab> {
           },
           onPrevious: inputOffset == 0
               ? null
-              : () => setState(() => inputOffset = inputOffset - limit < 0 ? 0 : inputOffset - limit),
+              : () => setState(() => inputOffset =
+                  inputOffset - limit < 0 ? 0 : inputOffset - limit),
           onNext: () => setState(() => inputOffset += limit),
         ),
       ],
@@ -1979,28 +2139,34 @@ class _TrackingUnderstandingTab extends StatelessWidget {
     });
     onChanged();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已请求服务端重新生成活动片段。')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已请求服务端重新生成活动片段。')));
     }
   }
 
   Future<void> _confirm(BuildContext context, Map<String, dynamic> item) async {
-    await api.postJson('/activity-understanding/segments/${item['id']}/confirm', body: {
-      'title': item['title'] ?? item['summary'] ?? '已确认活动',
-      if ('${item['matchedTaskId'] ?? ''}'.isNotEmpty) 'taskId': '${item['matchedTaskId']}',
-    });
+    await api.postJson('/activity-understanding/segments/${item['id']}/confirm',
+        body: {
+          'title': item['title'] ?? item['summary'] ?? '已确认活动',
+          if ('${item['matchedTaskId'] ?? ''}'.isNotEmpty)
+            'taskId': '${item['matchedTaskId']}',
+        });
     onChanged();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('活动片段已确认，服务端会写入实际记录和任务投入。')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('活动片段已确认，服务端会写入实际记录和任务投入。')));
     }
   }
 
   Future<void> _reject(BuildContext context, Map<String, dynamic> item) async {
-    await api.postJson('/activity-understanding/segments/${item['id']}/reject', body: {
-      'reason': 'web_user_rejected',
-    });
+    await api.postJson('/activity-understanding/segments/${item['id']}/reject',
+        body: {
+          'reason': 'web_user_rejected',
+        });
     onChanged();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('活动片段已拒绝。')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('活动片段已拒绝。')));
     }
   }
 
@@ -2018,7 +2184,8 @@ class _TrackingUnderstandingTab extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _TrackingFuturePanel(
-          key: ValueKey('segments-${range.start.toIso8601String()}-$refreshSeed'),
+          key: ValueKey(
+              'segments-${range.start.toIso8601String()}-$refreshSeed'),
           reloadKey: 'segments-${range.start.toIso8601String()}-$refreshSeed',
           loader: () => api.getJson('/activity-understanding/segments', query: {
             'start': range.start.toIso8601String(),
@@ -2040,9 +2207,15 @@ class _TrackingUnderstandingTab extends StatelessWidget {
                 Wrap(
                   spacing: 4,
                   children: [
-                    TextButton(onPressed: () => _showSegmentDetail(context, item), child: const Text('详情')),
-                    TextButton(onPressed: () => _confirm(context, item), child: const Text('确认')),
-                    TextButton(onPressed: () => _reject(context, item), child: const Text('拒绝')),
+                    TextButton(
+                        onPressed: () => _showSegmentDetail(context, item),
+                        child: const Text('详情')),
+                    TextButton(
+                        onPressed: () => _confirm(context, item),
+                        child: const Text('确认')),
+                    TextButton(
+                        onPressed: () => _reject(context, item),
+                        child: const Text('拒绝')),
                   ],
                 ),
               ],
@@ -2075,7 +2248,9 @@ class _TrackingUnderstandingTab extends StatelessWidget {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭')),
         ],
       ),
     );
@@ -2093,10 +2268,12 @@ class _TrackingDetailFilterBar extends StatefulWidget {
   final String processFilter;
   final String categoryFilter;
   final String eventKindFilter;
-  final void Function(String process, String category, String eventKind) onApply;
+  final void Function(String process, String category, String eventKind)
+      onApply;
 
   @override
-  State<_TrackingDetailFilterBar> createState() => _TrackingDetailFilterBarState();
+  State<_TrackingDetailFilterBar> createState() =>
+      _TrackingDetailFilterBarState();
 }
 
 class _TrackingDetailFilterBarState extends State<_TrackingDetailFilterBar> {
@@ -2201,7 +2378,8 @@ class _TrackingFuturePanelState extends State<_TrackingFuturePanel> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _Panel(
             title: '加载中',
-            child: SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
+            child: SizedBox(
+                height: 180, child: Center(child: CircularProgressIndicator())),
           );
         }
         if (snapshot.hasError) {
@@ -2252,7 +2430,11 @@ class _TrackingMetricGrid extends StatelessWidget {
               children: [
                 Text(entry.key, style: const TextStyle(color: Colors.black54)),
                 const Spacer(),
-                Text('${entry.value}', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                Text('${entry.value}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ),
           );
@@ -2295,7 +2477,9 @@ class _TrackingHeatmapPanel extends StatelessWidget {
           : LayoutBuilder(
               builder: (context, constraints) {
                 final columns = constraints.maxWidth > 900 ? 14 : 7;
-                final cellSize = ((constraints.maxWidth - (columns - 1) * 6) / columns).clamp(32.0, 72.0);
+                final cellSize =
+                    ((constraints.maxWidth - (columns - 1) * 6) / columns)
+                        .clamp(32.0, 72.0);
                 return Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -2310,7 +2494,8 @@ class _TrackingHeatmapPanel extends StatelessWidget {
                         onTap: onBucketSelected == null
                             ? null
                             : () {
-                                final parsed = _parseDate(bucket['bucketStart']);
+                                final parsed =
+                                    _parseDate(bucket['bucketStart']);
                                 if (parsed != null) onBucketSelected!(parsed);
                               },
                       ),
@@ -2342,10 +2527,12 @@ class _HeatmapCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
-    final color = Color.lerp(const Color(0xFFEFF6FF), const Color(0xFF2563EB), ratio)!;
+    final color =
+        Color.lerp(const Color(0xFFEFF6FF), const Color(0xFF2563EB), ratio)!;
     final date = _parseDate(bucket['bucketStart']);
     return Tooltip(
-      message: '${_formatDateTime(date)}\n${value.toStringAsFixed(0)} $valueLabel',
+      message:
+          '${_formatDateTime(date)}\n${value.toStringAsFixed(0)} $valueLabel',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -2363,8 +2550,13 @@ class _HeatmapCell extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(date == null ? '--' : '${date.month}/${date.day}', style: TextStyle(color: ratio > 0.55 ? Colors.white : Colors.black87)),
-                Text(value.toStringAsFixed(0), style: TextStyle(fontWeight: FontWeight.w800, color: ratio > 0.55 ? Colors.white : Colors.black87)),
+                Text(date == null ? '--' : '${date.month}/${date.day}',
+                    style: TextStyle(
+                        color: ratio > 0.55 ? Colors.white : Colors.black87)),
+                Text(value.toStringAsFixed(0),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: ratio > 0.55 ? Colors.white : Colors.black87)),
               ],
             ),
           ),
@@ -2394,7 +2586,10 @@ class _TrackingMetricList extends StatelessWidget {
     return _Panel(
       title: title,
       child: items.isEmpty
-          ? _EmptyState(icon: Icons.insights_outlined, title: emptyText, message: '等待客户端上传追踪数据后会显示。')
+          ? _EmptyState(
+              icon: Icons.insights_outlined,
+              title: emptyText,
+              message: '等待客户端上传追踪数据后会显示。')
           : Column(
               children: [
                 for (final item in items.take(12))
@@ -2402,7 +2597,9 @@ class _TrackingMetricList extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
-                        Expanded(child: Text(nameReader(item), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        Expanded(
+                            child: Text(nameReader(item),
+                                maxLines: 1, overflow: TextOverflow.ellipsis)),
                         const SizedBox(width: 8),
                         _StatusChip(label: valueReader(item)),
                       ],
@@ -2439,7 +2636,8 @@ class _TrackingWorkSummaryPanel extends StatelessWidget {
         title: '任务实际投入',
         emptyText: '服务端暂无任务投入统计。',
         items: _mapList(data['items']),
-        nameReader: (item) => '${item['taskTitle'] ?? item['title'] ?? item['name'] ?? 'unlinked'}',
+        nameReader: (item) =>
+            '${item['taskTitle'] ?? item['title'] ?? item['name'] ?? 'unlinked'}',
         valueReader: (item) => '${_readInt(item['totalMinutes'])} 分钟',
       ),
     );
@@ -2466,7 +2664,8 @@ class _TrackingRecordPreviewPanel extends StatelessWidget {
         final payload = _asMap(item['payload']);
         return [
           _formatDateTime(_parseDate(item['occurredAt'])),
-          _payloadText(payload, const ['processName', 'process_name', 'packageName', 'appName']),
+          _payloadText(payload,
+              const ['processName', 'process_name', 'packageName', 'appName']),
           _payloadText(payload, const ['category']),
           item['metricMinutes'],
         ];
@@ -2563,7 +2762,9 @@ class _TrackingPagedDetailsPanel extends StatelessWidget {
               children: [
                 OutlinedButton(onPressed: onPrevious, child: const Text('上一页')),
                 const SizedBox(width: 8),
-                FilledButton.tonal(onPressed: hasMore ? onNext : null, child: const Text('下一页')),
+                FilledButton.tonal(
+                    onPressed: hasMore ? onNext : null,
+                    child: const Text('下一页')),
               ],
             ),
           ],
@@ -2590,8 +2791,10 @@ class _ReportsPageState extends State<_ReportsPage> {
     return {
       'reports': await _safe(() => widget.api.getJson('/reports')),
       'diary': await _safe(() => widget.api.getJson('/diary')),
-      'weatherLocations': await _safe(() => widget.api.getJson('/weather/locations')),
-      'weatherSummary': await _safe(() => widget.api.getJson('/weather/summary')),
+      'weatherLocations':
+          await _safe(() => widget.api.getJson('/weather/locations')),
+      'weatherSummary':
+          await _safe(() => widget.api.getJson('/weather/summary')),
       'channels': await _safe(() => widget.api.getJson('/push/channels')),
       'deliveries': await _safe(() => widget.api.getJson('/push/deliveries')),
     };
@@ -2648,12 +2851,12 @@ class _ReportsPageState extends State<_ReportsPage> {
     );
     if (result == null) return;
     await _run(() async {
-        await widget.api.patchJson('/reports/${item['id']}', body: {
-          'title': result['title'],
-          'contentMarkdown': result['markdown'],
-          if ((result['userNote'] ?? '').isNotEmpty)
-            'userNote': result['userNote'],
-        });
+      await widget.api.patchJson('/reports/${item['id']}', body: {
+        'title': result['title'],
+        'contentMarkdown': result['markdown'],
+        if ((result['userNote'] ?? '').isNotEmpty)
+          'userNote': result['userNote'],
+      });
       return '报告已保存。';
     });
   }
@@ -2694,18 +2897,22 @@ class _ReportsPageState extends State<_ReportsPage> {
                 for (final entry in _mapList(detail['entries']))
                   ListTile(
                     dense: true,
-                    title: Text('[${entry['claimType'] ?? entry['entryType']}] ${entry['title'] ?? ''}'),
+                    title: Text(
+                        '[${entry['claimType'] ?? entry['entryType']}] ${entry['title'] ?? ''}'),
                     subtitle: Text('${entry['body'] ?? ''}'),
                   ),
                 const Divider(height: 28),
                 for (final evidence in _mapList(detail['evidence']))
-                  Text('- ${evidence['evidenceType']}: ${evidence['sourceType']} ${evidence['summary'] ?? ''}'),
+                  Text(
+                      '- ${evidence['evidenceType']}: ${evidence['sourceType']} ${evidence['summary'] ?? ''}'),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭')),
         ],
       ),
     );
@@ -2756,9 +2963,12 @@ class _ReportsPageState extends State<_ReportsPage> {
         'name': result['name'],
         'status': 'enabled',
         'config': {
-          if ('${result['url']}'.trim().isNotEmpty) 'url': '${result['url']}'.trim(),
-          if ('${result['botToken']}'.trim().isNotEmpty) 'botToken': '${result['botToken']}'.trim(),
-          if ('${result['chatId']}'.trim().isNotEmpty) 'chatId': '${result['chatId']}'.trim(),
+          if ('${result['url']}'.trim().isNotEmpty)
+            'url': '${result['url']}'.trim(),
+          if ('${result['botToken']}'.trim().isNotEmpty)
+            'botToken': '${result['botToken']}'.trim(),
+          if ('${result['chatId']}'.trim().isNotEmpty)
+            'chatId': '${result['chatId']}'.trim(),
         },
       });
       return '推送渠道已保存。';
@@ -2769,16 +2979,17 @@ class _ReportsPageState extends State<_ReportsPage> {
   Widget build(BuildContext context) {
     return _AsyncPage(
       future: future,
-      onRefresh: () {
-        setState(() {
-          future = _load();
-        });
-      },
+      onRefresh: _refresh,
       builder: (context, data) {
         return _PageBody(
           title: '报告与日记',
           subtitle: '查看、生成和确认服务端报告草稿。',
           actions: [
+            IconButton.filledTonal(
+              tooltip: 'Refresh',
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+            ),
             FilledButton.icon(
               onPressed: _generateReport,
               icon: const Icon(Icons.auto_awesome),
@@ -2803,8 +3014,7 @@ class _ReportsPageState extends State<_ReportsPage> {
           child: Column(
             children: [
               _InfoStrip(
-                text:
-                    '模板报告和模板日记不依赖 AI。AI 润色失败时会保留原草稿；位置和蓝牙当前不采集。',
+                text: '模板报告和模板日记不依赖 AI。AI 润色失败时会保留原草稿；位置和蓝牙当前不采集。',
               ),
               if (status.isNotEmpty) ...[
                 const SizedBox(height: 10),
@@ -2815,32 +3025,42 @@ class _ReportsPageState extends State<_ReportsPage> {
                 left: _ItemSection2(
                   title: '报告',
                   emptyText: '暂无报告。',
-                  items: _mapList(_asMap(data['reports'])['reports'] ?? _asMap(data['reports'])['items']),
+                  items: _mapList(_asMap(data['reports'])['reports'] ??
+                      _asMap(data['reports'])['items']),
                   columns: const ['标题', '类型', '状态', '操作'],
                   row: (item) => [
                     item['title'],
                     item['reportType'] ?? item['type'],
                     item['status'],
                     Wrap(spacing: 4, children: [
-                      TextButton(onPressed: () => _openReport(item), child: const Text('查看')),
-                      TextButton(onPressed: () => _editReport(item), child: const Text('编辑')),
+                      TextButton(
+                          onPressed: () => _openReport(item),
+                          child: const Text('查看')),
+                      TextButton(
+                          onPressed: () => _editReport(item),
+                          child: const Text('编辑')),
                       TextButton(
                         onPressed: () => _run(() async {
-                          await widget.api.postJson('/reports/${item['id']}/confirm');
+                          await widget.api
+                              .postJson('/reports/${item['id']}/confirm');
                           return '报告已确认。';
                         }),
                         child: const Text('确认'),
                       ),
                       TextButton(
                         onPressed: () => _run(() async {
-                          final result = await widget.api.postJson('/reports/${item['id']}/polish');
-                          return result['llmApplied'] == true ? 'AI 润色已加入报告。' : 'AI 不可用，已保留模板报告。';
+                          final result = await widget.api
+                              .postJson('/reports/${item['id']}/polish');
+                          return result['llmApplied'] == true
+                              ? 'AI 润色已加入报告。'
+                              : 'AI 不可用，已保留模板报告。';
                         }),
                         child: const Text('AI 润色'),
                       ),
                       TextButton(
                         onPressed: () => _run(() async {
-                          await widget.api.postJson('/reports/${item['id']}/push');
+                          await widget.api
+                              .postJson('/reports/${item['id']}/push');
                           return '已创建推送记录并尝试发送。';
                         }),
                         child: const Text('推送'),
@@ -2851,25 +3071,32 @@ class _ReportsPageState extends State<_ReportsPage> {
                 right: _ItemSection2(
                   title: '日记',
                   emptyText: '暂无日记。',
-                  items: _mapList(_asMap(data['diary'])['diary'] ?? _asMap(data['diary'])['items']),
+                  items: _mapList(_asMap(data['diary'])['diary'] ??
+                      _asMap(data['diary'])['items']),
                   columns: const ['标题', '日期', '状态', '操作'],
                   row: (item) => [
                     item['title'],
                     item['date'] ?? item['entryDate'],
                     item['status'],
                     Wrap(spacing: 4, children: [
-                      TextButton(onPressed: () => _editDiary(item), child: const Text('编辑')),
+                      TextButton(
+                          onPressed: () => _editDiary(item),
+                          child: const Text('编辑')),
                       TextButton(
                         onPressed: () => _run(() async {
-                          await widget.api.postJson('/diary/${item['id']}/confirm');
+                          await widget.api
+                              .postJson('/diary/${item['id']}/confirm');
                           return '日记已确认。';
                         }),
                         child: const Text('确认'),
                       ),
                       TextButton(
                         onPressed: () => _run(() async {
-                          final result = await widget.api.postJson('/diary/${item['id']}/polish');
-                          return result['llmApplied'] == true ? 'AI 润色已加入日记。' : 'AI 不可用，已保留模板日记。';
+                          final result = await widget.api
+                              .postJson('/diary/${item['id']}/polish');
+                          return result['llmApplied'] == true
+                              ? 'AI 润色已加入日记。'
+                              : 'AI 不可用，已保留模板日记。';
                         }),
                         child: const Text('AI 润色'),
                       ),
@@ -2902,8 +3129,11 @@ class _ReportsPageState extends State<_ReportsPage> {
                     item['status'] == 'failed'
                         ? TextButton(
                             onPressed: () => _run(() async {
-                              final result = await widget.api.postJson('/push/deliveries/${item['id']}/retry');
-                              return result['ok'] == true ? '重试成功。' : '重试失败，已记录原因。';
+                              final result = await widget.api.postJson(
+                                  '/push/deliveries/${item['id']}/retry');
+                              return result['ok'] == true
+                                  ? '重试成功。'
+                                  : '重试失败，已记录原因。';
                             }),
                             child: const Text('重试'),
                           )
@@ -2977,24 +3207,31 @@ class _SettingsPageState extends State<_SettingsPage> {
   }
 
   Future<void> _requestNotification() async {
-    final permission = await html.Notification.requestPermission();
+    final permission = await browser.requestNotificationPermission();
     setState(() => status = '浏览器通知权限：$permission');
+  }
+
+  void _refresh() {
+    setState(() {
+      future = _load();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return _AsyncPage(
       future: future,
-      onRefresh: () {
-        setState(() {
-          future = _load();
-        });
-      },
+      onRefresh: _refresh,
       builder: (context, data) {
         return _PageBody(
           title: '设置',
           subtitle: '这里只保留用户端必要设置；全局数据管理请打开 Web Admin。',
           actions: [
+            IconButton.filledTonal(
+              tooltip: 'Refresh',
+              onPressed: _refresh,
+              icon: const Icon(Icons.refresh),
+            ),
             FilledButton.icon(
               onPressed: _saveLocal,
               icon: const Icon(Icons.save_outlined),
@@ -3014,7 +3251,8 @@ class _SettingsPageState extends State<_SettingsPage> {
                   children: [
                     TextField(
                       controller: baseUrl,
-                      decoration: const InputDecoration(labelText: '服务端 API 地址'),
+                      decoration:
+                          const InputDecoration(labelText: '服务端 API 地址'),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -3027,7 +3265,9 @@ class _SettingsPageState extends State<_SettingsPage> {
                       '设备 ID': widget.connection.deviceId,
                       'Token': widget.store.accessToken == null ? '未保存' : '已保存',
                       '服务端时间': widget.connection.serverTime,
-                      '最后心跳': widget.connection.lastHeartbeatAt?.toIso8601String() ?? '尚无',
+                      '最后心跳': widget.connection.lastHeartbeatAt
+                              ?.toIso8601String() ??
+                          '尚无',
                     }),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -3038,7 +3278,8 @@ class _SettingsPageState extends State<_SettingsPage> {
                       ),
                     ),
                     if (status.isNotEmpty)
-                      Align(alignment: Alignment.centerLeft, child: Text(status)),
+                      Align(
+                          alignment: Alignment.centerLeft, child: Text(status)),
                   ],
                 ),
               ),
@@ -3061,7 +3302,8 @@ class _SettingsPageState extends State<_SettingsPage> {
               const SizedBox(height: 12),
               _Panel(
                 title: '管理端',
-                child: const Text('完整数据管理和系统维护请使用 web_admin。Flutter Web 只作为日常使用端。'),
+                child: const Text(
+                    '完整数据管理和系统维护请使用 web_admin。Flutter Web 只作为日常使用端。'),
               ),
             ],
           ),
@@ -3081,6 +3323,7 @@ class _ListPage extends StatelessWidget {
     required this.onRefresh,
     required this.child,
     required this.action,
+    this.refreshKey,
   });
 
   final String title;
@@ -3091,6 +3334,7 @@ class _ListPage extends StatelessWidget {
   final VoidCallback onRefresh;
   final Widget child;
   final Widget action;
+  final Key? refreshKey;
 
   @override
   Widget build(BuildContext context) {
@@ -3114,7 +3358,11 @@ class _ListPage extends StatelessWidget {
           ),
         ),
         action,
-        IconButton.filledTonal(onPressed: onRefresh, icon: const Icon(Icons.refresh)),
+        IconButton.filledTonal(
+          key: refreshKey,
+          onPressed: onRefresh,
+          icon: const Icon(Icons.refresh),
+        ),
       ],
       child: child,
     );
@@ -3209,12 +3457,14 @@ class _PageBody extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                     ),
                     const SizedBox(height: 4),
-                    Text(subtitle, style: const TextStyle(color: Colors.black54)),
+                    Text(subtitle,
+                        style: const TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),
@@ -3255,7 +3505,10 @@ class _AppHeader extends StatelessWidget {
         children: [
           Text(
             'FlowPlanV2',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(width: 16),
           Text(title, style: const TextStyle(color: Colors.black54)),
@@ -3265,10 +3518,13 @@ class _AppHeader extends StatelessWidget {
             tone: connection.online ? _ChipTone.success : _ChipTone.warning,
           ),
           const SizedBox(width: 8),
-          _StatusDot(color: connection.online ? Colors.green : Colors.redAccent),
+          _StatusDot(
+              color: connection.online ? Colors.green : Colors.redAccent),
           const SizedBox(width: 6),
-          Text(_shortDeviceLabel(connection.deviceId), style: Theme.of(context).textTheme.bodySmall),
+          Text(_shortDeviceLabel(connection.deviceId),
+              style: Theme.of(context).textTheme.bodySmall),
           IconButton(
+            key: AppKeys.webShellRefreshConnection,
             tooltip: '刷新连接',
             onPressed: onRefresh,
             icon: const Icon(Icons.refresh),
@@ -3301,7 +3557,10 @@ class _FocusPanel extends StatelessWidget {
               children: [
                 Text(
                   '${main['title'] ?? '未命名'}',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 10),
                 _KeyValueList({
@@ -3355,11 +3614,15 @@ class _SummaryPanel extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(labels[index], style: const TextStyle(color: Colors.black54)),
+              Text(labels[index],
+                  style: const TextStyle(color: Colors.black54)),
               const Spacer(),
               Text(
                 '${values[index]}',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
             ],
           ),
@@ -3417,7 +3680,8 @@ class _ItemSection2 extends StatelessWidget {
     return _Panel(
       title: title,
       child: loading
-          ? const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()))
+          ? const SizedBox(
+              height: 180, child: Center(child: CircularProgressIndicator()))
           : items.isEmpty
               ? _EmptyState(
                   icon: Icons.inbox_outlined,
@@ -3432,7 +3696,8 @@ class _ItemSection2 extends StatelessWidget {
                           for (final item in items)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: _ItemCard(columns: columns, cells: row(item)),
+                              child:
+                                  _ItemCard(columns: columns, cells: row(item)),
                             ),
                         ],
                       );
@@ -3443,7 +3708,9 @@ class _ItemSection2 extends StatelessWidget {
                         scrollDirection: Axis.horizontal,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
-                            minWidth: tableMinWidth > constraints.maxWidth ? tableMinWidth : constraints.maxWidth,
+                            minWidth: tableMinWidth > constraints.maxWidth
+                                ? tableMinWidth
+                                : constraints.maxWidth,
                           ),
                           child: DataTable(
                             columnSpacing: 18,
@@ -3455,7 +3722,8 @@ class _ItemSection2 extends StatelessWidget {
                                 DataColumn(
                                   label: SizedBox(
                                     width: i == columns.length - 1 ? 112 : 150,
-                                    child: Text(columns[i], overflow: TextOverflow.ellipsis),
+                                    child: Text(columns[i],
+                                        overflow: TextOverflow.ellipsis),
                                   ),
                                 ),
                             ],
@@ -3463,23 +3731,31 @@ class _ItemSection2 extends StatelessWidget {
                               for (final item in items)
                                 DataRow(
                                   cells: [
-                                    for (final entry in row(item).asMap().entries)
+                                    for (final entry
+                                        in row(item).asMap().entries)
                                       DataCell(
                                         SizedBox(
-                                          width: entry.key == row(item).length - 1 ? 112 : 150,
+                                          width:
+                                              entry.key == row(item).length - 1
+                                                  ? 112
+                                                  : 150,
                                           child: entry.value is Widget
                                               ? Align(
-                                                  alignment: Alignment.centerLeft,
+                                                  alignment:
+                                                      Alignment.centerLeft,
                                                   child: FittedBox(
                                                     fit: BoxFit.scaleDown,
-                                                    alignment: Alignment.centerLeft,
-                                                    child: entry.value as Widget,
+                                                    alignment:
+                                                        Alignment.centerLeft,
+                                                    child:
+                                                        entry.value as Widget,
                                                   ),
                                                 )
                                               : Text(
                                                   _cellText(entry.value),
                                                   maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                         ),
                                       ),
@@ -3519,7 +3795,9 @@ class _ItemCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: cells[i] is Widget
-                  ? Align(alignment: Alignment.centerLeft, child: cells[i] as Widget)
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: cells[i] as Widget)
                   : Text(
                       '${i < columns.length ? '${columns[i]}：' : ''}${_cellText(cells[i])}',
                       maxLines: i == 0 ? 2 : 1,
@@ -3532,6 +3810,8 @@ class _ItemCard extends StatelessWidget {
   }
 }
 
+// coverage:ignore-start
+// ignore: unused_element
 class _ItemSection extends StatelessWidget {
   const _ItemSection({
     required this.title,
@@ -3539,7 +3819,7 @@ class _ItemSection extends StatelessWidget {
     required this.items,
     required this.columns,
     required this.row,
-    this.loading = false,
+    required this.loading,
   });
 
   final String title;
@@ -3554,7 +3834,8 @@ class _ItemSection extends StatelessWidget {
     return _Panel(
       title: title,
       child: loading
-          ? const SizedBox(height: 180, child: Center(child: CircularProgressIndicator()))
+          ? const SizedBox(
+              height: 180, child: Center(child: CircularProgressIndicator()))
           : items.isEmpty
               ? _EmptyState(
                   icon: Icons.inbox_outlined,
@@ -3567,7 +3848,10 @@ class _ItemSection extends StatelessWidget {
                     headingRowHeight: 40,
                     dataRowMinHeight: 44,
                     dataRowMaxHeight: 66,
-                    columns: [for (final column in columns) DataColumn(label: Text(column))],
+                    columns: [
+                      for (final column in columns)
+                        DataColumn(label: Text(column))
+                    ],
                     rows: [
                       for (final item in items)
                         DataRow(
@@ -3577,7 +3861,8 @@ class _ItemSection extends StatelessWidget {
                                 cell is Widget
                                     ? cell
                                     : ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 240),
+                                        constraints:
+                                            const BoxConstraints(maxWidth: 240),
                                         child: Text(
                                           _cellText(cell),
                                           overflow: TextOverflow.ellipsis,
@@ -3592,6 +3877,7 @@ class _ItemSection extends StatelessWidget {
     );
   }
 }
+// coverage:ignore-end
 
 class _Panel extends StatelessWidget {
   const _Panel({required this.title, required this.child});
@@ -3607,7 +3893,11 @@ class _Panel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
             child,
           ],
@@ -3662,7 +3952,8 @@ class _KeyValueList extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 82,
-                  child: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(entry.key,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
                 Expanded(child: Text(_cellText(entry.value))),
               ],
@@ -3696,9 +3987,15 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(icon, size: 38, color: Colors.black38),
             const SizedBox(height: 10),
-            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54)),
             if (action != null) ...[
               const SizedBox(height: 12),
               action!,
@@ -3715,6 +4012,18 @@ class _NavItem {
 
   final String label;
   final IconData icon;
+}
+
+Key _webShellDestinationKey(int index) {
+  return switch (index) {
+    0 => AppKeys.webShellToday,
+    1 => AppKeys.webShellEvents,
+    2 => AppKeys.webShellTasks,
+    3 => AppKeys.webShellDrive,
+    4 => AppKeys.webShellTracking,
+    5 => AppKeys.webShellReports,
+    _ => AppKeys.webShellSettings,
+  };
 }
 
 class _ConnectionState {
@@ -3830,18 +4139,25 @@ DateTime? _eventEnd(Map<String, dynamic> item) {
 String _eventNotes(Map<String, dynamic>? item) {
   if (item == null) return '';
   final payload = _asMap(item['payload']);
-  return '${item['notes'] ?? item['description'] ?? payload['notes'] ?? payload['note'] ?? payload['description'] ?? ''}'.trim();
+  return '${item['notes'] ?? item['description'] ?? payload['notes'] ?? payload['note'] ?? payload['description'] ?? ''}'
+      .trim();
 }
 
 bool _isBlockingEvent(Map<String, dynamic> item) {
   final payload = _asMap(item['payload']);
-  final value = item['isBlock'] ?? payload['isBlock'] ?? payload['blocking'] ?? payload['isBlocking'] ?? false;
+  final value = item['isBlock'] ??
+      payload['isBlock'] ??
+      payload['blocking'] ??
+      payload['isBlocking'] ??
+      false;
   return value == true || '$value'.toLowerCase() == 'true';
 }
 
 bool _isSameDay(DateTime? value, DateTime day) {
   if (value == null) return false;
-  return value.year == day.year && value.month == day.month && value.day == day.day;
+  return value.year == day.year &&
+      value.month == day.month &&
+      value.day == day.day;
 }
 
 DateTime _startOfWeek(DateTime day) {
@@ -3852,7 +4168,8 @@ DateTime _startOfWeek(DateTime day) {
 _EventRange _eventRangeFor(_EventViewMode mode, DateTime selectedDay) {
   switch (mode) {
     case _EventViewMode.timeline:
-      final start = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+      final start =
+          DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
       return _EventRange(start, start.add(const Duration(days: 1)));
     case _EventViewMode.list:
       final start = DateTime(selectedDay.year, selectedDay.month);
@@ -3932,7 +4249,10 @@ String _mouseLabel(String value) {
 
 String _csvText(Object? value) {
   if (value is Iterable) {
-    return value.map((item) => '$item').where((item) => item.trim().isNotEmpty).join(', ');
+    return value
+        .map((item) => '$item')
+        .where((item) => item.trim().isNotEmpty)
+        .join(', ');
   }
   return _cellText(value);
 }
@@ -3962,7 +4282,8 @@ Future<Map<String, dynamic>?> _editDialog(
   required Map<String, List<String>> fields,
 }) async {
   final controllers = {
-    for (final entry in fields.entries) entry.key: TextEditingController(text: entry.value[1]),
+    for (final entry in fields.entries)
+      entry.key: TextEditingController(text: entry.value[1]),
   };
   final saved = await showDialog<bool>(
     context: context,
@@ -3985,8 +4306,12 @@ Future<Map<String, dynamic>?> _editDialog(
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('保存')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消')),
+        FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('保存')),
       ],
     ),
   );
@@ -4001,10 +4326,10 @@ Future<Map<String, String>?> _editMarkdownDialogWeb(
   required String title,
   required String initialTitle,
   required String initialMarkdown,
-  }) async {
-    final titleController = TextEditingController(text: initialTitle);
-    final markdownController = TextEditingController(text: initialMarkdown);
-    final userNoteController = TextEditingController();
+}) async {
+  final titleController = TextEditingController(text: initialTitle);
+  final markdownController = TextEditingController(text: initialMarkdown);
+  final userNoteController = TextEditingController();
   final saved = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -4025,32 +4350,36 @@ Future<Map<String, String>?> _editMarkdownDialogWeb(
               maxLines: 18,
               decoration: const InputDecoration(
                 labelText: 'Markdown 内容',
-                  alignLabelWithHint: true,
-                ),
+                alignLabelWithHint: true,
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: userNoteController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '用户补充，可留空',
-                  alignLabelWithHint: true,
-                ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: userNoteController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: '用户补充，可留空',
+                alignLabelWithHint: true,
               ),
+            ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('保存')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消')),
+        FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('保存')),
       ],
     ),
   );
   if (saved != true) return null;
-    return {
-      'title': titleController.text.trim(),
-      'markdown': markdownController.text.trim(),
-      'userNote': userNoteController.text.trim(),
-    };
-  }
+  return {
+    'title': titleController.text.trim(),
+    'markdown': markdownController.text.trim(),
+    'userNote': userNoteController.text.trim(),
+  };
+}

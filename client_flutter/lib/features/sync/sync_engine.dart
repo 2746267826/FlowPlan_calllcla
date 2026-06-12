@@ -137,6 +137,7 @@ class SyncEngine {
   final OutlookTaskMirrorRepository _taskMirrorRepo;
   final OutlookConfig _config;
   final DataOperationLogRepository? _operationLogRepository;
+  final MsGraphServiceFactory _graphServiceFactory;
   late MsGraphService _graphService;
 
   static const _deltaLinkKeyPrefix = 'outlook_sync_delta_link.';
@@ -170,8 +171,18 @@ class SyncEngine {
     this._taskRepo,
     this._taskListBindingsRepo,
     this._taskMirrorRepo,
-    this._config,
-    [this._operationLogRepository]);
+    this._config, [
+    this._operationLogRepository,
+    MsGraphServiceFactory? graphServiceFactory,
+  ]) : _graphServiceFactory =
+            graphServiceFactory ?? _defaultGraphServiceFactory;
+
+  static MsGraphService _defaultGraphServiceFactory(
+    OutlookConfig config, {
+    required OutlookSyncMode syncMode,
+  }) {
+    return MsGraphService(config, syncMode: syncMode);
+  }
 
   Future<
       ({
@@ -193,7 +204,7 @@ class SyncEngine {
         mirroredConflicted: 0,
       );
     }
-    _graphService = MsGraphService(_config, syncMode: syncMode);
+    _graphService = _graphServiceFactory(_config, syncMode: syncMode);
 
     try {
       final calendars = await _syncCalendars();
@@ -326,7 +337,8 @@ class SyncEngine {
       }
 
       final colorHex = MsGraphService.calendarColorHexOf(calendar);
-      final localCalendarId = await _calendarBooksRepo.upsertSyncedEventCalendar(
+      final localCalendarId =
+          await _calendarBooksRepo.upsertSyncedEventCalendar(
         source: 'outlook',
         remoteId: remoteCalendarId,
         name: calendarName,
@@ -364,7 +376,9 @@ class SyncEngine {
     final prefs = await SharedPreferences.getInstance();
     for (final calendar in localCalendars) {
       final remoteId = calendar.syncUrl?.trim();
-      if (remoteId == null || remoteId.isEmpty || remoteIds.contains(remoteId)) {
+      if (remoteId == null ||
+          remoteId.isEmpty ||
+          remoteIds.contains(remoteId)) {
         continue;
       }
 
@@ -376,7 +390,8 @@ class SyncEngine {
         calendar.id,
         actor: 'sync',
         action: 'delete_stale_synced_calendar',
-        summary: '\u79fb\u9664\u5df2\u5931\u6548\u7684 Outlook \u540c\u6b65\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        summary:
+            '\u79fb\u9664\u5df2\u5931\u6548\u7684 Outlook \u540c\u6b65\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
         metadata: <String, Object?>{
           'remote_id': remoteId,
           'source': 'outlook',
@@ -614,7 +629,8 @@ class SyncEngine {
     await prefs.remove(_lastSyncReportErrorKey);
   }
 
-  static List<OutlookSyncedCalendarSummary> _decodeCalendarDetails(String? raw) {
+  static List<OutlookSyncedCalendarSummary> _decodeCalendarDetails(
+      String? raw) {
     if (raw == null || raw.trim().isEmpty) {
       return const <OutlookSyncedCalendarSummary>[];
     }

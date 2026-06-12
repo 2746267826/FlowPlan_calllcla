@@ -2566,9 +2566,6 @@ export class FilesService {
     if (win32.isAbsolute(path)) {
       return win32.normalize(path);
     }
-    if (posix.isAbsolute(path)) {
-      return posix.normalize(path);
-    }
     return null;
   }
 

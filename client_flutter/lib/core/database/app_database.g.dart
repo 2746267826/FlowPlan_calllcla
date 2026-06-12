@@ -2879,6 +2879,44 @@ class $ActivityRecordsTable extends ActivityRecords
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _keyCountMeta =
+      const VerificationMeta('keyCount');
+  @override
+  late final GeneratedColumn<int> keyCount = GeneratedColumn<int>(
+      'key_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _mouseClicksMeta =
+      const VerificationMeta('mouseClicks');
+  @override
+  late final GeneratedColumn<int> mouseClicks = GeneratedColumn<int>(
+      'mouse_clicks', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _mouseMovePxMeta =
+      const VerificationMeta('mouseMovePx');
+  @override
+  late final GeneratedColumn<int> mouseMovePx = GeneratedColumn<int>(
+      'mouse_move_px', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _scrollPxMeta =
+      const VerificationMeta('scrollPx');
+  @override
+  late final GeneratedColumn<int> scrollPx = GeneratedColumn<int>(
+      'scroll_px', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _keySequenceMeta =
+      const VerificationMeta('keySequence');
+  @override
+  late final GeneratedColumn<String> keySequence = GeneratedColumn<String>(
+      'key_sequence', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _manualLabelMeta =
       const VerificationMeta('manualLabel');
   @override
@@ -2921,44 +2959,6 @@ class $ActivityRecordsTable extends ActivityRecords
   late final GeneratedColumn<int> linkedTaskId = GeneratedColumn<int>(
       'linked_task_id', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _keyCountMeta =
-      const VerificationMeta('keyCount');
-  @override
-  late final GeneratedColumn<int> keyCount = GeneratedColumn<int>(
-      'key_count', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
-  static const VerificationMeta _mouseClicksMeta =
-      const VerificationMeta('mouseClicks');
-  @override
-  late final GeneratedColumn<int> mouseClicks = GeneratedColumn<int>(
-      'mouse_clicks', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
-  static const VerificationMeta _mouseMovePxMeta =
-      const VerificationMeta('mouseMovePx');
-  @override
-  late final GeneratedColumn<int> mouseMovePx = GeneratedColumn<int>(
-      'mouse_move_px', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
-  static const VerificationMeta _scrollPxMeta =
-      const VerificationMeta('scrollPx');
-  @override
-  late final GeneratedColumn<int> scrollPx = GeneratedColumn<int>(
-      'scroll_px', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(0));
-  static const VerificationMeta _keySequenceMeta =
-      const VerificationMeta('keySequence');
-  @override
-  late final GeneratedColumn<String> keySequence = GeneratedColumn<String>(
-      'key_sequence', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _isAutoMeta = const VerificationMeta('isAuto');
   @override
   late final GeneratedColumn<bool> isAuto = GeneratedColumn<bool>(
@@ -2981,6 +2981,11 @@ class $ActivityRecordsTable extends ActivityRecords
         startTime,
         endTime,
         durationMinutes,
+        keyCount,
+        mouseClicks,
+        mouseMovePx,
+        scrollPx,
+        keySequence,
         manualLabel,
         processName,
         windowTitle,
@@ -2988,11 +2993,6 @@ class $ActivityRecordsTable extends ActivityRecords
         category,
         appUsageRuleId,
         linkedTaskId,
-        keyCount,
-        mouseClicks,
-        mouseMovePx,
-        scrollPx,
-        keySequence,
         isAuto,
         source
       ];
@@ -3024,6 +3024,32 @@ class $ActivityRecordsTable extends ActivityRecords
           _durationMinutesMeta,
           durationMinutes.isAcceptableOrUnknown(
               data['duration_minutes']!, _durationMinutesMeta));
+    }
+    if (data.containsKey('key_count')) {
+      context.handle(_keyCountMeta,
+          keyCount.isAcceptableOrUnknown(data['key_count']!, _keyCountMeta));
+    }
+    if (data.containsKey('mouse_clicks')) {
+      context.handle(
+          _mouseClicksMeta,
+          mouseClicks.isAcceptableOrUnknown(
+              data['mouse_clicks']!, _mouseClicksMeta));
+    }
+    if (data.containsKey('mouse_move_px')) {
+      context.handle(
+          _mouseMovePxMeta,
+          mouseMovePx.isAcceptableOrUnknown(
+              data['mouse_move_px']!, _mouseMovePxMeta));
+    }
+    if (data.containsKey('scroll_px')) {
+      context.handle(_scrollPxMeta,
+          scrollPx.isAcceptableOrUnknown(data['scroll_px']!, _scrollPxMeta));
+    }
+    if (data.containsKey('key_sequence')) {
+      context.handle(
+          _keySequenceMeta,
+          keySequence.isAcceptableOrUnknown(
+              data['key_sequence']!, _keySequenceMeta));
     }
     if (data.containsKey('manual_label')) {
       context.handle(
@@ -3065,32 +3091,6 @@ class $ActivityRecordsTable extends ActivityRecords
           linkedTaskId.isAcceptableOrUnknown(
               data['linked_task_id']!, _linkedTaskIdMeta));
     }
-    if (data.containsKey('key_count')) {
-      context.handle(_keyCountMeta,
-          keyCount.isAcceptableOrUnknown(data['key_count']!, _keyCountMeta));
-    }
-    if (data.containsKey('mouse_clicks')) {
-      context.handle(
-          _mouseClicksMeta,
-          mouseClicks.isAcceptableOrUnknown(
-              data['mouse_clicks']!, _mouseClicksMeta));
-    }
-    if (data.containsKey('mouse_move_px')) {
-      context.handle(
-          _mouseMovePxMeta,
-          mouseMovePx.isAcceptableOrUnknown(
-              data['mouse_move_px']!, _mouseMovePxMeta));
-    }
-    if (data.containsKey('scroll_px')) {
-      context.handle(_scrollPxMeta,
-          scrollPx.isAcceptableOrUnknown(data['scroll_px']!, _scrollPxMeta));
-    }
-    if (data.containsKey('key_sequence')) {
-      context.handle(
-          _keySequenceMeta,
-          keySequence.isAcceptableOrUnknown(
-              data['key_sequence']!, _keySequenceMeta));
-    }
     if (data.containsKey('is_auto')) {
       context.handle(_isAutoMeta,
           isAuto.isAcceptableOrUnknown(data['is_auto']!, _isAutoMeta));
@@ -3116,6 +3116,16 @@ class $ActivityRecordsTable extends ActivityRecords
           .read(DriftSqlType.dateTime, data['${effectivePrefix}end_time']),
       durationMinutes: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}duration_minutes'])!,
+      keyCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}key_count'])!,
+      mouseClicks: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}mouse_clicks'])!,
+      mouseMovePx: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}mouse_move_px'])!,
+      scrollPx: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}scroll_px'])!,
+      keySequence: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}key_sequence']),
       manualLabel: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}manual_label']),
       processName: attachedDatabase.typeMapping
@@ -3130,16 +3140,6 @@ class $ActivityRecordsTable extends ActivityRecords
           DriftSqlType.string, data['${effectivePrefix}app_usage_rule_id']),
       linkedTaskId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}linked_task_id']),
-      keyCount: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}key_count'])!,
-      mouseClicks: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}mouse_clicks'])!,
-      mouseMovePx: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}mouse_move_px'])!,
-      scrollPx: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}scroll_px'])!,
-      keySequence: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}key_sequence']),
       isAuto: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_auto'])!,
       source: attachedDatabase.typeMapping
@@ -3158,6 +3158,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
   final DateTime startTime;
   final DateTime? endTime;
   final int durationMinutes;
+  final int keyCount;
+  final int mouseClicks;
+  final int mouseMovePx;
+  final int scrollPx;
+  final String? keySequence;
   final String? manualLabel;
   final String? processName;
   final String? windowTitle;
@@ -3165,11 +3170,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
   final String? category;
   final String? appUsageRuleId;
   final int? linkedTaskId;
-  final int keyCount;
-  final int mouseClicks;
-  final int mouseMovePx;
-  final int scrollPx;
-  final String? keySequence;
   final bool isAuto;
   final String source;
   const ActivityRecord(
@@ -3177,6 +3177,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       required this.startTime,
       this.endTime,
       required this.durationMinutes,
+      required this.keyCount,
+      required this.mouseClicks,
+      required this.mouseMovePx,
+      required this.scrollPx,
+      this.keySequence,
       this.manualLabel,
       this.processName,
       this.windowTitle,
@@ -3184,11 +3189,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       this.category,
       this.appUsageRuleId,
       this.linkedTaskId,
-      required this.keyCount,
-      required this.mouseClicks,
-      required this.mouseMovePx,
-      required this.scrollPx,
-      this.keySequence,
       required this.isAuto,
       required this.source});
   @override
@@ -3200,6 +3200,13 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       map['end_time'] = Variable<DateTime>(endTime);
     }
     map['duration_minutes'] = Variable<int>(durationMinutes);
+    map['key_count'] = Variable<int>(keyCount);
+    map['mouse_clicks'] = Variable<int>(mouseClicks);
+    map['mouse_move_px'] = Variable<int>(mouseMovePx);
+    map['scroll_px'] = Variable<int>(scrollPx);
+    if (!nullToAbsent || keySequence != null) {
+      map['key_sequence'] = Variable<String>(keySequence);
+    }
     if (!nullToAbsent || manualLabel != null) {
       map['manual_label'] = Variable<String>(manualLabel);
     }
@@ -3221,13 +3228,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
     if (!nullToAbsent || linkedTaskId != null) {
       map['linked_task_id'] = Variable<int>(linkedTaskId);
     }
-    map['key_count'] = Variable<int>(keyCount);
-    map['mouse_clicks'] = Variable<int>(mouseClicks);
-    map['mouse_move_px'] = Variable<int>(mouseMovePx);
-    map['scroll_px'] = Variable<int>(scrollPx);
-    if (!nullToAbsent || keySequence != null) {
-      map['key_sequence'] = Variable<String>(keySequence);
-    }
     map['is_auto'] = Variable<bool>(isAuto);
     map['source'] = Variable<String>(source);
     return map;
@@ -3241,6 +3241,13 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           ? const Value.absent()
           : Value(endTime),
       durationMinutes: Value(durationMinutes),
+      keyCount: Value(keyCount),
+      mouseClicks: Value(mouseClicks),
+      mouseMovePx: Value(mouseMovePx),
+      scrollPx: Value(scrollPx),
+      keySequence: keySequence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(keySequence),
       manualLabel: manualLabel == null && nullToAbsent
           ? const Value.absent()
           : Value(manualLabel),
@@ -3262,13 +3269,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       linkedTaskId: linkedTaskId == null && nullToAbsent
           ? const Value.absent()
           : Value(linkedTaskId),
-      keyCount: Value(keyCount),
-      mouseClicks: Value(mouseClicks),
-      mouseMovePx: Value(mouseMovePx),
-      scrollPx: Value(scrollPx),
-      keySequence: keySequence == null && nullToAbsent
-          ? const Value.absent()
-          : Value(keySequence),
       isAuto: Value(isAuto),
       source: Value(source),
     );
@@ -3282,6 +3282,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       startTime: serializer.fromJson<DateTime>(json['startTime']),
       endTime: serializer.fromJson<DateTime?>(json['endTime']),
       durationMinutes: serializer.fromJson<int>(json['durationMinutes']),
+      keyCount: serializer.fromJson<int>(json['keyCount']),
+      mouseClicks: serializer.fromJson<int>(json['mouseClicks']),
+      mouseMovePx: serializer.fromJson<int>(json['mouseMovePx']),
+      scrollPx: serializer.fromJson<int>(json['scrollPx']),
+      keySequence: serializer.fromJson<String?>(json['keySequence']),
       manualLabel: serializer.fromJson<String?>(json['manualLabel']),
       processName: serializer.fromJson<String?>(json['processName']),
       windowTitle: serializer.fromJson<String?>(json['windowTitle']),
@@ -3289,11 +3294,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       category: serializer.fromJson<String?>(json['category']),
       appUsageRuleId: serializer.fromJson<String?>(json['appUsageRuleId']),
       linkedTaskId: serializer.fromJson<int?>(json['linkedTaskId']),
-      keyCount: serializer.fromJson<int>(json['keyCount']),
-      mouseClicks: serializer.fromJson<int>(json['mouseClicks']),
-      mouseMovePx: serializer.fromJson<int>(json['mouseMovePx']),
-      scrollPx: serializer.fromJson<int>(json['scrollPx']),
-      keySequence: serializer.fromJson<String?>(json['keySequence']),
       isAuto: serializer.fromJson<bool>(json['isAuto']),
       source: serializer.fromJson<String>(json['source']),
     );
@@ -3306,6 +3306,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       'startTime': serializer.toJson<DateTime>(startTime),
       'endTime': serializer.toJson<DateTime?>(endTime),
       'durationMinutes': serializer.toJson<int>(durationMinutes),
+      'keyCount': serializer.toJson<int>(keyCount),
+      'mouseClicks': serializer.toJson<int>(mouseClicks),
+      'mouseMovePx': serializer.toJson<int>(mouseMovePx),
+      'scrollPx': serializer.toJson<int>(scrollPx),
+      'keySequence': serializer.toJson<String?>(keySequence),
       'manualLabel': serializer.toJson<String?>(manualLabel),
       'processName': serializer.toJson<String?>(processName),
       'windowTitle': serializer.toJson<String?>(windowTitle),
@@ -3313,11 +3318,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       'category': serializer.toJson<String?>(category),
       'appUsageRuleId': serializer.toJson<String?>(appUsageRuleId),
       'linkedTaskId': serializer.toJson<int?>(linkedTaskId),
-      'keyCount': serializer.toJson<int>(keyCount),
-      'mouseClicks': serializer.toJson<int>(mouseClicks),
-      'mouseMovePx': serializer.toJson<int>(mouseMovePx),
-      'scrollPx': serializer.toJson<int>(scrollPx),
-      'keySequence': serializer.toJson<String?>(keySequence),
       'isAuto': serializer.toJson<bool>(isAuto),
       'source': serializer.toJson<String>(source),
     };
@@ -3328,6 +3328,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           DateTime? startTime,
           Value<DateTime?> endTime = const Value.absent(),
           int? durationMinutes,
+          int? keyCount,
+          int? mouseClicks,
+          int? mouseMovePx,
+          int? scrollPx,
+          Value<String?> keySequence = const Value.absent(),
           Value<String?> manualLabel = const Value.absent(),
           Value<String?> processName = const Value.absent(),
           Value<String?> windowTitle = const Value.absent(),
@@ -3335,11 +3340,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           Value<String?> category = const Value.absent(),
           Value<String?> appUsageRuleId = const Value.absent(),
           Value<int?> linkedTaskId = const Value.absent(),
-          int? keyCount,
-          int? mouseClicks,
-          int? mouseMovePx,
-          int? scrollPx,
-          Value<String?> keySequence = const Value.absent(),
           bool? isAuto,
           String? source}) =>
       ActivityRecord(
@@ -3347,6 +3347,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
         startTime: startTime ?? this.startTime,
         endTime: endTime.present ? endTime.value : this.endTime,
         durationMinutes: durationMinutes ?? this.durationMinutes,
+        keyCount: keyCount ?? this.keyCount,
+        mouseClicks: mouseClicks ?? this.mouseClicks,
+        mouseMovePx: mouseMovePx ?? this.mouseMovePx,
+        scrollPx: scrollPx ?? this.scrollPx,
+        keySequence: keySequence.present ? keySequence.value : this.keySequence,
         manualLabel: manualLabel.present ? manualLabel.value : this.manualLabel,
         processName: processName.present ? processName.value : this.processName,
         windowTitle: windowTitle.present ? windowTitle.value : this.windowTitle,
@@ -3356,11 +3361,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
             appUsageRuleId.present ? appUsageRuleId.value : this.appUsageRuleId,
         linkedTaskId:
             linkedTaskId.present ? linkedTaskId.value : this.linkedTaskId,
-        keyCount: keyCount ?? this.keyCount,
-        mouseClicks: mouseClicks ?? this.mouseClicks,
-        mouseMovePx: mouseMovePx ?? this.mouseMovePx,
-        scrollPx: scrollPx ?? this.scrollPx,
-        keySequence: keySequence.present ? keySequence.value : this.keySequence,
         isAuto: isAuto ?? this.isAuto,
         source: source ?? this.source,
       );
@@ -3372,6 +3372,14 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       durationMinutes: data.durationMinutes.present
           ? data.durationMinutes.value
           : this.durationMinutes,
+      keyCount: data.keyCount.present ? data.keyCount.value : this.keyCount,
+      mouseClicks:
+          data.mouseClicks.present ? data.mouseClicks.value : this.mouseClicks,
+      mouseMovePx:
+          data.mouseMovePx.present ? data.mouseMovePx.value : this.mouseMovePx,
+      scrollPx: data.scrollPx.present ? data.scrollPx.value : this.scrollPx,
+      keySequence:
+          data.keySequence.present ? data.keySequence.value : this.keySequence,
       manualLabel:
           data.manualLabel.present ? data.manualLabel.value : this.manualLabel,
       processName:
@@ -3387,15 +3395,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       linkedTaskId: data.linkedTaskId.present
           ? data.linkedTaskId.value
           : this.linkedTaskId,
-      keyCount: data.keyCount.present ? data.keyCount.value : this.keyCount,
-      mouseClicks:
-          data.mouseClicks.present ? data.mouseClicks.value : this.mouseClicks,
-      mouseMovePx: data.mouseMovePx.present
-          ? data.mouseMovePx.value
-          : this.mouseMovePx,
-      scrollPx: data.scrollPx.present ? data.scrollPx.value : this.scrollPx,
-      keySequence:
-          data.keySequence.present ? data.keySequence.value : this.keySequence,
       isAuto: data.isAuto.present ? data.isAuto.value : this.isAuto,
       source: data.source.present ? data.source.value : this.source,
     );
@@ -3408,6 +3407,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('durationMinutes: $durationMinutes, ')
+          ..write('keyCount: $keyCount, ')
+          ..write('mouseClicks: $mouseClicks, ')
+          ..write('mouseMovePx: $mouseMovePx, ')
+          ..write('scrollPx: $scrollPx, ')
+          ..write('keySequence: $keySequence, ')
           ..write('manualLabel: $manualLabel, ')
           ..write('processName: $processName, ')
           ..write('windowTitle: $windowTitle, ')
@@ -3415,11 +3419,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           ..write('category: $category, ')
           ..write('appUsageRuleId: $appUsageRuleId, ')
           ..write('linkedTaskId: $linkedTaskId, ')
-          ..write('keyCount: $keyCount, ')
-          ..write('mouseClicks: $mouseClicks, ')
-          ..write('mouseMovePx: $mouseMovePx, ')
-          ..write('scrollPx: $scrollPx, ')
-          ..write('keySequence: $keySequence, ')
           ..write('isAuto: $isAuto, ')
           ..write('source: $source')
           ..write(')'))
@@ -3432,6 +3431,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       startTime,
       endTime,
       durationMinutes,
+      keyCount,
+      mouseClicks,
+      mouseMovePx,
+      scrollPx,
+      keySequence,
       manualLabel,
       processName,
       windowTitle,
@@ -3439,11 +3443,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
       category,
       appUsageRuleId,
       linkedTaskId,
-      keyCount,
-      mouseClicks,
-      mouseMovePx,
-      scrollPx,
-      keySequence,
       isAuto,
       source);
   @override
@@ -3454,6 +3453,11 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
           other.durationMinutes == this.durationMinutes &&
+          other.keyCount == this.keyCount &&
+          other.mouseClicks == this.mouseClicks &&
+          other.mouseMovePx == this.mouseMovePx &&
+          other.scrollPx == this.scrollPx &&
+          other.keySequence == this.keySequence &&
           other.manualLabel == this.manualLabel &&
           other.processName == this.processName &&
           other.windowTitle == this.windowTitle &&
@@ -3461,11 +3465,6 @@ class ActivityRecord extends DataClass implements Insertable<ActivityRecord> {
           other.category == this.category &&
           other.appUsageRuleId == this.appUsageRuleId &&
           other.linkedTaskId == this.linkedTaskId &&
-          other.keyCount == this.keyCount &&
-          other.mouseClicks == this.mouseClicks &&
-          other.mouseMovePx == this.mouseMovePx &&
-          other.scrollPx == this.scrollPx &&
-          other.keySequence == this.keySequence &&
           other.isAuto == this.isAuto &&
           other.source == this.source);
 }
@@ -3475,6 +3474,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
   final Value<DateTime> startTime;
   final Value<DateTime?> endTime;
   final Value<int> durationMinutes;
+  final Value<int> keyCount;
+  final Value<int> mouseClicks;
+  final Value<int> mouseMovePx;
+  final Value<int> scrollPx;
+  final Value<String?> keySequence;
   final Value<String?> manualLabel;
   final Value<String?> processName;
   final Value<String?> windowTitle;
@@ -3482,11 +3486,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
   final Value<String?> category;
   final Value<String?> appUsageRuleId;
   final Value<int?> linkedTaskId;
-  final Value<int> keyCount;
-  final Value<int> mouseClicks;
-  final Value<int> mouseMovePx;
-  final Value<int> scrollPx;
-  final Value<String?> keySequence;
   final Value<bool> isAuto;
   final Value<String> source;
   const ActivityRecordsCompanion({
@@ -3494,6 +3493,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.durationMinutes = const Value.absent(),
+    this.keyCount = const Value.absent(),
+    this.mouseClicks = const Value.absent(),
+    this.mouseMovePx = const Value.absent(),
+    this.scrollPx = const Value.absent(),
+    this.keySequence = const Value.absent(),
     this.manualLabel = const Value.absent(),
     this.processName = const Value.absent(),
     this.windowTitle = const Value.absent(),
@@ -3501,11 +3505,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     this.category = const Value.absent(),
     this.appUsageRuleId = const Value.absent(),
     this.linkedTaskId = const Value.absent(),
-    this.keyCount = const Value.absent(),
-    this.mouseClicks = const Value.absent(),
-    this.mouseMovePx = const Value.absent(),
-    this.scrollPx = const Value.absent(),
-    this.keySequence = const Value.absent(),
     this.isAuto = const Value.absent(),
     this.source = const Value.absent(),
   });
@@ -3514,6 +3513,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     required DateTime startTime,
     this.endTime = const Value.absent(),
     this.durationMinutes = const Value.absent(),
+    this.keyCount = const Value.absent(),
+    this.mouseClicks = const Value.absent(),
+    this.mouseMovePx = const Value.absent(),
+    this.scrollPx = const Value.absent(),
+    this.keySequence = const Value.absent(),
     this.manualLabel = const Value.absent(),
     this.processName = const Value.absent(),
     this.windowTitle = const Value.absent(),
@@ -3521,11 +3525,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     this.category = const Value.absent(),
     this.appUsageRuleId = const Value.absent(),
     this.linkedTaskId = const Value.absent(),
-    this.keyCount = const Value.absent(),
-    this.mouseClicks = const Value.absent(),
-    this.mouseMovePx = const Value.absent(),
-    this.scrollPx = const Value.absent(),
-    this.keySequence = const Value.absent(),
     this.isAuto = const Value.absent(),
     this.source = const Value.absent(),
   }) : startTime = Value(startTime);
@@ -3534,6 +3533,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     Expression<DateTime>? startTime,
     Expression<DateTime>? endTime,
     Expression<int>? durationMinutes,
+    Expression<int>? keyCount,
+    Expression<int>? mouseClicks,
+    Expression<int>? mouseMovePx,
+    Expression<int>? scrollPx,
+    Expression<String>? keySequence,
     Expression<String>? manualLabel,
     Expression<String>? processName,
     Expression<String>? windowTitle,
@@ -3541,11 +3545,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     Expression<String>? category,
     Expression<String>? appUsageRuleId,
     Expression<int>? linkedTaskId,
-    Expression<int>? keyCount,
-    Expression<int>? mouseClicks,
-    Expression<int>? mouseMovePx,
-    Expression<int>? scrollPx,
-    Expression<String>? keySequence,
     Expression<bool>? isAuto,
     Expression<String>? source,
   }) {
@@ -3554,6 +3553,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
       if (durationMinutes != null) 'duration_minutes': durationMinutes,
+      if (keyCount != null) 'key_count': keyCount,
+      if (mouseClicks != null) 'mouse_clicks': mouseClicks,
+      if (mouseMovePx != null) 'mouse_move_px': mouseMovePx,
+      if (scrollPx != null) 'scroll_px': scrollPx,
+      if (keySequence != null) 'key_sequence': keySequence,
       if (manualLabel != null) 'manual_label': manualLabel,
       if (processName != null) 'process_name': processName,
       if (windowTitle != null) 'window_title': windowTitle,
@@ -3561,11 +3565,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       if (category != null) 'category': category,
       if (appUsageRuleId != null) 'app_usage_rule_id': appUsageRuleId,
       if (linkedTaskId != null) 'linked_task_id': linkedTaskId,
-      if (keyCount != null) 'key_count': keyCount,
-      if (mouseClicks != null) 'mouse_clicks': mouseClicks,
-      if (mouseMovePx != null) 'mouse_move_px': mouseMovePx,
-      if (scrollPx != null) 'scroll_px': scrollPx,
-      if (keySequence != null) 'key_sequence': keySequence,
       if (isAuto != null) 'is_auto': isAuto,
       if (source != null) 'source': source,
     });
@@ -3576,6 +3575,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       Value<DateTime>? startTime,
       Value<DateTime?>? endTime,
       Value<int>? durationMinutes,
+      Value<int>? keyCount,
+      Value<int>? mouseClicks,
+      Value<int>? mouseMovePx,
+      Value<int>? scrollPx,
+      Value<String?>? keySequence,
       Value<String?>? manualLabel,
       Value<String?>? processName,
       Value<String?>? windowTitle,
@@ -3583,11 +3587,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       Value<String?>? category,
       Value<String?>? appUsageRuleId,
       Value<int?>? linkedTaskId,
-      Value<int>? keyCount,
-      Value<int>? mouseClicks,
-      Value<int>? mouseMovePx,
-      Value<int>? scrollPx,
-      Value<String?>? keySequence,
       Value<bool>? isAuto,
       Value<String>? source}) {
     return ActivityRecordsCompanion(
@@ -3595,6 +3594,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       durationMinutes: durationMinutes ?? this.durationMinutes,
+      keyCount: keyCount ?? this.keyCount,
+      mouseClicks: mouseClicks ?? this.mouseClicks,
+      mouseMovePx: mouseMovePx ?? this.mouseMovePx,
+      scrollPx: scrollPx ?? this.scrollPx,
+      keySequence: keySequence ?? this.keySequence,
       manualLabel: manualLabel ?? this.manualLabel,
       processName: processName ?? this.processName,
       windowTitle: windowTitle ?? this.windowTitle,
@@ -3602,11 +3606,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
       category: category ?? this.category,
       appUsageRuleId: appUsageRuleId ?? this.appUsageRuleId,
       linkedTaskId: linkedTaskId ?? this.linkedTaskId,
-      keyCount: keyCount ?? this.keyCount,
-      mouseClicks: mouseClicks ?? this.mouseClicks,
-      mouseMovePx: mouseMovePx ?? this.mouseMovePx,
-      scrollPx: scrollPx ?? this.scrollPx,
-      keySequence: keySequence ?? this.keySequence,
       isAuto: isAuto ?? this.isAuto,
       source: source ?? this.source,
     );
@@ -3626,6 +3625,21 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     }
     if (durationMinutes.present) {
       map['duration_minutes'] = Variable<int>(durationMinutes.value);
+    }
+    if (keyCount.present) {
+      map['key_count'] = Variable<int>(keyCount.value);
+    }
+    if (mouseClicks.present) {
+      map['mouse_clicks'] = Variable<int>(mouseClicks.value);
+    }
+    if (mouseMovePx.present) {
+      map['mouse_move_px'] = Variable<int>(mouseMovePx.value);
+    }
+    if (scrollPx.present) {
+      map['scroll_px'] = Variable<int>(scrollPx.value);
+    }
+    if (keySequence.present) {
+      map['key_sequence'] = Variable<String>(keySequence.value);
     }
     if (manualLabel.present) {
       map['manual_label'] = Variable<String>(manualLabel.value);
@@ -3648,21 +3662,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
     if (linkedTaskId.present) {
       map['linked_task_id'] = Variable<int>(linkedTaskId.value);
     }
-    if (keyCount.present) {
-      map['key_count'] = Variable<int>(keyCount.value);
-    }
-    if (mouseClicks.present) {
-      map['mouse_clicks'] = Variable<int>(mouseClicks.value);
-    }
-    if (mouseMovePx.present) {
-      map['mouse_move_px'] = Variable<int>(mouseMovePx.value);
-    }
-    if (scrollPx.present) {
-      map['scroll_px'] = Variable<int>(scrollPx.value);
-    }
-    if (keySequence.present) {
-      map['key_sequence'] = Variable<String>(keySequence.value);
-    }
     if (isAuto.present) {
       map['is_auto'] = Variable<bool>(isAuto.value);
     }
@@ -3679,6 +3678,11 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('durationMinutes: $durationMinutes, ')
+          ..write('keyCount: $keyCount, ')
+          ..write('mouseClicks: $mouseClicks, ')
+          ..write('mouseMovePx: $mouseMovePx, ')
+          ..write('scrollPx: $scrollPx, ')
+          ..write('keySequence: $keySequence, ')
           ..write('manualLabel: $manualLabel, ')
           ..write('processName: $processName, ')
           ..write('windowTitle: $windowTitle, ')
@@ -3686,11 +3690,6 @@ class ActivityRecordsCompanion extends UpdateCompanion<ActivityRecord> {
           ..write('category: $category, ')
           ..write('appUsageRuleId: $appUsageRuleId, ')
           ..write('linkedTaskId: $linkedTaskId, ')
-          ..write('keyCount: $keyCount, ')
-          ..write('mouseClicks: $mouseClicks, ')
-          ..write('mouseMovePx: $mouseMovePx, ')
-          ..write('scrollPx: $scrollPx, ')
-          ..write('keySequence: $keySequence, ')
           ..write('isAuto: $isAuto, ')
           ..write('source: $source')
           ..write(')'))
@@ -6269,6 +6268,11 @@ typedef $$ActivityRecordsTableCreateCompanionBuilder = ActivityRecordsCompanion
   required DateTime startTime,
   Value<DateTime?> endTime,
   Value<int> durationMinutes,
+  Value<int> keyCount,
+  Value<int> mouseClicks,
+  Value<int> mouseMovePx,
+  Value<int> scrollPx,
+  Value<String?> keySequence,
   Value<String?> manualLabel,
   Value<String?> processName,
   Value<String?> windowTitle,
@@ -6285,6 +6289,11 @@ typedef $$ActivityRecordsTableUpdateCompanionBuilder = ActivityRecordsCompanion
   Value<DateTime> startTime,
   Value<DateTime?> endTime,
   Value<int> durationMinutes,
+  Value<int> keyCount,
+  Value<int> mouseClicks,
+  Value<int> mouseMovePx,
+  Value<int> scrollPx,
+  Value<String?> keySequence,
   Value<String?> manualLabel,
   Value<String?> processName,
   Value<String?> windowTitle,
@@ -6317,6 +6326,21 @@ class $$ActivityRecordsTableFilterComposer
   ColumnFilters<int> get durationMinutes => $composableBuilder(
       column: $table.durationMinutes,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get keyCount => $composableBuilder(
+      column: $table.keyCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mouseClicks => $composableBuilder(
+      column: $table.mouseClicks, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get mouseMovePx => $composableBuilder(
+      column: $table.mouseMovePx, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get scrollPx => $composableBuilder(
+      column: $table.scrollPx, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get keySequence => $composableBuilder(
+      column: $table.keySequence, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get manualLabel => $composableBuilder(
       column: $table.manualLabel, builder: (column) => ColumnFilters(column));
@@ -6369,6 +6393,21 @@ class $$ActivityRecordsTableOrderingComposer
       column: $table.durationMinutes,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get keyCount => $composableBuilder(
+      column: $table.keyCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mouseClicks => $composableBuilder(
+      column: $table.mouseClicks, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get mouseMovePx => $composableBuilder(
+      column: $table.mouseMovePx, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get scrollPx => $composableBuilder(
+      column: $table.scrollPx, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get keySequence => $composableBuilder(
+      column: $table.keySequence, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get manualLabel => $composableBuilder(
       column: $table.manualLabel, builder: (column) => ColumnOrderings(column));
 
@@ -6419,6 +6458,21 @@ class $$ActivityRecordsTableAnnotationComposer
 
   GeneratedColumn<int> get durationMinutes => $composableBuilder(
       column: $table.durationMinutes, builder: (column) => column);
+
+  GeneratedColumn<int> get keyCount =>
+      $composableBuilder(column: $table.keyCount, builder: (column) => column);
+
+  GeneratedColumn<int> get mouseClicks => $composableBuilder(
+      column: $table.mouseClicks, builder: (column) => column);
+
+  GeneratedColumn<int> get mouseMovePx => $composableBuilder(
+      column: $table.mouseMovePx, builder: (column) => column);
+
+  GeneratedColumn<int> get scrollPx =>
+      $composableBuilder(column: $table.scrollPx, builder: (column) => column);
+
+  GeneratedColumn<String> get keySequence => $composableBuilder(
+      column: $table.keySequence, builder: (column) => column);
 
   GeneratedColumn<String> get manualLabel => $composableBuilder(
       column: $table.manualLabel, builder: (column) => column);
@@ -6479,6 +6533,11 @@ class $$ActivityRecordsTableTableManager extends RootTableManager<
             Value<DateTime> startTime = const Value.absent(),
             Value<DateTime?> endTime = const Value.absent(),
             Value<int> durationMinutes = const Value.absent(),
+            Value<int> keyCount = const Value.absent(),
+            Value<int> mouseClicks = const Value.absent(),
+            Value<int> mouseMovePx = const Value.absent(),
+            Value<int> scrollPx = const Value.absent(),
+            Value<String?> keySequence = const Value.absent(),
             Value<String?> manualLabel = const Value.absent(),
             Value<String?> processName = const Value.absent(),
             Value<String?> windowTitle = const Value.absent(),
@@ -6494,6 +6553,11 @@ class $$ActivityRecordsTableTableManager extends RootTableManager<
             startTime: startTime,
             endTime: endTime,
             durationMinutes: durationMinutes,
+            keyCount: keyCount,
+            mouseClicks: mouseClicks,
+            mouseMovePx: mouseMovePx,
+            scrollPx: scrollPx,
+            keySequence: keySequence,
             manualLabel: manualLabel,
             processName: processName,
             windowTitle: windowTitle,
@@ -6509,6 +6573,11 @@ class $$ActivityRecordsTableTableManager extends RootTableManager<
             required DateTime startTime,
             Value<DateTime?> endTime = const Value.absent(),
             Value<int> durationMinutes = const Value.absent(),
+            Value<int> keyCount = const Value.absent(),
+            Value<int> mouseClicks = const Value.absent(),
+            Value<int> mouseMovePx = const Value.absent(),
+            Value<int> scrollPx = const Value.absent(),
+            Value<String?> keySequence = const Value.absent(),
             Value<String?> manualLabel = const Value.absent(),
             Value<String?> processName = const Value.absent(),
             Value<String?> windowTitle = const Value.absent(),
@@ -6524,6 +6593,11 @@ class $$ActivityRecordsTableTableManager extends RootTableManager<
             startTime: startTime,
             endTime: endTime,
             durationMinutes: durationMinutes,
+            keyCount: keyCount,
+            mouseClicks: mouseClicks,
+            mouseMovePx: mouseMovePx,
+            scrollPx: scrollPx,
+            keySequence: keySequence,
             manualLabel: manualLabel,
             processName: processName,
             windowTitle: windowTitle,

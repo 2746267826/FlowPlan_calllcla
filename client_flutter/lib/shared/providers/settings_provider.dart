@@ -456,16 +456,21 @@ const _minimizeToTraySettingKey = 'desktop.minimize_to_tray';
 const _launchAtStartupSettingKey = 'desktop.launch_at_startup';
 
 class MinimizeToTrayNotifier extends StateNotifier<bool> {
-  MinimizeToTrayNotifier(this._ref) : super(Platform.isWindows) {
+  MinimizeToTrayNotifier(this._ref, {bool? isWindowsOverride})
+      : _isWindowsOverride = isWindowsOverride,
+        super(isWindowsOverride ?? Platform.isWindows) {
     _load();
   }
 
   final Ref _ref;
   final DesktopShellService _desktopShell = const DesktopShellService();
+  final bool? _isWindowsOverride;
   int _operationVersion = 0;
 
+  bool get _isWindows => _isWindowsOverride ?? Platform.isWindows;
+
   Future<void> _load() async {
-    if (!Platform.isWindows) {
+    if (!_isWindows) {
       state = false;
       return;
     }
@@ -484,7 +489,7 @@ class MinimizeToTrayNotifier extends StateNotifier<bool> {
   }
 
   Future<void> set(bool enabled) async {
-    if (!Platform.isWindows) {
+    if (!_isWindows) {
       state = false;
       return;
     }
@@ -510,16 +515,21 @@ final minimizeToTrayProvider = Provider<bool>((ref) {
 });
 
 class LaunchAtStartupNotifier extends StateNotifier<bool> {
-  LaunchAtStartupNotifier(this._ref) : super(false) {
+  LaunchAtStartupNotifier(this._ref, {bool? isWindowsOverride})
+      : _isWindowsOverride = isWindowsOverride,
+        super(false) {
     _load();
   }
 
   final Ref _ref;
   final DesktopShellService _desktopShell = const DesktopShellService();
+  final bool? _isWindowsOverride;
   int _operationVersion = 0;
 
+  bool get _isWindows => _isWindowsOverride ?? Platform.isWindows;
+
   Future<void> _load() async {
-    if (!Platform.isWindows) {
+    if (!_isWindows) {
       state = false;
       return;
     }
@@ -535,7 +545,7 @@ class LaunchAtStartupNotifier extends StateNotifier<bool> {
   }
 
   Future<void> set(bool enabled) async {
-    if (!Platform.isWindows) {
+    if (!_isWindows) {
       state = false;
       return;
     }

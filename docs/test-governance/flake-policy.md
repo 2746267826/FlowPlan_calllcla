@@ -1,14 +1,18 @@
 # Flake Policy
 
-Automated tests must not use live external credentials, arbitrary sleeps, wall-clock assertions, committed `.only`, or unexplained `.skip`.
+Automated tests must not use live external credentials, arbitrary sleeps, wall-clock assertions, committed `.only`, `.skip`, `@Skip`, or `markTestSkipped`.
 
 Tests must freeze time, use deterministic IDs and API responses, and isolate test data. Performance tests are outside the default gate unless they are deterministic and marked as such in the matrix.
+
+## Focused And Skipped Scan
+
+The root gate scans source and test files under `server`, `web_admin`, and `client_flutter` for focused or skipped tests. Generated, dependency, report, and build outputs stay out of scope, including `**/dist/**`, `**/build/**`, `**/coverage/**`, `**/node_modules/**`, `web_admin/playwright-report/**`, `web_admin/test-results/**`, and `docs/test-governance/reports/generated/**`.
 
 ## Cross-End Skeleton Rules
 
 - Server API cross-end tests use the planned API test app harness and must refuse non-test databases.
 - Web Playwright cross-end tests install deterministic route mocks before navigation and avoid shared config changes from this worker.
-- Flutter cross-end tests use stable `AppKeys` and fake providers once the Flutter test foundation lands.
+- Flutter cross-end tests use stable `AppKeys`, fake providers, and explicit `-FlutterIntegrationDevice` selection.
 - No test may depend on network timing, polling sleeps, real auth tokens, production credentials, or mutable external service state.
 
 ## Performance Suites

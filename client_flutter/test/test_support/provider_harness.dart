@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
 import 'package:flowplanv2/shared/providers/database_provider.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> pumpFlowPlanTestApp(
@@ -13,6 +14,7 @@ Future<void> pumpFlowPlanTestApp(
   List<Override> overrides = const <Override>[],
 }) async {
   TestWidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('zh_CN');
   SharedPreferences.setMockInitialValues(<String, Object>{});
 
   tester.view.physicalSize = size;

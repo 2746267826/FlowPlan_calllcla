@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/database/app_database.dart';
@@ -47,7 +48,7 @@ class ReportPushService {
     final detailBaseUrl = await _db.getSetting(reportDetailBaseUrlKey);
     final detailUrl = detailBaseUrl == null || detailBaseUrl.trim().isEmpty
         ? null
-        : '${detailBaseUrl.trim().replaceAll(RegExp(r'/$'), '')}/reports/${report.reportUid}';
+        : '${detailBaseUrl.trim().replaceAll(RegExp(r'/+$'), '')}/reports/${report.reportUid}';
     return _reports.queueDelivery(
       reportId: report.id,
       channel: 'telegram',
@@ -125,7 +126,8 @@ class ReportPushService {
       try {
         await _reports.markDeliverySending(delivery.id);
         final payload = _decodePayload(delivery.payloadJson);
-        final chatId = delivery.target ?? await _db.getSetting(telegramChatIdKey);
+        final chatId =
+            delivery.target ?? await _db.getSetting(telegramChatIdKey);
         if (chatId == null || chatId.trim().isEmpty) {
           throw StateError('Telegram chat id is not configured.');
         }
@@ -141,7 +143,8 @@ class ReportPushService {
           }),
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          throw StateError('Telegram returned ${response.statusCode}: ${response.body}');
+          throw StateError(
+              'Telegram returned ${response.statusCode}: ${response.body}');
         }
         await _reports.markDeliverySent(delivery.id);
         sent++;
@@ -163,7 +166,8 @@ class ReportPushService {
     for (final delivery in deliveries) {
       try {
         await _reports.markDeliverySending(delivery.id);
-        final target = delivery.target ?? await _db.getSetting(reportWebhookUrlKey);
+        final target =
+            delivery.target ?? await _db.getSetting(reportWebhookUrlKey);
         if (target == null || target.trim().isEmpty) {
           throw StateError('Webhook url is not configured.');
         }
@@ -175,7 +179,8 @@ class ReportPushService {
           body: delivery.payloadJson,
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          throw StateError('Webhook returned ${response.statusCode}: ${response.body}');
+          throw StateError(
+              'Webhook returned ${response.statusCode}: ${response.body}');
         }
         await _reports.markDeliverySent(delivery.id);
         sent++;
@@ -225,7 +230,8 @@ class ReportPushService {
       try {
         await _reports.markDeliverySending(delivery.id);
         final payload = _decodePayload(delivery.payloadJson);
-        final target = delivery.target ?? await _db.getSetting(reportEmailTargetKey);
+        final target =
+            delivery.target ?? await _db.getSetting(reportEmailTargetKey);
         if (target == null || target.trim().isEmpty) {
           throw StateError('Email target is not configured.');
         }
@@ -249,6 +255,11 @@ class ReportPushService {
       }
     }
     return TelegramPushResult(sent: sent, failed: failed);
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> decodePayloadForTesting(Object? decoded) {
+    return _normalizePayload(decoded);
   }
 
   String _buildTelegramSummary(
@@ -280,7 +291,10 @@ class ReportPushService {
   }
 
   Map<String, dynamic> _decodePayload(String raw) {
-    final decoded = jsonDecode(raw);
+    return _normalizePayload(jsonDecode(raw));
+  }
+
+  static Map<String, dynamic> _normalizePayload(Object? decoded) {
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }

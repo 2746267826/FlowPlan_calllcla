@@ -17,17 +17,24 @@ class WebApiException implements Exception {
 }
 
 class WebApiClient {
-  WebApiClient(this.store);
+  WebApiClient(this.store, {http.Client? httpClient})
+      : _httpClient = httpClient ?? http.Client();
 
   final WebLocalStore store;
+  final http.Client _httpClient;
 
-  String get baseUrl => store.baseUrl ?? 'http://localhost:3202/api';
+  String get baseUrl =>
+      (store.baseUrl ?? 'http://localhost:3202/api').replaceFirst(
+        RegExp(r'/+$'),
+        '',
+      );
 
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String?> query = const {},
   }) async {
-    final response = await http.get(_uri(path, query), headers: _headers());
+    final response =
+        await _httpClient.get(_uri(path, query), headers: _headers());
     return _decode(response);
   }
 
@@ -35,7 +42,7 @@ class WebApiClient {
     String path, {
     Map<String, dynamic> body = const {},
   }) async {
-    final response = await http.post(
+    final response = await _httpClient.post(
       _uri(path),
       headers: _headers(),
       body: jsonEncode(body),
@@ -47,7 +54,7 @@ class WebApiClient {
     String path, {
     Map<String, dynamic> body = const {},
   }) async {
-    final response = await http.patch(
+    final response = await _httpClient.patch(
       _uri(path),
       headers: _headers(),
       body: jsonEncode(body),
@@ -59,7 +66,7 @@ class WebApiClient {
     String path, {
     Map<String, dynamic> body = const {},
   }) async {
-    final response = await http.put(
+    final response = await _httpClient.put(
       _uri(path),
       headers: _headers(),
       body: jsonEncode(body),

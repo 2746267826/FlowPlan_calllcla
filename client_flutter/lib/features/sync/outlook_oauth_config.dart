@@ -1,5 +1,5 @@
 class OutlookOAuthPlatformConfig {
-  const OutlookOAuthPlatformConfig._();
+  const OutlookOAuthPlatformConfig();
 
   static const authority = '';
   static const authorizeEndpoint = '';

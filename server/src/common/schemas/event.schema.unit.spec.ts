@@ -47,4 +47,32 @@ describe('normalizeEventPayload', () => {
       isBlock: true,
     });
   });
+
+  it('falls back to canonical defaults and handles numeric blocking flags', () => {
+    const defaultTitle = normalizeEventPayload({}).title;
+    const event = normalizeEventPayload({
+      title: '   ',
+      summary: '',
+      startTime: '2026-03-04T08:00:00.000Z',
+      endTime: '2026-03-04T09:00:00.000Z',
+      isBlocking: 1,
+      created_at: '2026-03-01T00:00:00.000Z',
+      updated_at: '2026-03-02T00:00:00.000Z',
+    });
+
+    expect(event.title).toBe(defaultTitle);
+    expect(event.startAt).toBe('2026-03-04T08:00:00.000Z');
+    expect(event.endAt).toBe('2026-03-04T09:00:00.000Z');
+    expect(event.isBlock).toBe(true);
+    expect(event.createdAt).toBe('2026-03-01T00:00:00.000Z');
+    expect(event.updatedAt).toBe('2026-03-02T00:00:00.000Z');
+  });
+
+  it('treats false string and zero numeric blocking values as non-blocking', () => {
+    expect(normalizeEventPayload({ title: 'Open', isBlock: 'false' }).isBlock).toBe(
+      false,
+    );
+    expect(normalizeEventPayload({ title: 'Open', blocking: 0 }).isBlock).toBe(false);
+    expect(normalizeEventPayload({ title: 'Open', isBlock: true }).isBlock).toBe(true);
+  });
 });

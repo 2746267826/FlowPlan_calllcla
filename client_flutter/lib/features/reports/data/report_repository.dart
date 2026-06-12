@@ -9,7 +9,7 @@ import '../../../core/sync/sync_write_recorder.dart';
 import '../../audit/data_operation_log_repository.dart';
 
 class ReportType {
-  const ReportType._();
+  const ReportType();
 
   static const daily = 'daily';
   static const weekly = 'weekly';
@@ -21,7 +21,7 @@ class ReportType {
 }
 
 class ReportStatus {
-  const ReportStatus._();
+  const ReportStatus();
 
   static const draft = 'draft';
   static const confirmed = 'confirmed';
@@ -29,7 +29,7 @@ class ReportStatus {
 }
 
 class PushDeliveryStatus {
-  const PushDeliveryStatus._();
+  const PushDeliveryStatus();
 
   static const pending = 'pending';
   static const sending = 'sending';
@@ -267,10 +267,10 @@ class ReportRepository {
     final now = DateTime.now();
     final reportUid = _reportUid(reportType, periodStart);
     final existing = await getReportForPeriod(
-      reportType: reportType,
-      periodStart: periodStart,
-      periodEnd: periodEnd,
-    ) ??
+          reportType: reportType,
+          periodStart: periodStart,
+          periodEnd: periodEnd,
+        ) ??
         await getReportByUid(reportUid);
     if (existing == null) {
       await _db.customStatement(
@@ -673,9 +673,11 @@ class ReportRepository {
   }
 
   Future<QueryRow> _lastRow(String tableName) {
-    return _db.customSelect(
-      'SELECT * FROM $tableName WHERE id = last_insert_rowid()',
-    ).getSingle();
+    return _db
+        .customSelect(
+          'SELECT * FROM $tableName WHERE id = last_insert_rowid()',
+        )
+        .getSingle();
   }
 
   Future<void> _recordReportCreate(ReportDocument report) async {

@@ -29,6 +29,7 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 **/.dart_tool/
+**/.codex-tmp/
 **/.packages
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
@@ -36,6 +37,7 @@ migrate_working_dir/
 **/.pub/
 **/build/
 **/coverage/
+**/coverage-*/
 client_flutter/lib_old/
 
 # Node / web build artifacts

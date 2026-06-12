@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../models/tracked_input_event.dart';
 
@@ -154,70 +155,73 @@ class _TrackerInputHistoryPageState
   Widget _buildFilterPanel(BuildContext context) {
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: '前一天',
-                  onPressed: _goToPreviousDay,
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: _pickDate,
-                    child: Text(
-                      _formatDate(_selectedDate),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: '前一天',
+                    onPressed: _goToPreviousDay,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _pickDate,
+                      child: Text(
+                        _formatDate(_selectedDate),
+                        textAlign: TextAlign.center,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: '后一天',
-                  onPressed: _goToNextDay,
-                  icon: const Icon(Icons.chevron_right),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '从服务端查询指定日期的输入事件，数据来源于客户端定期上传的追踪缓冲。',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '事件类型',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  IconButton(
+                    tooltip: '后一天',
+                    onPressed: _goToNextDay,
+                    icon: const Icon(Icons.chevron_right),
                   ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          ..._eventKindOptions.map(
-            (option) => _FilterChipTile(
-              label: option.label,
-              selected: _selectedEventKind == option.value,
-              onTap: () {
-                setState(() {
-                  _selectedEventKind = option.value;
-                  _currentOffset = 0;
-                });
-              },
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '从服务端查询指定日期的输入事件，数据来源于客户端定期上传的追踪缓冲。',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '事件类型',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            ..._eventKindOptions.map(
+              (option) => _FilterChipTile(
+                label: option.label,
+                selected: _selectedEventKind == option.value,
+                onTap: () {
+                  setState(() {
+                    _selectedEventKind = option.value;
+                    _currentOffset = 0;
+                  });
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -360,11 +364,12 @@ class _TrackerInputHistoryPageState
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     OutlinedButton.icon(
+                      key: AppKeys.trackerInputHistoryPreviousPageButton,
                       onPressed: hasPrevious
                           ? () {
                               setState(() {
-                                _currentOffset =
-                                    (_currentOffset - _pageSize).clamp(0, 1 << 31);
+                                _currentOffset = (_currentOffset - _pageSize)
+                                    .clamp(0, 1 << 31);
                               });
                             }
                           : null,
@@ -378,6 +383,7 @@ class _TrackerInputHistoryPageState
                     ),
                     const SizedBox(width: 16),
                     OutlinedButton.icon(
+                      key: AppKeys.trackerInputHistoryNextPageButton,
                       onPressed: hasMore
                           ? () {
                               setState(() {
@@ -580,14 +586,16 @@ class _InputEventTile extends StatelessWidget {
               const SizedBox(width: 6),
               if (event.eventCount > 1) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.grey.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     '×${event.eventCount}',
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w600),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -705,11 +713,15 @@ _ServerInputEvent? _eventFromServerItem(Map<String, Object?> item) {
         fallback: _stablePositiveId(uid)),
     timestamp: timestamp,
     kind: _parseKind(kindStr),
-    eventCount: _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
-    isIgnored: payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
-    processName: _stringValue(payload['processName'] ?? payload['process_name']),
+    eventCount:
+        _intValue(payload['eventCount'] ?? item['metricCount'], fallback: 1),
+    isIgnored:
+        payload['isIgnored'] is bool ? payload['isIgnored'] as bool : false,
+    processName:
+        _stringValue(payload['processName'] ?? payload['process_name']),
     className: _stringValue(payload['className']),
-    windowTitle: _stringValue(payload['windowTitle'] ?? payload['window_title']),
+    windowTitle:
+        _stringValue(payload['windowTitle'] ?? payload['window_title']),
     category: _stringValue(payload['category']),
     activityLabel: _stringValue(payload['activityLabel']),
     keyCode: _intOrNull(payload['keyCode']),
@@ -718,7 +730,8 @@ _ServerInputEvent? _eventFromServerItem(Map<String, Object?> item) {
     wheelDelta: _intValue(payload['wheelDelta']),
     deltaX: _intValue(payload['deltaX']),
     deltaY: _intValue(payload['deltaY']),
-    moveDistance: _intValue(payload['moveDistance'] ?? payload['move_distance']),
+    moveDistance:
+        _intValue(payload['moveDistance'] ?? payload['move_distance']),
     tokenText: _stringValue(payload['tokenText']),
   );
 }

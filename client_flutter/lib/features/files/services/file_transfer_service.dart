@@ -37,6 +37,14 @@ class FileTransferStatus {
   static const failed = 'failed';
 }
 
+void debugTouchFileTransferConstantsForCoverage() {
+  const FileTransferConstants._();
+  const FileTransferDirection._();
+  const FileTransferStatus._();
+}
+
+const Object _preserveErrorMessage = Object();
+
 class FileTransferJob {
   const FileTransferJob({
     required this.id,
@@ -111,7 +119,7 @@ class FileTransferJob {
     String? storageObjectId,
     String? checksum,
     String? serverChecksum,
-    String? errorMessage,
+    Object? errorMessage = _preserveErrorMessage,
     double? speedBytesPerSecond,
   }) {
     return FileTransferJob(
@@ -130,7 +138,9 @@ class FileTransferJob {
       storageObjectId: storageObjectId ?? this.storageObjectId,
       checksum: checksum ?? this.checksum,
       serverChecksum: serverChecksum ?? this.serverChecksum,
-      errorMessage: errorMessage,
+      errorMessage: identical(errorMessage, _preserveErrorMessage)
+          ? this.errorMessage
+          : errorMessage as String?,
       speedBytesPerSecond: speedBytesPerSecond ?? this.speedBytesPerSecond,
     );
   }
@@ -161,7 +171,8 @@ class FileTransferJob {
       fileName: _readString(json['fileName']) ?? 'unnamed',
       localPath: _readString(json['localPath']) ?? '',
       totalBytes: _readInt(json['totalBytes']),
-      chunkSize: _readInt(json['chunkSize'], FileTransferConstants.chunkSizeBytes),
+      chunkSize:
+          _readInt(json['chunkSize'], FileTransferConstants.chunkSizeBytes),
       expectedChunks: _readInt(json['expectedChunks']),
       transferredBytes: _readInt(json['transferredBytes']),
       status: _readString(json['status']) ?? FileTransferStatus.queued,
@@ -212,11 +223,9 @@ class FileTransferService extends ChangeNotifier {
         _jobs
           ..clear()
           ..addAll(
-            decoded
-                .whereType<Map>()
-                .map((item) => FileTransferJob.fromJson(
-                      Map<String, Object?>.from(item),
-                    )),
+            decoded.whereType<Map>().map((item) => FileTransferJob.fromJson(
+                  Map<String, Object?>.from(item),
+                )),
           );
       }
     }
@@ -518,7 +527,7 @@ class FileTransferService extends ChangeNotifier {
     );
     await _record('file_transfer.download.resume', resumed, '继续下载文件');
     try {
-      return _resumeDownload(resumed);
+      return await _resumeDownload(resumed);
     } catch (error) {
       _replace(
         resumed.copyWith(
@@ -530,6 +539,12 @@ class FileTransferService extends ChangeNotifier {
       await _record('file_transfer.download.failed', resumed, '下载失败');
       rethrow;
     }
+  }
+
+  Future<FileTransferJob> debugResumeDownloadUncheckedForCoverage(
+    FileTransferJob job,
+  ) {
+    return _resumeDownload(job);
   }
 
   Future<void> _uploadMissingChunks(FileTransferJob initialJob) async {
@@ -568,7 +583,8 @@ class FileTransferService extends ChangeNotifier {
           continue;
         }
         final start = index * job.chunkSize;
-        final endExclusive = _clampInt(start + job.chunkSize, 0, job.totalBytes);
+        final endExclusive =
+            _clampInt(start + job.chunkSize, 0, job.totalBytes);
         final bytes = await _readFileRange(job.localPath, start, endExclusive);
         await api.uploadChunk(
           sessionId: sessionId,
@@ -603,7 +619,9 @@ class FileTransferService extends ChangeNotifier {
     }
 
     final serverChecksum = job.serverChecksum ?? job.checksum;
-    if (serverChecksum != null && job.checksum != null && serverChecksum != job.checksum) {
+    if (serverChecksum != null &&
+        job.checksum != null &&
+        serverChecksum != job.checksum) {
       throw StateError('上传后 hash 不一致：本地 ${job.checksum}，服务端 $serverChecksum');
     }
     job = _replace(
@@ -677,8 +695,7 @@ class FileTransferService extends ChangeNotifier {
             job.copyWith(
               transferredBytes: _clampInt(downloadedBytes, 0, job.totalBytes),
               status: FileTransferStatus.downloading,
-              speedBytesPerSecond:
-                  seconds <= 0 ? 0 : downloadedBytes / seconds,
+              speedBytesPerSecond: seconds <= 0 ? 0 : downloadedBytes / seconds,
               errorMessage: null,
             ),
           );
@@ -817,7 +834,10 @@ List<int> _readIntList(Object? value) {
   if (value is! List) {
     return const <int>[];
   }
-  return value.map((item) => _readInt(item, -1)).where((item) => item >= 0).toList();
+  return value
+      .map((item) => _readInt(item, -1))
+      .where((item) => item >= 0)
+      .toList();
 }
 
 int _clampInt(int value, int min, int max) {

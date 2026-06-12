@@ -8,7 +8,9 @@ import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 
 class QuickAddBar extends ConsumerStatefulWidget {
-  const QuickAddBar({super.key});
+  const QuickAddBar({super.key, this.now});
+
+  final DateTime Function()? now;
 
   @override
   ConsumerState<QuickAddBar> createState() => _QuickAddBarState();
@@ -23,6 +25,8 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
   Timer? _elapsedTimer;
   Duration _elapsed = Duration.zero;
 
+  DateTime _now() => widget.now?.call() ?? DateTime.now();
+
   @override
   void dispose() {
     _controller.dispose();
@@ -34,7 +38,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     final trimmed = label.trim();
     if (trimmed.isEmpty) return;
 
-    final now = DateTime.now();
+    final now = _now();
     final id = await ref.read(activityRecordRepositoryProvider).startRecord(
           startTime: now,
           manualLabel: trimmed,
@@ -54,7 +58,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _trackingStart == null) return;
       setState(() {
-        _elapsed = DateTime.now().difference(_trackingStart!);
+        _elapsed = _now().difference(_trackingStart!);
       });
     });
   }
@@ -64,7 +68,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     if (_activeRecordId != null) {
       await ref.read(activityRecordRepositoryProvider).endRecord(
             _activeRecordId!,
-            DateTime.now(),
+            _now(),
           );
     }
 

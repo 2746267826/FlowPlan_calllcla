@@ -10,6 +10,11 @@ import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../data/activity_fusion_repository.dart';
 
+@visibleForTesting
+String debugActivityReviewEvidenceSummary(Map<String, Object?> rawEvidence) {
+  return _SegmentCard.evidenceSummaryForTesting(rawEvidence);
+}
+
 class ActivityReviewPage extends ConsumerStatefulWidget {
   const ActivityReviewPage({super.key});
 
@@ -76,7 +81,6 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
   Future<void> _rebuild() async {
     final date = ref.read(selectedDateProvider);
     final start = DateTime(date.year, date.month, date.day);
-    final end = start.add(const Duration(days: 1));
     setState(() {
       _rebuilding = true;
       _error = null;
@@ -144,8 +148,7 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
       if (!mounted) {
         return;
       }
-      final suffix =
-          result['taskId'] == null ? '未关联任务投入。' : '已写入任务实际投入。';
+      final suffix = result['taskId'] == null ? '未关联任务投入。' : '已写入任务实际投入。';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已确认实际记录，$suffix')),
       );
@@ -160,11 +163,21 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
   }
 
   Future<void> _reject(_SegmentReviewItem item) async {
-    await (await ref.read(trackingServerFirstStoreProvider.future)).rejectSegment(
-      segmentId: item.serverId,
-      reason: 'user_rejected',
-    );
-    await _load();
+    try {
+      await (await ref.read(trackingServerFirstStoreProvider.future))
+          .rejectSegment(
+        segmentId: item.serverId,
+        reason: 'user_rejected',
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reject failed: $error')),
+      );
+    }
   }
 
   @override
@@ -227,7 +240,8 @@ class _ActivityReviewPageState extends ConsumerState<ActivityReviewPage> {
               _NoticeCard(
                 icon: Icons.manage_search_outlined,
                 title: '还没有活动片段',
-                message: '点击右上角整理按钮，系统会读取当天 raw_activity_logs、tracked_input_events 和 activity_records 生成候选片段。',
+                message:
+                    '点击右上角整理按钮，系统会读取当天 raw_activity_logs、tracked_input_events 和 activity_records 生成候选片段。',
               )
             else
               ..._items.map(
@@ -282,7 +296,8 @@ class _HeaderCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.psychology_alt_outlined, color: AppColors.primary),
+              const Icon(Icons.psychology_alt_outlined,
+                  color: AppColors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -426,7 +441,13 @@ class _SegmentCard extends StatelessWidget {
     );
   }
 
-  static String _evidenceSummary(Map<String, Object?> evidence) {
+  @visibleForTesting
+  static String evidenceSummaryForTesting(Map<String, Object?> rawEvidence) {
+    return _evidenceSummary(rawEvidence);
+  }
+
+  static String _evidenceSummary(Map<String, Object?> rawEvidence) {
+    final evidence = _unwrapEvidence(rawEvidence);
     final parts = <String>[
       '活动记录 ${evidence['activityRecordCount'] ?? 0}',
       '原始日志 ${evidence['rawLogCount'] ?? 0}',
@@ -437,6 +458,17 @@ class _SegmentCard extends StatelessWidget {
       parts.add('应用证据 ${processes.take(3).join('、')}');
     }
     return '证据摘要：${parts.join('，')}';
+  }
+
+  static Map<String, Object?> _unwrapEvidence(Map<String, Object?> evidence) {
+    final nested = evidence['evidence'];
+    if (nested is Map<String, dynamic>) {
+      return Map<String, Object?>.from(nested);
+    }
+    if (nested is Map) {
+      return Map<String, Object?>.from(nested);
+    }
+    return evidence;
   }
 }
 
@@ -728,8 +760,8 @@ _SegmentReviewItem _segmentReviewItemFromServer(
   Map<String, TaskItem> taskByUid,
 ) {
   final serverId = _stringValue(item['id']) ?? '';
-  final startAt = _dateValue(item['startAt']) ??
-      DateTime.fromMillisecondsSinceEpoch(0);
+  final startAt =
+      _dateValue(item['startAt']) ?? DateTime.fromMillisecondsSinceEpoch(0);
   final endAt = _dateValue(item['endAt']) ?? startAt;
   final evidenceJson = jsonEncode({
     'evidence': item['evidence'],
@@ -753,14 +785,20 @@ _SegmentReviewItem _segmentReviewItemFromServer(
     createdAt: startAt,
     updatedAt: DateTime.now(),
   );
+  final summary = _stringValue(item['summary']);
+  if (summary == null) {
+    return _SegmentReviewItem(
+      serverId: serverId,
+      segment: segment,
+      interpretation: null,
+      inferredTaskUid: matchedTaskUid,
+    );
+  }
   final interpretation = ActivityInterpretation(
     id: _stablePositiveId('$serverId:interpretation'),
     interpretationUid: '$serverId:interpretation',
     segmentId: segment.id,
-    summary: _stringValue(item['summary']) ??
-        _stringValue(item['title']) ??
-        _stringValue(item['primaryProcessName']) ??
-        '未分类活动',
+    summary: summary,
     inferredProject: null,
     inferredDocument: null,
     inferredTaskId: matchedTask?.id,
@@ -832,9 +870,6 @@ Map<String, Object?> _decodeEvidence(String raw) {
     final decoded = jsonDecode(raw);
     if (decoded is Map<String, dynamic>) {
       return decoded;
-    }
-    if (decoded is Map) {
-      return Map<String, Object?>.from(decoded);
     }
   } catch (_) {
     return const <String, Object?>{};

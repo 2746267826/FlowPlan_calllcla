@@ -6,11 +6,13 @@ import '../../core/theme/app_theme.dart';
 class TimeIndicator extends StatefulWidget {
   final double hourHeight;
   final int startHour;
+  final Duration refreshIntervalForTesting;
 
   const TimeIndicator({
     super.key,
     required this.hourHeight,
     this.startHour = 0,
+    this.refreshIntervalForTesting = const Duration(minutes: 1),
   });
 
   @override
@@ -25,7 +27,7 @@ class _TimeIndicatorState extends State<TimeIndicator> {
   void initState() {
     super.initState();
     // 每分钟刷新一次
-    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+    _timer = Timer.periodic(widget.refreshIntervalForTesting, (_) {
       setState(() => _now = DateTime.now());
     });
   }

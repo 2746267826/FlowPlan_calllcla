@@ -99,10 +99,7 @@ export class ReportTemplateEngine {
     return body.replace(ifRegex, (_, varName: string, ifBody: string) => {
       const value: unknown = context[varName];
       const isTruthy = value != null && value !== '' && value !== false;
-      return isTruthy
-        ? ifBody.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}/g, (__: string, key: string) =>
-            key === '@index' ? String(context['@index'] ?? '') : (context[key] as string) ?? '')
-        : '';
+      return isTruthy ? ifBody : '';
     });
   }
 

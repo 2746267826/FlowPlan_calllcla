@@ -74,6 +74,43 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('uses the HttpException message when the response body has no message field', () => {
+    const logger = { error: vi.fn() };
+    const filter = new GlobalExceptionFilter(logger as never);
+    const { host, response } = createHost('/api/plain');
+
+    filter.catch(
+      new HttpException('plain failure', HttpStatus.BAD_REQUEST),
+      host,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: ErrorCode.VALIDATION_ERROR,
+        message: 'plain failure',
+      }),
+    );
+  });
+
+  it('serializes object validation messages without joining when message is a string', () => {
+    const logger = { error: vi.fn() };
+    const filter = new GlobalExceptionFilter(logger as never);
+    const { host, response } = createHost('/api/string-message');
+
+    filter.catch(
+      new HttpException({ message: 'single validation failure' }, HttpStatus.BAD_REQUEST),
+      host,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: ErrorCode.VALIDATION_ERROR,
+        message: 'single validation failure',
+      }),
+    );
+  });
+
   it('logs unhandled errors without exposing their messages to clients', () => {
     const logger = { error: vi.fn() };
     const filter = new GlobalExceptionFilter(logger as never);

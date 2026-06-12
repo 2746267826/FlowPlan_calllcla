@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 
 class TrackerLogHistoryPage extends ConsumerStatefulWidget {
@@ -180,6 +181,7 @@ class _TrackerLogHistoryPageState extends ConsumerState<TrackerLogHistoryPage> {
                 ),
                 Expanded(
                   child: GestureDetector(
+                    key: const Key('tracker-log-history-date-picker'),
                     onTap: _pickDate,
                     child: Text(
                       _formatDate(_selectedDate),
@@ -294,7 +296,8 @@ class _TrackerLogHistoryPageState extends ConsumerState<TrackerLogHistoryPage> {
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: () => ref.invalidate(serverActivityRecordsPageProvider),
+                onPressed: () =>
+                    ref.invalidate(serverActivityRecordsPageProvider),
                 icon: const Icon(Icons.refresh, size: 16),
                 label: const Text('重试'),
               ),
@@ -403,11 +406,12 @@ class _TrackerLogHistoryPageState extends ConsumerState<TrackerLogHistoryPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     OutlinedButton.icon(
+                      key: AppKeys.trackerLogHistoryPreviousPageButton,
                       onPressed: hasPrevious
                           ? () {
                               setState(() {
-                                _currentOffset =
-                                    (_currentOffset - _pageSize).clamp(0, 1 << 31);
+                                _currentOffset = (_currentOffset - _pageSize)
+                                    .clamp(0, 1 << 31);
                               });
                             }
                           : null,
@@ -421,6 +425,7 @@ class _TrackerLogHistoryPageState extends ConsumerState<TrackerLogHistoryPage> {
                     ),
                     const SizedBox(width: 16),
                     OutlinedButton.icon(
+                      key: AppKeys.trackerLogHistoryNextPageButton,
                       onPressed: hasMore
                           ? () {
                               setState(() {
@@ -632,8 +637,8 @@ class _ServerRecordTile extends StatelessWidget {
           if (hasDetails) ...[
             const SizedBox(height: 8),
             Theme(
-              data: Theme.of(context)
-                  .copyWith(dividerColor: Colors.transparent),
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 4),
@@ -756,14 +761,16 @@ _ServerRecord _recordFromServerItem(Map<String, Object?> item) {
     startTime: start,
     endTime: end,
     durationMinutes: durationMinutes,
-    processName: _stringValue(
-        payload['processName'] ?? payload['process_name'] ?? payload['packageName']),
-    windowTitle:
-        _stringValue(payload['windowTitle'] ?? payload['window_title'] ?? payload['title']),
+    processName: _stringValue(payload['processName'] ??
+        payload['process_name'] ??
+        payload['packageName']),
+    windowTitle: _stringValue(
+        payload['windowTitle'] ?? payload['window_title'] ?? payload['title']),
     category: _stringValue(payload['category']),
     manualLabel: _stringValue(
         payload['manualLabel'] ?? payload['manual_label'] ?? payload['label']),
-    linkedTaskId: _intOrNull(payload['linkedTaskId'] ?? payload['linked_task_id']),
+    linkedTaskId:
+        _intOrNull(payload['linkedTaskId'] ?? payload['linked_task_id']),
     keyCount: _intValue(payload['keyCount'] ?? payload['key_count']),
     mouseClicks: _intValue(payload['mouseClicks'] ?? payload['mouse_clicks']),
     mouseMovePx: _intValue(payload['mouseMovePx'] ?? payload['mouse_move_px']),

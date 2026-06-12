@@ -159,7 +159,7 @@ class ClientBootstrapService extends ChangeNotifier {
       );
       final next = serverReached
           ? ClientRuntimeState.fromBootstrap(
-              bootstrapSnapshot!,
+              bootstrapSnapshot,
               mode: 'server_first',
               syncing: false,
             ).copyWith(
@@ -425,6 +425,9 @@ class ClientBootstrapService extends ChangeNotifier {
       return MapEntry(key, value);
     });
   }
+
+  @visibleForTesting
+  Map<String, Object?> rowToJsonForTesting(QueryRow row) => _rowToJson(row);
 
   void _setState(ClientRuntimeState next) {
     _state = next;

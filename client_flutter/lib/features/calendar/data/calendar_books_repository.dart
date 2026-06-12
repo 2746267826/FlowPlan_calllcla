@@ -11,8 +11,7 @@ class EventCalendarDefaults {
     required this.defaultIsBlock,
   });
 
-  const EventCalendarDefaults.fallback()
-      : defaultIsBlock = false;
+  const EventCalendarDefaults.fallback() : defaultIsBlock = false;
 
   final bool defaultIsBlock;
 }
@@ -125,7 +124,8 @@ class CalendarBooksRepository {
           action: action,
           entityType: 'event_calendar',
           entityId: created.id.toString(),
-          summary: summary ?? '\u521b\u5efa\u65e5\u5386\u672c\u300c${created.name}\u300d',
+          summary: summary ??
+              '\u521b\u5efa\u65e5\u5386\u672c\u300c${created.name}\u300d',
           after: snapshot,
           metadata: metadata,
         );
@@ -149,9 +149,13 @@ class CalendarBooksRepository {
     Object? metadata,
   }) async {
     final id = companion.id.present ? companion.id.value : null;
-    final before = id == null ? null : await _eventCalendarSnapshotById(id);
-    final updated = await _db.update(_db.eventCalendars).replace(companion);
-    if (audit && updated && id != null) {
+    if (id == null) return false;
+    final before = await _eventCalendarSnapshotById(id);
+    final updated = await (_db.update(_db.eventCalendars)
+          ..where((row) => row.id.equals(id)))
+        .write(companion.copyWith(id: const Value.absent()));
+    final didUpdate = updated > 0;
+    if (audit && didUpdate) {
       final after = await _eventCalendarSnapshotById(id);
       final name = (after?['name'] as String?) ??
           (before?['name'] as String?) ??
@@ -174,7 +178,7 @@ class CalendarBooksRepository {
         );
       }
     }
-    return updated;
+    return didUpdate;
   }
 
   Future<int> countEventsInCalendar(int id) async {
@@ -218,7 +222,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'event_calendar',
         entityId: id.toString(),
-        summary: summary ?? '\u66f4\u65b0\u65e5\u5386\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
+        summary: summary ??
+            '\u66f4\u65b0\u65e5\u5386\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
         before: before,
         after: after,
         metadata: metadata,
@@ -240,7 +245,8 @@ class CalendarBooksRepository {
       return;
     }
     if (calendar.source != 'local') {
-      throw StateError('\u53ea\u6709\u672c\u5730\u65e5\u5386\u672c\u53ef\u4ee5\u8bbe\u4e3a\u9ed8\u8ba4\u65e5\u5386\u672c\u3002');
+      throw StateError(
+          '\u53ea\u6709\u672c\u5730\u65e5\u5386\u672c\u53ef\u4ee5\u8bbe\u4e3a\u9ed8\u8ba4\u65e5\u5386\u672c\u3002');
     }
 
     await _normalizeLocalEventCalendarDefault(preferredId: id);
@@ -251,7 +257,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'event_calendar',
         entityId: id.toString(),
-        summary: summary ?? '\u5c06\u65e5\u5386\u672c\u300c${calendar.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
+        summary: summary ??
+            '\u5c06\u65e5\u5386\u672c\u300c${calendar.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
         before: before,
         after: after,
         metadata: metadata,
@@ -294,9 +301,9 @@ class CalendarBooksRepository {
       }
 
       await _db.deleteSetting(_eventCalendarDefaultBlockKey(id));
-      final deleted =
-          await (_db.delete(_db.eventCalendars)..where((c) => c.id.equals(id)))
-              .go();
+      final deleted = await (_db.delete(_db.eventCalendars)
+            ..where((c) => c.id.equals(id)))
+          .go();
 
       if (calendar.source == 'local' && fallbackId != null) {
         await _normalizeLocalEventCalendarDefault(preferredId: fallbackId);
@@ -310,7 +317,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'event_calendar',
         entityId: id.toString(),
-        summary: summary ?? '\u5220\u9664\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        summary: summary ??
+            '\u5220\u9664\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
         before: before,
         metadata: <String, Object?>{
           'event_count': eventCount,
@@ -351,7 +359,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'event_calendar',
         entityId: id.toString(),
-        summary: summary ?? '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u65e5\u5386\u672c\u300c$name\u300d',
+        summary: summary ??
+            '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u65e5\u5386\u672c\u300c$name\u300d',
         before: before,
         after: after,
         metadata: metadata,
@@ -395,7 +404,8 @@ class CalendarBooksRepository {
 
     final existing = matches.isNotEmpty ? matches.first : null;
     if (matches.length > 1) {
-      final duplicateIds = matches.skip(1).map((calendar) => calendar.id).toList();
+      final duplicateIds =
+          matches.skip(1).map((calendar) => calendar.id).toList();
       if (duplicateIds.isNotEmpty) {
         await (_db.update(_db.calendarEvents)
               ..where((e) => e.eventCalendarId.isIn(duplicateIds)))
@@ -423,7 +433,8 @@ class CalendarBooksRepository {
         audit: audit,
         actor: actor,
         action: action,
-        summary: '\u540c\u6b65\u63a5\u5165 Outlook \u65e5\u5386\u672c\u300c$name\u300d',
+        summary:
+            '\u540c\u6b65\u63a5\u5165 Outlook \u65e5\u5386\u672c\u300c$name\u300d',
         metadata: <String, Object?>{
           'source': source,
           'remote_id': remoteId,
@@ -433,7 +444,9 @@ class CalendarBooksRepository {
     }
 
     final before = audit ? await _eventCalendarSnapshot(existing) : null;
-    await (_db.update(_db.eventCalendars)..where((c) => c.id.equals(existing.id))).write(
+    await (_db.update(_db.eventCalendars)
+          ..where((c) => c.id.equals(existing.id)))
+        .write(
       EventCalendarsCompanion(
         name: Value(name),
         colorHex: Value(colorHex),
@@ -484,7 +497,8 @@ class CalendarBooksRepository {
           .get();
 
   Future<List<TaskList>> getArchivedTaskLists() =>
-      (_db.select(_db.taskLists)..where((t) => t.isArchived.equals(true))).get();
+      (_db.select(_db.taskLists)..where((t) => t.isArchived.equals(true)))
+          .get();
 
   Future<TaskList?> getTaskListById(int id) =>
       (_db.select(_db.taskLists)..where((t) => t.id.equals(id)))
@@ -529,7 +543,8 @@ class CalendarBooksRepository {
           action: action,
           entityType: 'task_list',
           entityId: created.id.toString(),
-          summary: summary ?? '\u521b\u5efa\u4efb\u52a1\u672c\u300c${created.name}\u300d',
+          summary: summary ??
+              '\u521b\u5efa\u4efb\u52a1\u672c\u300c${created.name}\u300d',
           after: snapshot,
           metadata: metadata,
         );
@@ -553,10 +568,13 @@ class CalendarBooksRepository {
     Object? metadata,
   }) async {
     final id = companion.id.present ? companion.id.value : null;
-    final before = id == null ? null : await _taskListSnapshotById(id);
-    final updated = _db.update(_db.taskLists).replace(companion);
-    final result = await updated;
-    if (audit && result && id != null) {
+    if (id == null) return false;
+    final before = await _taskListSnapshotById(id);
+    final updated = await (_db.update(_db.taskLists)
+          ..where((row) => row.id.equals(id)))
+        .write(companion.copyWith(id: const Value.absent()));
+    final result = updated > 0;
+    if (audit && result) {
       final after = await _taskListSnapshotById(id);
       final name = (after?['name'] as String?) ??
           (before?['name'] as String?) ??
@@ -638,7 +656,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '\u66f4\u65b0\u4efb\u52a1\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
+        summary: summary ??
+            '\u66f4\u65b0\u4efb\u52a1\u672c\u300c$name\u300d\u9ed8\u8ba4\u89c4\u5219',
         before: before,
         after: after,
         metadata: metadata,
@@ -660,7 +679,8 @@ class CalendarBooksRepository {
       return;
     }
     if (taskList.isArchived) {
-      throw StateError('\u5df2\u5f52\u6863\u4efb\u52a1\u672c\u4e0d\u80fd\u8bbe\u4e3a\u9ed8\u8ba4\u4efb\u52a1\u672c\u3002');
+      throw StateError(
+          '\u5df2\u5f52\u6863\u4efb\u52a1\u672c\u4e0d\u80fd\u8bbe\u4e3a\u9ed8\u8ba4\u4efb\u52a1\u672c\u3002');
     }
 
     await _normalizeActiveTaskListDefault(preferredId: id);
@@ -671,7 +691,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '\u5c06\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
+        summary: summary ??
+            '\u5c06\u4efb\u52a1\u672c\u300c${taskList.name}\u300d\u8bbe\u4e3a\u9ed8\u8ba4',
         before: before,
         after: after,
         metadata: metadata,
@@ -720,7 +741,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '\u5f52\u6863\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        summary: summary ??
+            '\u5f52\u6863\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
         before: before,
         after: after,
         metadata: <String, Object?>{
@@ -759,7 +781,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '\u6062\u590d\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        summary: summary ??
+            '\u6062\u590d\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
         before: before,
         after: after,
         metadata: metadata,
@@ -804,7 +827,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '\u5220\u9664\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
+        summary: summary ??
+            '\u5220\u9664\u4efb\u52a1\u672c\u300c${existing.name}\u300d',
         before: before,
         metadata: <String, Object?>{
           'task_count': taskCount,
@@ -844,7 +868,8 @@ class CalendarBooksRepository {
         action: action,
         entityType: 'task_list',
         entityId: id.toString(),
-        summary: summary ?? '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u4efb\u52a1\u672c\u300c$name\u300d',
+        summary: summary ??
+            '${visible ? '\u663e\u793a' : '\u9690\u85cf'}\u4efb\u52a1\u672c\u300c$name\u300d',
         before: before,
         after: after,
         metadata: metadata,
@@ -873,15 +898,15 @@ class CalendarBooksRepository {
 
   Future<void> ensureContainerIntegrity() async {
     await _db.transaction(() async {
-      final fallbackEventCalendarId = await getOrCreateWritableEventCalendarId();
+      final fallbackEventCalendarId =
+          await getOrCreateWritableEventCalendarId();
       final fallbackTaskListId = await getOrCreateActiveTaskListId();
 
-      final validEventCalendarIds = (await getAllEventCalendars())
-          .map((calendar) => calendar.id)
-          .toSet();
+      final validEventCalendarIds =
+          (await getAllEventCalendars()).map((calendar) => calendar.id).toSet();
       final validTaskListIds = (await (_db.select(_db.taskLists)
-            ..where((t) => t.isArchived.equals(false)))
-          .get())
+                ..where((t) => t.isArchived.equals(false)))
+              .get())
           .map((list) => list.id)
           .toSet();
 
@@ -913,7 +938,8 @@ class CalendarBooksRepository {
         }
       }
 
-      await _normalizeLocalEventCalendarDefault(preferredId: fallbackEventCalendarId);
+      await _normalizeLocalEventCalendarDefault(
+          preferredId: fallbackEventCalendarId);
       await _normalizeActiveTaskListDefault(preferredId: fallbackTaskListId);
     });
   }
@@ -1081,4 +1107,3 @@ class CalendarBooksRepository {
     );
   }
 }
-

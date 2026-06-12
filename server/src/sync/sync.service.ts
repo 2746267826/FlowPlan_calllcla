@@ -593,6 +593,7 @@ export class SyncService {
       mutation.baseServerVersion != null &&
       existing.server_version !== mutation.baseServerVersion
     ) {
+      const baseServerVersion = mutation.baseServerVersion;
       // Record mutation first so the FK reference from sync_conflicts is satisfied
       await this.recordMutation(client, {
         mutation,
@@ -607,6 +608,7 @@ export class SyncService {
         deviceId,
         mutation,
         existing,
+        baseServerVersion,
       );
       return { kind: 'conflict', conflict };
     }
@@ -792,6 +794,7 @@ export class SyncService {
     deviceId: string,
     mutation: SyncMutationDto,
     existing: SyncObjectRow,
+    baseServerVersion: number,
   ) {
     const fields = this.buildConflictFields(mutation, existing.payload);
     const conflict = await client.query<{
@@ -836,7 +839,7 @@ export class SyncService {
         mutation.objectType,
         mutation.localId,
         existing.id,
-        mutation.baseServerVersion ?? null,
+        baseServerVersion,
         existing.server_version,
         JSON.stringify(fields),
       ],
@@ -947,7 +950,7 @@ export class SyncService {
     userId: string,
     deviceId: string,
     action: string,
-    details: Record<string, unknown>,
+    details: Record<string, unknown> & { conflictId: string },
   ) {
     return client.query(
       `
@@ -966,8 +969,8 @@ export class SyncService {
         userId,
         deviceId,
         action,
-        details.conflictId ?? null,
-        `${action}: ${details.conflictId ?? 'unknown'}`,
+        details.conflictId,
+        `${action}: ${details.conflictId}`,
         JSON.stringify(details),
       ],
     );

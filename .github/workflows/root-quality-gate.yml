@@ -1,0 +1,54 @@
+name: Root Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  governance:
+    name: Governance Matrix
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate governance and focused tests
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/test-flowplanv2.ps1 -GovernanceOnly
+
+  completion:
+    name: Completion Gate
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        shell: pwsh
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Playwright Chromium
+        working-directory: web_admin
+        shell: pwsh
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Run completion gate
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows

@@ -58,8 +58,10 @@ export class WebService {
     const todayEvents = eventItems.filter((item) => this.isTodayLike(item.startAt));
     const todayActuals = actualItems.filter((item) => this.isTodayLike(item.startAt));
     const upcoming = [...todayEvents, ...taskItems]
-      .filter((item) => this.futureTime(item.startAt ?? item.dueAt) !== null)
-      .sort((a, b) => (this.futureTime(a.startAt ?? a.dueAt) ?? 0) - (this.futureTime(b.startAt ?? b.dueAt) ?? 0));
+      .map((item) => ({ item, time: this.futureTime(item.startAt ?? item.dueAt) }))
+      .filter((entry): entry is { item: Record<string, unknown>; time: number } => entry.time !== null)
+      .sort((a, b) => a.time - b.time)
+      .map((entry) => entry.item);
     return {
       ok: true,
       mode: 'user_web_client',

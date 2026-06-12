@@ -32,6 +32,12 @@ class ServerConfigStore {
         : rawPath.endsWith('/api')
             ? rawPath
             : '$rawPath/api';
-    return uri.replace(path: nextPath, query: '', fragment: '');
+    return Uri(
+      scheme: uri.scheme,
+      userInfo: uri.userInfo,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: nextPath,
+    );
   }
 }

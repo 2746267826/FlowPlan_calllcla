@@ -1,9 +1,11 @@
+import 'package:flowplanv2/core/server_first/server_first_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/sync/sync_object_registry.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/app_keys.dart';
@@ -126,9 +128,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isCreating
-              ? '\u65b0\u5efa\u4efb\u52a1'
-              : '\u7f16\u8f91\u4efb\u52a1',
+          isCreating ? '\u65b0\u5efa\u4efb\u52a1' : '\u7f16\u8f91\u4efb\u52a1',
         ),
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -328,11 +328,19 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
   }
 
   void _close(BuildContext context) {
-    if (GoRouter.of(context).canPop()) {
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
       context.pop();
       return;
     }
-    Navigator.of(context).pop();
+
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    context.go(AppRoutes.timeline);
   }
 
   Future<void> _pickDeadline() async {
@@ -404,7 +412,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
 
     try {
       final store = await ref.read(taskEventServerFirstStoreProvider.future);
-      late final result;
+      late final ServerFirstWriteResult result;
       if (widget.taskId == null) {
         result = await store.createTask(payload);
       } else {
@@ -607,8 +615,7 @@ class _TaskListSelector extends StatelessWidget {
                   list.name,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: selected ? color : null,
                   ),
                 ),

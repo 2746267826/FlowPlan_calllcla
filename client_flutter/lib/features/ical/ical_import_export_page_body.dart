@@ -74,10 +74,23 @@ extension _IcsExportScopeX on _IcsExportScope {
 }
 
 class ICalImportExportPage extends ConsumerStatefulWidget {
-  const ICalImportExportPage({super.key});
+  const ICalImportExportPage({
+    super.key,
+    this.restoreService = const DatabaseRestoreService(),
+    this.isWindowsOverride,
+    this.openDatabaseFolder,
+    this.startProcess,
+  });
+
+  final DatabaseRestoreService restoreService;
+  final bool? isWindowsOverride;
+  final Future<void> Function(String folderPath)? openDatabaseFolder;
+  final Future<void> Function(String executable, List<String> arguments)?
+      startProcess;
 
   @override
-  ConsumerState<ICalImportExportPage> createState() => _ICalImportExportPageState();
+  ConsumerState<ICalImportExportPage> createState() =>
+      _ICalImportExportPageState();
 }
 
 class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
@@ -93,6 +106,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   bool _structuredSelectionInitialized = false;
   Set<int> _selectedStructuredCalendarIds = <int>{};
   Set<int> _selectedStructuredTaskListIds = <int>{};
+  Set<int> _knownStructuredCalendarIds = <int>{};
+  Set<int> _knownStructuredTaskListIds = <int>{};
   PendingDatabaseRestore? _pendingRestore;
   _IcsImportMode _importMode = _IcsImportMode.smartMerge;
   _IcsExportScope _exportScope = _IcsExportScope.selectedCalendar;
@@ -105,7 +120,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }
 
   Future<void> _loadPendingRestore() async {
-    final pendingRestore = await const DatabaseRestoreService().getPendingRestore();
+    final pendingRestore = await widget.restoreService.getPendingRestore();
     if (!mounted) {
       return;
     }
@@ -113,7 +128,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }
 
   Future<void> _loadRestoreNotice() async {
-    final notice = await const DatabaseRestoreService().consumeRestoreNotice();
+    final notice = await widget.restoreService.consumeRestoreNotice();
     if (!mounted || notice == null) {
       return;
     }
@@ -130,6 +145,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   Widget build(BuildContext context) {
     final calendarsAsync = ref.watch(allEventCalendarsProvider);
     final taskListsAsync = ref.watch(allTaskListsProvider);
+    final archivedTaskListsAsync = ref.watch(archivedTaskListsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -140,7 +156,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         error: (error, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text('\u52a0\u8f7d\u65e5\u5386\u672c\u5931\u8d25\uff1a$error'),
+            child:
+                Text('\u52a0\u8f7d\u65e5\u5386\u672c\u5931\u8d25\uff1a$error'),
           ),
         ),
         data: (allCalendars) {
@@ -153,427 +170,455 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
               ),
             ),
             data: (taskLists) {
-          final localCalendars = allCalendars
-              .where((calendar) => calendar.source == 'local')
-              .toList(growable: false);
-          _ensureSelectedCalendar(localCalendars);
-          _ensureStructuredSelections(
-            localCalendars: localCalendars,
-            taskLists: taskLists,
-          );
+              final structuredTaskLists = [
+                ...taskLists,
+                ...?archivedTaskListsAsync.value,
+              ];
+              final localCalendars = allCalendars
+                  .where((calendar) => calendar.source == 'local')
+                  .toList(growable: false);
+              _ensureSelectedCalendar(localCalendars);
+              _ensureStructuredSelections(
+                localCalendars: localCalendars,
+                taskLists: structuredTaskLists,
+              );
 
-          final selectedCalendar = _findSelectedCalendar(localCalendars);
-          final selectedCalendarName =
-              selectedCalendar?.name ?? '\u672a\u9009\u62e9\u65e5\u5386\u672c';
+              final selectedCalendar = _findSelectedCalendar(localCalendars);
+              final selectedCalendarName = selectedCalendar?.name ??
+                  '\u672a\u9009\u62e9\u65e5\u5386\u672c';
+              final isWindowsForDatabaseFolder =
+                  widget.isWindowsOverride ?? Platform.isWindows;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _ImportExportSectionHeader(
-                  icon: Icons.tune_outlined,
-                  title: '操作对象与策略',
-                  subtitle: '先选择本地日历本、导入策略和导出范围；Outlook 只读日历不会在这里被改写。',
-                  color: AppColors.primary,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.12),
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _ImportExportSectionHeader(
+                      icon: Icons.tune_outlined,
+                      title: '操作对象与策略',
+                      subtitle: '先选择本地日历本、导入策略和导出范围；Outlook 只读日历不会在这里被改写。',
+                      color: AppColors.primary,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '\u64cd\u4f5c\u5bf9\u8c61',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.12),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        '\u5bfc\u5165\u548c\u5bfc\u51fa\u53ea\u4f1a\u9488\u5bf9\u672c\u5730\u65e5\u5386\u672c\u3002Outlook \u540c\u6b65\u65e5\u5386\u4e3a\u53ea\u8bfb\uff0c\u4e0d\u4f1a\u5728\u8fd9\u91cc\u88ab\u6539\u5199\u6216\u5bfc\u51fa\u56de\u5199\u3002',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 14),
-                      if (localCalendars.isEmpty)
-                        const Text(
-                          '\u5f53\u524d\u6ca1\u6709\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c\u3002\u8bf7\u5148\u5728\u65e5\u5386\u672c\u7ba1\u7406\u4e2d\u521b\u5efa\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\u3002',
-                          style: TextStyle(fontSize: 13),
-                        )
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: localCalendars.map((calendar) {
-                            final selected = calendar.id == _selectedCalendarId;
-                            return ChoiceChip(
-                              label: Text(calendar.name),
-                              selected: selected,
-                              onSelected: (_) {
-                                setState(() => _selectedCalendarId = calendar.id);
-                              },
-                              selectedColor: _parseColor(calendar.colorHex),
-                              labelStyle: TextStyle(
-                                color: selected ? Colors.white : null,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '\u64cd\u4f5c\u5bf9\u8c61',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            '\u5bfc\u5165\u548c\u5bfc\u51fa\u53ea\u4f1a\u9488\u5bf9\u672c\u5730\u65e5\u5386\u672c\u3002Outlook \u540c\u6b65\u65e5\u5386\u4e3a\u53ea\u8bfb\uff0c\u4e0d\u4f1a\u5728\u8fd9\u91cc\u88ab\u6539\u5199\u6216\u5bfc\u51fa\u56de\u5199\u3002',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 14),
+                          if (localCalendars.isEmpty)
+                            const Text(
+                              '\u5f53\u524d\u6ca1\u6709\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c\u3002\u8bf7\u5148\u5728\u65e5\u5386\u672c\u7ba1\u7406\u4e2d\u521b\u5efa\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\u3002',
+                              style: TextStyle(fontSize: 13),
+                            )
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: localCalendars.map((calendar) {
+                                final selected =
+                                    calendar.id == _selectedCalendarId;
+                                return ChoiceChip(
+                                  label: Text(calendar.name),
+                                  selected: selected,
+                                  onSelected: (_) {
+                                    setState(() =>
+                                        _selectedCalendarId = calendar.id);
+                                  },
+                                  selectedColor: _parseColor(calendar.colorHex),
+                                  labelStyle: TextStyle(
+                                    color: selected ? Colors.white : null,
+                                  ),
+                                );
+                              }).toList(growable: false),
+                            ),
+                          if (localCalendars.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              '\u5bfc\u5165\u7b56\u7565',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
-                            );
-                          }).toList(growable: false),
-                        ),
-                      if (localCalendars.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          '\u5bfc\u5165\u7b56\u7565',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _IcsImportMode.values.map((mode) {
-                            return ChoiceChip(
-                              label: Text(mode.label),
-                              selected: _importMode == mode,
-                              onSelected: (_) {
-                                setState(() => _importMode = mode);
-                              },
-                            );
-                          }).toList(growable: false),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _importMode.description,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          '\u5bfc\u51fa\u8303\u56f4',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _IcsExportScope.values.map((scope) {
-                            final disabled =
-                                scope == _IcsExportScope.allLocalCalendars &&
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _IcsImportMode.values.map((mode) {
+                                return ChoiceChip(
+                                  label: Text(mode.label),
+                                  selected: _importMode == mode,
+                                  onSelected: (_) {
+                                    setState(() => _importMode = mode);
+                                  },
+                                );
+                              }).toList(growable: false),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _importMode.description,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              '\u5bfc\u51fa\u8303\u56f4',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _IcsExportScope.values.map((scope) {
+                                final disabled = scope ==
+                                        _IcsExportScope.allLocalCalendars &&
                                     localCalendars.length <= 1;
-                            return ChoiceChip(
-                              label: Text(scope.label),
-                              selected: _exportScope == scope,
-                              onSelected: disabled
-                                  ? null
-                                  : (_) {
-                                      setState(() => _exportScope = scope);
-                                    },
-                            );
-                          }).toList(growable: false),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          localCalendars.length <= 1 &&
-                                  _exportScope ==
-                                      _IcsExportScope.allLocalCalendars
-                              ? '\u5f53\u524d\u53ea\u6709\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\uff0c\u201c\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u201d\u5bfc\u51fa\u4e0e\u201c\u5f53\u524d\u65e5\u5386\u672c\u201d\u6548\u679c\u4e00\u81f4\u3002'
-                              : _exportScope.description,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const _ImportExportSectionHeader(
-                  icon: Icons.event_note_outlined,
-                  title: '标准 iCalendar',
-                  subtitle: '用于和 Outlook、Google Calendar、Apple Calendar 等日历软件交换 .ics 日程文件。',
-                  color: Color(0xFF43A047),
-                ),
-                const SizedBox(height: 12),
-                _ActionCard(
-                  icon: Icons.file_download_outlined,
-                  title: '\u5bfc\u5165 .ics \u6587\u4ef6',
-                  subtitle: localCalendars.isEmpty
-                      ? '\u65e0\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c'
-                      : '\u4ee5\u300c${_importMode.label}\u300d\u6a21\u5f0f\u5c06 iCalendar \u6587\u4ef6\u5bfc\u5165\u5230\u300c$selectedCalendarName\u300d',
-                  actionLabel: _importing ? '\u5bfc\u5165\u4e2d...' : '\u9009\u62e9\u6587\u4ef6',
-                  onAction: _importing || localCalendars.isEmpty
-                      ? null
-                      : () => _importIcs(selectedCalendar!),
-                  color: AppColors.primary,
-                ),
-                const SizedBox(height: 16),
-                _ActionCard(
-                  icon: Icons.file_upload_outlined,
-                  title: '\u5bfc\u51fa .ics \u6587\u4ef6',
-                  subtitle: localCalendars.isEmpty
-                      ? '\u65e0\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c'
-                      : _exportScope == _IcsExportScope.selectedCalendar
-                          ? '\u53ea\u5bfc\u51fa\u300c$selectedCalendarName\u300d\u4e2d\u7684\u672c\u5730\u65e5\u7a0b'
-                          : '\u5408\u5e76\u5bfc\u51fa ${localCalendars.length} \u4e2a\u672c\u5730\u65e5\u5386\u672c\u4e2d\u7684\u5168\u90e8\u65e5\u7a0b',
-                  actionLabel: _exporting
-                      ? '\u5bfc\u51fa\u4e2d...'
-                      : _exportScope == _IcsExportScope.selectedCalendar
-                          ? '\u5bfc\u51fa\u5f53\u524d\u65e5\u5386\u672c'
-                          : '\u5408\u5e76\u5bfc\u51fa\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c',
-                  onAction: _exporting || localCalendars.isEmpty
-                      ? null
-                      : () => _exportIcs(
-                            selectedCalendar: selectedCalendar!,
-                            localCalendars: localCalendars,
-                          ),
-                  color: const Color(0xFF43A047),
-                ),
-                const SizedBox(height: 16),
-                const _ImportExportSectionHeader(
-                  icon: Icons.account_tree_outlined,
-                  title: 'FlowPlanV2 结构化归档',
-                  subtitle: '保留日历本、任务本、默认规则和条目归属关系，适合跨设备迁移或选择性备份。',
-                  color: Color(0xFF00897B),
-                ),
-                const SizedBox(height: 12),
-                _buildStructuredArchiveSection(
-                  localCalendars: localCalendars,
-                  taskLists: taskLists,
-                ),
-                const SizedBox(height: 16),
-                const _ImportExportSectionHeader(
-                  icon: Icons.storage_outlined,
-                  title: '完整数据库',
-                  subtitle: '用于完整备份当前环境的所有本地数据，适合发布前、迁移前或大规模整理前保底。',
-                  color: Color(0xFF5C6BC0),
-                ),
-                const SizedBox(height: 12),
-                _ActionCard(
-                  icon: Icons.backup_outlined,
-                  title: '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
-                  subtitle:
-                      '\u4fdd\u7559\u6240\u6709\u65e5\u5386\u672c\u3001\u4efb\u52a1\u672c\u3001\u65e5\u7a0b\u3001\u4efb\u52a1\u3001\u8ffd\u8e2a\u6570\u636e\u3001\u540c\u6b65\u6620\u5c04\u4e0e\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u3002\u8fd9\u662f\u6700\u5b8c\u6574\u7684\u5907\u4efd\u65b9\u5f0f\u3002',
-                  actionLabel: _exportingDatabase
-                      ? '\u5bfc\u51fa\u4e2d...'
-                      : '\u5bfc\u51fa\u6570\u636e\u5e93',
-                  onAction: _exportingDatabase ? null : _exportDatabase,
-                  color: const Color(0xFF5C6BC0),
-                ),
-                const SizedBox(height: 16),
-                const _ImportExportSectionHeader(
-                  icon: Icons.restore_outlined,
-                  title: '恢复管理',
-                  subtitle: '恢复完整数据库需要完整重启 FlowPlanV2；本区只处理本地副本，不会触碰 Outlook 服务器数据。',
-                  color: Color(0xFFD81B60),
-                ),
-                const SizedBox(height: 12),
-                _ActionCard(
-                  icon: Icons.restore_page_outlined,
-                  title: '\u6062\u590d\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
-                  subtitle:
-                      '\u5148\u9009\u62e9\u5df2\u5bfc\u51fa\u7684 FlowPlanV2 \u6570\u636e\u5e93\u526f\u672c\uff0c\u7cfb\u7edf\u4f1a\u5148\u6682\u5b58\u5e76\u5728\u4f60\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u3002',
-                  actionLabel: _restoringDatabase
-                      ? '\u51c6\u5907\u4e2d...'
-                      : '\u9009\u62e9\u526f\u672c',
-                  onAction:
-                      _restoringDatabase ? null : _prepareDatabaseRestore,
-                  color: const Color(0xFFD81B60),
-                ),
-                if (_pendingRestore != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD81B60).withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFD81B60).withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.pending_actions_outlined,
-                              color: Color(0xFFD81B60),
+                                return ChoiceChip(
+                                  label: Text(scope.label),
+                                  selected: _exportScope == scope,
+                                  onSelected: disabled
+                                      ? null
+                                      : (_) {
+                                          setState(() => _exportScope = scope);
+                                        },
+                                );
+                              }).toList(growable: false),
                             ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '\u5df2\u6682\u5b58\u5f85\u6062\u590d\u526f\u672c',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
+                            const SizedBox(height: 6),
+                            Text(
+                              localCalendars.length <= 1 &&
+                                      _exportScope ==
+                                          _IcsExportScope.allLocalCalendars
+                                  ? '\u5f53\u524d\u53ea\u6709\u4e00\u4e2a\u672c\u5730\u65e5\u5386\u672c\uff0c\u201c\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u201d\u5bfc\u51fa\u4e0e\u201c\u5f53\u524d\u65e5\u5386\u672c\u201d\u6548\u679c\u4e00\u81f4\u3002'
+                                  : _exportScope.description,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
                               ),
                             ),
-                            TextButton(
-                              onPressed: _restoringDatabase
-                                  ? null
-                                  : _clearPendingDatabaseRestore,
-                              child: const Text('\u53d6\u6d88\u6062\u590d'),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.event_note_outlined,
+                      title: '标准 iCalendar',
+                      subtitle:
+                          '用于和 Outlook、Google Calendar、Apple Calendar 等日历软件交换 .ics 日程文件。',
+                      color: Color(0xFF43A047),
+                    ),
+                    const SizedBox(height: 12),
+                    _ActionCard(
+                      icon: Icons.file_download_outlined,
+                      title: '\u5bfc\u5165 .ics \u6587\u4ef6',
+                      subtitle: localCalendars.isEmpty
+                          ? '\u65e0\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c'
+                          : '\u4ee5\u300c${_importMode.label}\u300d\u6a21\u5f0f\u5c06 iCalendar \u6587\u4ef6\u5bfc\u5165\u5230\u300c$selectedCalendarName\u300d',
+                      actionLabel: _importing
+                          ? '\u5bfc\u5165\u4e2d...'
+                          : '\u9009\u62e9\u6587\u4ef6',
+                      onAction: _importing || localCalendars.isEmpty
+                          ? null
+                          : () => _importIcs(selectedCalendar!),
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(height: 16),
+                    _ActionCard(
+                      icon: Icons.file_upload_outlined,
+                      title: '\u5bfc\u51fa .ics \u6587\u4ef6',
+                      subtitle: localCalendars.isEmpty
+                          ? '\u65e0\u53ef\u7528\u7684\u672c\u5730\u65e5\u5386\u672c'
+                          : _exportScope == _IcsExportScope.selectedCalendar
+                              ? '\u53ea\u5bfc\u51fa\u300c$selectedCalendarName\u300d\u4e2d\u7684\u672c\u5730\u65e5\u7a0b'
+                              : '\u5408\u5e76\u5bfc\u51fa ${localCalendars.length} \u4e2a\u672c\u5730\u65e5\u5386\u672c\u4e2d\u7684\u5168\u90e8\u65e5\u7a0b',
+                      actionLabel: _exporting
+                          ? '\u5bfc\u51fa\u4e2d...'
+                          : _exportScope == _IcsExportScope.selectedCalendar
+                              ? '\u5bfc\u51fa\u5f53\u524d\u65e5\u5386\u672c'
+                              : '\u5408\u5e76\u5bfc\u51fa\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c',
+                      onAction: _exporting || localCalendars.isEmpty
+                          ? null
+                          : () => _exportIcs(
+                                selectedCalendar: selectedCalendar!,
+                                localCalendars: localCalendars,
+                              ),
+                      color: const Color(0xFF43A047),
+                    ),
+                    const SizedBox(height: 16),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.account_tree_outlined,
+                      title: 'FlowPlanV2 结构化归档',
+                      subtitle: '保留日历本、任务本、默认规则和条目归属关系，适合跨设备迁移或选择性备份。',
+                      color: Color(0xFF00897B),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildStructuredArchiveSection(
+                      localCalendars: localCalendars,
+                      taskLists: structuredTaskLists,
+                    ),
+                    const SizedBox(height: 16),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.storage_outlined,
+                      title: '完整数据库',
+                      subtitle: '用于完整备份当前环境的所有本地数据，适合发布前、迁移前或大规模整理前保底。',
+                      color: Color(0xFF5C6BC0),
+                    ),
+                    const SizedBox(height: 12),
+                    _ActionCard(
+                      icon: Icons.backup_outlined,
+                      title:
+                          '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
+                      subtitle:
+                          '\u4fdd\u7559\u6240\u6709\u65e5\u5386\u672c\u3001\u4efb\u52a1\u672c\u3001\u65e5\u7a0b\u3001\u4efb\u52a1\u3001\u8ffd\u8e2a\u6570\u636e\u3001\u540c\u6b65\u6620\u5c04\u4e0e\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u3002\u8fd9\u662f\u6700\u5b8c\u6574\u7684\u5907\u4efd\u65b9\u5f0f\u3002',
+                      actionLabel: _exportingDatabase
+                          ? '\u5bfc\u51fa\u4e2d...'
+                          : '\u5bfc\u51fa\u6570\u636e\u5e93',
+                      onAction: _exportingDatabase ? null : _exportDatabase,
+                      color: const Color(0xFF5C6BC0),
+                    ),
+                    const SizedBox(height: 16),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.restore_outlined,
+                      title: '恢复管理',
+                      subtitle:
+                          '恢复完整数据库需要完整重启 FlowPlanV2；本区只处理本地副本，不会触碰 Outlook 服务器数据。',
+                      color: Color(0xFFD81B60),
+                    ),
+                    const SizedBox(height: 12),
+                    _ActionCard(
+                      icon: Icons.restore_page_outlined,
+                      title:
+                          '\u6062\u590d\u5b8c\u6574\u6570\u636e\u5e93\u526f\u672c',
+                      subtitle:
+                          '\u5148\u9009\u62e9\u5df2\u5bfc\u51fa\u7684 FlowPlanV2 \u6570\u636e\u5e93\u526f\u672c\uff0c\u7cfb\u7edf\u4f1a\u5148\u6682\u5b58\u5e76\u5728\u4f60\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u3002',
+                      actionLabel: _restoringDatabase
+                          ? '\u51c6\u5907\u4e2d...'
+                          : '\u9009\u62e9\u526f\u672c',
+                      onAction:
+                          _restoringDatabase ? null : _prepareDatabaseRestore,
+                      color: const Color(0xFFD81B60),
+                    ),
+                    if (_pendingRestore != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFFD81B60).withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color:
+                                const Color(0xFFD81B60).withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.pending_actions_outlined,
+                                  color: Color(0xFFD81B60),
+                                ),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    '\u5df2\u6682\u5b58\u5f85\u6062\u590d\u526f\u672c',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _restoringDatabase
+                                      ? null
+                                      : _clearPendingDatabaseRestore,
+                                  child: const Text('\u53d6\u6d88\u6062\u590d'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '\u539f\u59cb\u526f\u672c\uff1a${_pendingRestore!.sourcePath}',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '\u51c6\u5907\u65f6\u95f4\uff1a${_formatDateTime(_pendingRestore!.stagedAt)}',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '\u4e0b\u6b21\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlanV2 \u65f6\uff0c\u7cfb\u7edf\u4f1a\u5148\u5e94\u7528\u8fd9\u4e2a\u526f\u672c\uff0c\u540c\u65f6\u4fdd\u7559\u4e00\u4efd\u6062\u590d\u524d\u7684\u6570\u636e\u5e93\u5907\u4efd\u3002',
+                              style: TextStyle(fontSize: 12),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '\u539f\u59cb\u526f\u672c\uff1a${_pendingRestore!.sourcePath}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '\u51c6\u5907\u65f6\u95f4\uff1a${_formatDateTime(_pendingRestore!.stagedAt)}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '\u4e0b\u6b21\u5b8c\u5168\u5173\u95ed\u5e76\u91cd\u65b0\u6253\u5f00 FlowPlanV2 \u65f6\uff0c\u7cfb\u7edf\u4f1a\u5148\u5e94\u7528\u8fd9\u4e2a\u526f\u672c\uff0c\u540c\u65f6\u4fdd\u7559\u4e00\u4efd\u6062\u590d\u524d\u7684\u6570\u636e\u5e93\u5907\u4efd\u3002',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                const _ImportExportSectionHeader(
-                  icon: Icons.folder_open_outlined,
-                  title: '存储位置',
-                  subtitle: '快速打开或查看当前运行环境的数据库目录，方便用第三方 SQLite 工具检查和维护。',
-                  color: Color(0xFF8E24AA),
-                ),
-                const SizedBox(height: 12),
-                _ActionCard(
-                  icon: Icons.folder_open_outlined,
-                  title: Platform.isWindows
-                      ? '\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55'
-                      : '\u67e5\u770b\u6570\u636e\u5e93\u4f4d\u7f6e',
-                  subtitle: Platform.isWindows
-                      ? '\u6253\u5f00 FlowPlanV2 \u5f53\u524d\u8fd0\u884c\u73af\u5883\u7684\u6570\u636e\u5e93\u6587\u4ef6\u5939\uff0c\u53ef\u7528\u7b2c\u4e09\u65b9 SQLite \u5de5\u5177\u76f4\u63a5\u67e5\u770b\u6216\u7ef4\u62a4\u3002'
-                      : '\u67e5\u770b FlowPlanV2 \u5f53\u524d\u6570\u636e\u5e93\u7684\u5b58\u50a8\u4f4d\u7f6e\uff0c\u4fbf\u4e8e\u540e\u7eed\u624b\u52a8\u5907\u4efd\u6216\u66ff\u6362\u3002',
-                  actionLabel: _openingDatabaseFolder
-                      ? (Platform.isWindows
-                          ? '\u6253\u5f00\u4e2d...'
-                          : '\u8bfb\u53d6\u4e2d...')
-                      : (Platform.isWindows
-                          ? '\u6253\u5f00\u76ee\u5f55'
-                          : '\u663e\u793a\u8def\u5f84'),
-                  onAction:
-                      _openingDatabaseFolder ? null : _openDatabaseFolder,
-                  color: const Color(0xFF8E24AA),
-                ),
-                const SizedBox(height: 24),
-                if (_lastMessage != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _lastMessage!,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                const _ImportExportSectionHeader(
-                  icon: Icons.rule_folder_outlined,
-                  title: '规则说明',
-                  subtitle: '集中说明不同导入、导出、归档和恢复方式的边界，避免误用。',
-                  color: Colors.blueGrey,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '\u89c4\u5219\u8bf4\u660e',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 8),
-                      _InfoRow(
-                        icon: Icons.description_outlined,
-                        text: 'iCalendar (.ics) \u00b7 RFC 5545 \u6807\u51c6',
-                      ),
-                      _InfoRow(
-                        icon: Icons.calendar_month_outlined,
-                        text: '\u652f\u6301 Outlook\u3001Google Calendar\u3001Apple Calendar \u5bfc\u51fa\u7684 .ics \u6587\u4ef6',
-                      ),
-                      _InfoRow(
-                        icon: Icons.shield_outlined,
-                        text: '\u53ea\u5904\u7406\u672c\u5730\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u6539\u5199 Outlook \u53ea\u8bfb\u540c\u6b65\u65e5\u5386',
-                      ),
-                      _InfoRow(
-                        icon: Icons.account_tree_outlined,
-                        text: '.ics \u53ea\u4fdd\u7559\u65e5\u7a0b\u9879\u76ee\uff0c\u4e0d\u4fdd\u7559\u4efb\u52a1\u672c\u3001\u4efb\u52a1\u3001\u8ffd\u8e2a\u8bb0\u5f55\u3001\u540c\u6b65\u6620\u5c04\u6216\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219',
-                      ),
-                      _InfoRow(
-                        icon: Icons.rule_folder_outlined,
-                        text: '\u5bfc\u5165 .ics \u65f6\uff0c\u53ef\u9009\u62e9\u201c\u667a\u80fd\u5408\u5e76\u3001\u4ec5\u8ffd\u52a0\u3001\u6e05\u7a7a\u540e\u5bfc\u5165\u201d\u4e09\u79cd\u6a21\u5f0f\uff1b\u667a\u80fd\u5408\u5e76\u4f1a\u66f4\u65b0\u540c UID \u65e5\u7a0b\uff0c\u5e76\u81ea\u52a8\u8df3\u8fc7\u6807\u9898\u4e0e\u65f6\u95f4\u5b8c\u5168\u4e00\u81f4\u7684\u91cd\u590d\u9879',
-                      ),
-                      _InfoRow(
-                        icon: Icons.layers_outlined,
-                        text: '\u9009\u62e9\u201c\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u201d\u5bfc\u51fa\u65f6\uff0c\u6240\u6709\u672c\u5730\u65e5\u7a0b\u4f1a\u5408\u5e76\u5230\u4e00\u4e2a .ics \u6587\u4ef6\u4e2d\uff0c\u4e0d\u4fdd\u7559\u65e5\u5386\u672c\u8fb9\u754c',
-                      ),
-                      _InfoRow(
-                        icon: Icons.storage_outlined,
-                        text: '\u5982\u9700\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u548c\u9879\u76ee\u5f52\u5c5e\u5173\u7cfb\uff0c\u8bf7\u4f18\u5148\u4f7f\u7528\u201cFlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u201d\u3002',
-                      ),
-                      _InfoRow(
-                        icon: Icons.fact_check_outlined,
-                        text: '\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u4f1a\u5148\u5c55\u793a\u5dee\u5f02\u9884\u89c8\uff0c\u5e76\u5728\u5199\u5165\u524d\u81ea\u52a8\u751f\u6210\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\u3002',
-                      ),
-                      _InfoRow(
-                        icon: Icons.restore_outlined,
-                        text: '\u5982\u9700\u8981\u6062\u590d\u5b8c\u6574\u6570\u636e\uff0c\u53ef\u4ee5\u5728\u5173\u95ed FlowPlanV2 \u540e\u624b\u52a8\u66ff\u6362\u6570\u636e\u5e93\u6587\u4ef6\uff0c\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u5148\u6682\u5b58\u6062\u590d\u526f\u672c\u3002',
-                      ),
-                      _InfoRow(
-                        icon: Icons.restart_alt_outlined,
-                        text: '\u73b0\u5728\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u76f4\u63a5\u9009\u62e9\u6570\u636e\u5e93\u526f\u672c\uff0c\u5e76\u5728\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u6062\u590d',
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 16),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.folder_open_outlined,
+                      title: '存储位置',
+                      subtitle: '快速打开或查看当前运行环境的数据库目录，方便用第三方 SQLite 工具检查和维护。',
+                      color: Color(0xFF8E24AA),
+                    ),
+                    const SizedBox(height: 12),
+                    _ActionCard(
+                      icon: Icons.folder_open_outlined,
+                      title: isWindowsForDatabaseFolder
+                          ? '\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55'
+                          : '\u67e5\u770b\u6570\u636e\u5e93\u4f4d\u7f6e',
+                      subtitle: isWindowsForDatabaseFolder
+                          ? '\u6253\u5f00 FlowPlanV2 \u5f53\u524d\u8fd0\u884c\u73af\u5883\u7684\u6570\u636e\u5e93\u6587\u4ef6\u5939\uff0c\u53ef\u7528\u7b2c\u4e09\u65b9 SQLite \u5de5\u5177\u76f4\u63a5\u67e5\u770b\u6216\u7ef4\u62a4\u3002'
+                          : '\u67e5\u770b FlowPlanV2 \u5f53\u524d\u6570\u636e\u5e93\u7684\u5b58\u50a8\u4f4d\u7f6e\uff0c\u4fbf\u4e8e\u540e\u7eed\u624b\u52a8\u5907\u4efd\u6216\u66ff\u6362\u3002',
+                      actionLabel: _openingDatabaseFolder
+                          ? (isWindowsForDatabaseFolder
+                              ? '\u6253\u5f00\u4e2d...'
+                              : '\u8bfb\u53d6\u4e2d...')
+                          : (isWindowsForDatabaseFolder
+                              ? '\u6253\u5f00\u76ee\u5f55'
+                              : '\u663e\u793a\u8def\u5f84'),
+                      onAction:
+                          _openingDatabaseFolder ? null : _openDatabaseFolder,
+                      color: const Color(0xFF8E24AA),
+                    ),
+                    const SizedBox(height: 24),
+                    if (_lastMessage != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _lastMessage!,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+                    const _ImportExportSectionHeader(
+                      icon: Icons.rule_folder_outlined,
+                      title: '规则说明',
+                      subtitle: '集中说明不同导入、导出、归档和恢复方式的边界，避免误用。',
+                      color: Colors.blueGrey,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '\u89c4\u5219\u8bf4\u660e',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          SizedBox(height: 8),
+                          _InfoRow(
+                            icon: Icons.description_outlined,
+                            text:
+                                'iCalendar (.ics) \u00b7 RFC 5545 \u6807\u51c6',
+                          ),
+                          _InfoRow(
+                            icon: Icons.calendar_month_outlined,
+                            text:
+                                '\u652f\u6301 Outlook\u3001Google Calendar\u3001Apple Calendar \u5bfc\u51fa\u7684 .ics \u6587\u4ef6',
+                          ),
+                          _InfoRow(
+                            icon: Icons.shield_outlined,
+                            text:
+                                '\u53ea\u5904\u7406\u672c\u5730\u65e5\u5386\u672c\uff0c\u4e0d\u4f1a\u6539\u5199 Outlook \u53ea\u8bfb\u540c\u6b65\u65e5\u5386',
+                          ),
+                          _InfoRow(
+                            icon: Icons.account_tree_outlined,
+                            text:
+                                '.ics \u53ea\u4fdd\u7559\u65e5\u7a0b\u9879\u76ee\uff0c\u4e0d\u4fdd\u7559\u4efb\u52a1\u672c\u3001\u4efb\u52a1\u3001\u8ffd\u8e2a\u8bb0\u5f55\u3001\u540c\u6b65\u6620\u5c04\u6216\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219',
+                          ),
+                          _InfoRow(
+                            icon: Icons.rule_folder_outlined,
+                            text:
+                                '\u5bfc\u5165 .ics \u65f6\uff0c\u53ef\u9009\u62e9\u201c\u667a\u80fd\u5408\u5e76\u3001\u4ec5\u8ffd\u52a0\u3001\u6e05\u7a7a\u540e\u5bfc\u5165\u201d\u4e09\u79cd\u6a21\u5f0f\uff1b\u667a\u80fd\u5408\u5e76\u4f1a\u66f4\u65b0\u540c UID \u65e5\u7a0b\uff0c\u5e76\u81ea\u52a8\u8df3\u8fc7\u6807\u9898\u4e0e\u65f6\u95f4\u5b8c\u5168\u4e00\u81f4\u7684\u91cd\u590d\u9879',
+                          ),
+                          _InfoRow(
+                            icon: Icons.layers_outlined,
+                            text:
+                                '\u9009\u62e9\u201c\u5168\u90e8\u672c\u5730\u65e5\u5386\u672c\u201d\u5bfc\u51fa\u65f6\uff0c\u6240\u6709\u672c\u5730\u65e5\u7a0b\u4f1a\u5408\u5e76\u5230\u4e00\u4e2a .ics \u6587\u4ef6\u4e2d\uff0c\u4e0d\u4fdd\u7559\u65e5\u5386\u672c\u8fb9\u754c',
+                          ),
+                          _InfoRow(
+                            icon: Icons.storage_outlined,
+                            text:
+                                '\u5982\u9700\u4fdd\u7559\u65e5\u5386\u672c / \u4efb\u52a1\u672c\u8fb9\u754c\u3001\u5bb9\u5668\u9ed8\u8ba4\u89c4\u5219\u548c\u9879\u76ee\u5f52\u5c5e\u5173\u7cfb\uff0c\u8bf7\u4f18\u5148\u4f7f\u7528\u201cFlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863\u201d\u3002',
+                          ),
+                          _InfoRow(
+                            icon: Icons.fact_check_outlined,
+                            text:
+                                '\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u4f1a\u5148\u5c55\u793a\u5dee\u5f02\u9884\u89c8\uff0c\u5e76\u5728\u5199\u5165\u524d\u81ea\u52a8\u751f\u6210\u6570\u636e\u5e93\u56de\u6eda\u5907\u4efd\u3002',
+                          ),
+                          _InfoRow(
+                            icon: Icons.restore_outlined,
+                            text:
+                                '\u5982\u9700\u8981\u6062\u590d\u5b8c\u6574\u6570\u636e\uff0c\u53ef\u4ee5\u5728\u5173\u95ed FlowPlanV2 \u540e\u624b\u52a8\u66ff\u6362\u6570\u636e\u5e93\u6587\u4ef6\uff0c\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u5148\u6682\u5b58\u6062\u590d\u526f\u672c\u3002',
+                          ),
+                          _InfoRow(
+                            icon: Icons.restart_alt_outlined,
+                            text:
+                                '\u73b0\u5728\u4e5f\u53ef\u4ee5\u5728\u672c\u9875\u76f4\u63a5\u9009\u62e9\u6570\u636e\u5e93\u526f\u672c\uff0c\u5e76\u5728\u4e0b\u6b21\u5b8c\u6574\u91cd\u542f FlowPlanV2 \u65f6\u81ea\u52a8\u5e94\u7528\u6062\u590d',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
+              );
             },
           );
         },
@@ -593,7 +638,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       return;
     }
 
-    final exists = localCalendars.any((calendar) => calendar.id == _selectedCalendarId);
+    final exists =
+        localCalendars.any((calendar) => calendar.id == _selectedCalendarId);
     if (_selectedCalendarId == null || !exists) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -618,14 +664,23 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }) {
     final calendarIds = localCalendars.map((calendar) => calendar.id).toSet();
     final taskListIds = taskLists.map((taskList) => taskList.id).toSet();
-    final nextCalendarIds = _structuredSelectionInitialized
-        ? _selectedStructuredCalendarIds.intersection(calendarIds)
-        : calendarIds;
-    final nextTaskListIds = _structuredSelectionInitialized
-        ? _selectedStructuredTaskListIds.intersection(taskListIds)
-        : taskListIds;
+    final firstContainersArrivedAfterEmptyInit =
+        _structuredSelectionInitialized &&
+            _knownStructuredCalendarIds.isEmpty &&
+            _knownStructuredTaskListIds.isEmpty &&
+            (calendarIds.isNotEmpty || taskListIds.isNotEmpty);
+    final shouldSelectAll = !_structuredSelectionInitialized ||
+        firstContainersArrivedAfterEmptyInit;
+    final nextCalendarIds = shouldSelectAll
+        ? calendarIds
+        : _selectedStructuredCalendarIds.intersection(calendarIds);
+    final nextTaskListIds = shouldSelectAll
+        ? taskListIds
+        : _selectedStructuredTaskListIds.intersection(taskListIds);
 
     if (_structuredSelectionInitialized &&
+        _setEquals(_knownStructuredCalendarIds, calendarIds) &&
+        _setEquals(_knownStructuredTaskListIds, taskListIds) &&
         _setEquals(_selectedStructuredCalendarIds, nextCalendarIds) &&
         _setEquals(_selectedStructuredTaskListIds, nextTaskListIds)) {
       return;
@@ -637,6 +692,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _structuredSelectionInitialized = true;
+        _knownStructuredCalendarIds = calendarIds;
+        _knownStructuredTaskListIds = taskListIds;
         _selectedStructuredCalendarIds = nextCalendarIds;
         _selectedStructuredTaskListIds = nextTaskListIds;
       });
@@ -661,7 +718,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
   }) {
     final selectedCalendarCount = _selectedStructuredCalendarIds.length;
     final selectedTaskListCount = _selectedStructuredTaskListIds.length;
-    final selectedContainerCount = selectedCalendarCount + selectedTaskListCount;
+    final selectedContainerCount =
+        selectedCalendarCount + selectedTaskListCount;
     final hasSelection = selectedContainerCount > 0;
 
     return Container(
@@ -739,7 +797,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_upload_outlined, size: 18),
                 label: Text(
                   _exportingStructuredArchive
-                      ? '导出中...'
+                      ? '瀵煎嚭涓?..'
                       : '\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
@@ -750,7 +808,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 icon: const Icon(Icons.file_download_outlined, size: 18),
                 label: Text(
                   _importingStructuredArchive
-                      ? '导入中...'
+                      ? '瀵煎叆涓?..'
                       : '\u5bfc\u5165\u7ed3\u6784\u5316\u5f52\u6863',
                 ),
               ),
@@ -778,8 +836,9 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                   ? null
                   : () {
                       setState(() {
-                        _selectedStructuredCalendarIds =
-                            localCalendars.map((calendar) => calendar.id).toSet();
+                        _selectedStructuredCalendarIds = localCalendars
+                            .map((calendar) => calendar.id)
+                            .toSet();
                       });
                     },
               child: const Text('\u5168\u9009'),
@@ -807,12 +866,13 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             spacing: 8,
             runSpacing: 8,
             children: localCalendars.map((calendar) {
-              final selected = _selectedStructuredCalendarIds.contains(calendar.id);
+              final selected =
+                  _selectedStructuredCalendarIds.contains(calendar.id);
               return FilterChip(
                 label: Text(calendar.name),
                 selected: selected,
-                selectedColor: _parseColor(calendar.colorHex)
-                    .withValues(alpha: 0.18),
+                selectedColor:
+                    _parseColor(calendar.colorHex).withValues(alpha: 0.18),
                 onSelected: (value) {
                   setState(() {
                     final next = Set<int>.from(_selectedStructuredCalendarIds);
@@ -877,15 +937,16 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             spacing: 8,
             runSpacing: 8,
             children: taskLists.map((taskList) {
-              final selected = _selectedStructuredTaskListIds.contains(taskList.id);
+              final selected =
+                  _selectedStructuredTaskListIds.contains(taskList.id);
               return FilterChip(
                 avatar: taskList.emoji == null || taskList.emoji!.trim().isEmpty
                     ? null
                     : Text(taskList.emoji!),
                 label: Text(taskList.name),
                 selected: selected,
-                selectedColor: _parseColor(taskList.colorHex)
-                    .withValues(alpha: 0.18),
+                selectedColor:
+                    _parseColor(taskList.colorHex).withValues(alpha: 0.18),
                 onSelected: (value) {
                   setState(() {
                     final next = Set<int>.from(_selectedStructuredTaskListIds);
@@ -1004,14 +1065,17 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (archive.calendars.isEmpty && archive.taskLists.isEmpty) {
         setState(() {
           _exportingStructuredArchive = false;
-          _lastMessage = '\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u65e5\u5386\u672c\u6216\u4efb\u52a1\u672c\u3002';
+          _lastMessage =
+              '\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u65e5\u5386\u672c\u6216\u4efb\u52a1\u672c\u3002';
         });
         return;
       }
 
       final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: '\u5bfc\u51fa FlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
-        fileName: 'flowplanv2-containers-${_formatDate(DateTime.now())}.flowplanv2.json',
+        dialogTitle:
+            '\u5bfc\u51fa FlowPlanV2 \u7ed3\u6784\u5316\u5bb9\u5668\u5f52\u6863',
+        fileName:
+            'flowplanv2-containers-${_formatDate(DateTime.now())}.flowplanv2.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
       );
@@ -1019,7 +1083,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (outputPath == null || outputPath.trim().isEmpty) {
         setState(() {
           _exportingStructuredArchive = false;
-          _lastMessage = '\u5df2\u53d6\u6d88\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863\u3002';
+          _lastMessage =
+              '\u5df2\u53d6\u6d88\u5bfc\u51fa\u7ed3\u6784\u5316\u5f52\u6863\u3002';
         });
         return;
       }
@@ -1031,8 +1096,10 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         summary: '\u5df2\u5bfc\u51fa FlowPlanV2 \u7ed3\u6784\u5316\u5f52\u6863',
         metadata: <String, Object?>{
           'output_path': outputPath,
-          'calendar_ids': _selectedStructuredCalendarIds.toList(growable: false),
-          'task_list_ids': _selectedStructuredTaskListIds.toList(growable: false),
+          'calendar_ids':
+              _selectedStructuredCalendarIds.toList(growable: false),
+          'task_list_ids':
+              _selectedStructuredTaskListIds.toList(growable: false),
           'calendar_count': archive.calendars.length,
           'task_list_count': archive.taskLists.length,
         },
@@ -1066,7 +1133,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (result == null || result.files.isEmpty) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '\u672a\u9009\u62e9\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u3002';
+          _lastMessage =
+              '\u672a\u9009\u62e9\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u3002';
         });
         return;
       }
@@ -1080,7 +1148,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       } else {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '\u65e0\u6cd5\u8bfb\u53d6\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u5185\u5bb9\u3002';
+          _lastMessage =
+              '\u65e0\u6cd5\u8bfb\u53d6\u7ed3\u6784\u5316\u5f52\u6863\u6587\u4ef6\u5185\u5bb9\u3002';
         });
         return;
       }
@@ -1094,7 +1163,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (mode == null) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
+          _lastMessage =
+              '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
         });
         return;
       }
@@ -1111,7 +1181,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (confirmed != true) {
         setState(() {
           _importingStructuredArchive = false;
-          _lastMessage = '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
+          _lastMessage =
+              '\u5df2\u53d6\u6d88\u7ed3\u6784\u5316\u5f52\u6863\u5bfc\u5165\u3002';
         });
         return;
       }
@@ -1158,7 +1229,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                 setDialogState(() => selectedMode = value);
               },
               child: AlertDialog(
-                title: const Text('\u9009\u62e9\u7ed3\u6784\u5316\u5bfc\u5165\u7b56\u7565'),
+                title: const Text(
+                    '\u9009\u62e9\u7ed3\u6784\u5316\u5bfc\u5165\u7b56\u7565'),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: FlowPlanV2ArchiveImportMode.values.map((mode) {
@@ -1175,7 +1247,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                     child: const Text('\u53d6\u6d88'),
                   ),
                   FilledButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(selectedMode),
+                    onPressed: () =>
+                        Navigator.of(dialogContext).pop(selectedMode),
                     child: const Text('\u67e5\u770b\u5bfc\u5165\u9884\u89c8'),
                   ),
                 ],
@@ -1194,7 +1267,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('\u786e\u8ba4\u7ed3\u6784\u5316\u5bfc\u5165\u9884\u89c8'),
+          title: const Text(
+              '\u786e\u8ba4\u7ed3\u6784\u5316\u5bfc\u5165\u9884\u89c8'),
           content: SizedBox(
             width: 560,
             child: Column(
@@ -1236,7 +1310,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
                                 ? Icons.calendar_month_outlined
                                 : Icons.checklist_outlined,
                           ),
-                          title: Text('${container.kindLabel}：${container.name}'),
+                          title:
+                              Text('${container.kindLabel}：${container.name}'),
                           subtitle: Text(
                             '${container.actionLabel}，新增 ${container.createCount}，更新 ${container.updateCount}，跳过 ${container.skipCount}，导入前移除 ${container.removeBeforeImportCount}',
                           ),
@@ -1313,7 +1388,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (companions.isEmpty) {
         setState(() {
           _importing = false;
-          _lastMessage = '\u6587\u4ef6\u4e2d\u672a\u627e\u5230\u6709\u6548\u65e5\u7a0b (VEVENT)';
+          _lastMessage =
+              '\u6587\u4ef6\u4e2d\u672a\u627e\u5230\u6709\u6548\u65e5\u7a0b (VEVENT)';
         });
         return;
       }
@@ -1351,7 +1427,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         await _recordAudit(
           action: 'import_ics',
           entityType: 'calendar_event_import',
-          summary: '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u66ff\u6362\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+          summary:
+              '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u66ff\u6362\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
           metadata: <String, Object?>{
             'calendar_id': calendar.id,
             'calendar_name': calendar.name,
@@ -1367,8 +1444,14 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
         }
         setState(() {
           _importing = false;
-          _lastMessage =
-              '\u5df2\u5148\u6e05\u7a7a\u300c${calendar.name}\u300d\u4e2d\u7684 $deletedCount \u6761\u539f\u6709\u65e5\u7a0b\uff0c\u518d\u5bfc\u5165 $createdCount \u6761\u65b0\u65e5\u7a0b\u3002';
+          _lastMessage = _buildImportResultMessage(
+            calendarName: calendar.name,
+            importMode: importMode,
+            createdCount: createdCount,
+            updatedCount: 0,
+            skippedCount: 0,
+            deletedCount: deletedCount,
+          );
         });
         return;
       }
@@ -1440,7 +1523,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       await _recordAudit(
         action: 'import_ics',
         entityType: 'calendar_event_import',
-        summary: '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
+        summary:
+            '\u5df2\u901a\u8fc7 .ics \u5bfc\u5165\u65e5\u5386\u672c\u300c${calendar.name}\u300d',
         metadata: <String, Object?>{
           'calendar_id': calendar.id,
           'calendar_name': calendar.name,
@@ -1460,6 +1544,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
           createdCount: createdCount,
           updatedCount: updatedCount,
           skippedCount: skippedCount,
+          deletedCount: 0,
         );
       });
     } catch (error) {
@@ -1590,12 +1675,14 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       );
       setState(() {
         _exportingDatabase = false;
-        _lastMessage = '\u5b8c\u6574\u6570\u636e\u5e93\u5df2\u5bfc\u51fa\u5230 $outputPath';
+        _lastMessage =
+            '\u5b8c\u6574\u6570\u636e\u5e93\u5df2\u5bfc\u51fa\u5230 $outputPath';
       });
     } catch (error) {
       setState(() {
         _exportingDatabase = false;
-        _lastMessage = '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u5931\u8d25\uff1a$error';
+        _lastMessage =
+            '\u5bfc\u51fa\u5b8c\u6574\u6570\u636e\u5e93\u5931\u8d25\uff1a$error';
       });
     }
   }
@@ -1612,7 +1699,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (result == null || result.files.isEmpty) {
         setState(() {
           _restoringDatabase = false;
-          _lastMessage = '\u5df2\u53d6\u6d88\u9009\u62e9\u6062\u590d\u526f\u672c';
+          _lastMessage =
+              '\u5df2\u53d6\u6d88\u9009\u62e9\u6062\u590d\u526f\u672c';
         });
         return;
       }
@@ -1622,18 +1710,19 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       if (sourcePath == null || sourcePath.trim().isEmpty) {
         setState(() {
           _restoringDatabase = false;
-          _lastMessage = '\u65e0\u6cd5\u8bfb\u53d6\u6240\u9009\u6062\u590d\u526f\u672c\u8def\u5f84';
+          _lastMessage =
+              '\u65e0\u6cd5\u8bfb\u53d6\u6240\u9009\u6062\u590d\u526f\u672c\u8def\u5f84';
         });
         return;
       }
 
-      final preparation =
-          await const DatabaseRestoreService().stageRestore(sourcePath);
-      final pendingRestore = await const DatabaseRestoreService().getPendingRestore();
+      final preparation = await widget.restoreService.stageRestore(sourcePath);
+      final pendingRestore = await widget.restoreService.getPendingRestore();
       await _recordAudit(
         action: 'stage_database_restore',
         entityType: 'database_backup',
-        summary: '\u5df2\u51c6\u5907\u6570\u636e\u5e93\u6062\u590d\u526f\u672c\uff0c\u7b49\u5f85\u4e0b\u6b21\u542f\u52a8\u5e94\u7528',
+        summary:
+            '\u5df2\u51c6\u5907\u6570\u636e\u5e93\u6062\u590d\u526f\u672c\uff0c\u7b49\u5f85\u4e0b\u6b21\u542f\u52a8\u5e94\u7528',
         metadata: <String, Object?>{
           'source_path': preparation.sourcePath,
           'staged_path': preparation.stagedPath,
@@ -1654,7 +1743,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _restoringDatabase = false;
-        _lastMessage = '\u51c6\u5907\u6062\u590d\u526f\u672c\u5931\u8d25\uff1a$error';
+        _lastMessage =
+            '\u51c6\u5907\u6062\u590d\u526f\u672c\u5931\u8d25\uff1a$error';
       });
     }
   }
@@ -1664,11 +1754,12 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
 
     try {
       final pendingBefore = _pendingRestore;
-      await const DatabaseRestoreService().clearPendingRestore();
+      await widget.restoreService.clearPendingRestore();
       await _recordAudit(
         action: 'clear_pending_database_restore',
         entityType: 'database_backup',
-        summary: '\u5df2\u53d6\u6d88\u5f85\u5e94\u7528\u7684\u6570\u636e\u5e93\u6062\u590d\u526f\u672c',
+        summary:
+            '\u5df2\u53d6\u6d88\u5f85\u5e94\u7528\u7684\u6570\u636e\u5e93\u6062\u590d\u526f\u672c',
         metadata: <String, Object?>{
           'source_path': pendingBefore?.sourcePath,
           'staged_path': pendingBefore?.stagedPath,
@@ -1680,7 +1771,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       setState(() {
         _restoringDatabase = false;
         _pendingRestore = null;
-        _lastMessage = '\u5df2\u53d6\u6d88\u5f85\u5e94\u7528\u7684\u6570\u636e\u5e93\u6062\u590d\u526f\u672c\u3002';
+        _lastMessage =
+            '\u5df2\u53d6\u6d88\u5f85\u5e94\u7528\u7684\u6570\u636e\u5e93\u6062\u590d\u526f\u672c\u3002';
       });
     } catch (error) {
       if (!mounted) {
@@ -1688,7 +1780,8 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       }
       setState(() {
         _restoringDatabase = false;
-        _lastMessage = '\u53d6\u6d88\u5f85\u6062\u590d\u526f\u672c\u5931\u8d25\uff1a$error';
+        _lastMessage =
+            '\u53d6\u6d88\u5f85\u6062\u590d\u526f\u672c\u5931\u8d25\uff1a$error';
       });
     }
   }
@@ -1701,23 +1794,33 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
       final databasePath = await database.getDatabasePath();
       final folderPath = File(databasePath).parent.path;
 
-      if (Platform.isWindows) {
-        await Process.start('explorer.exe', [folderPath]);
+      final isWindows = widget.isWindowsOverride ?? Platform.isWindows;
+      if (isWindows) {
+        final opener = widget.openDatabaseFolder;
+        if (opener == null) {
+          final startProcess = widget.startProcess ?? Process.start;
+          await startProcess('explorer.exe', [folderPath]);
+        } else {
+          await opener(folderPath);
+        }
         setState(() {
           _openingDatabaseFolder = false;
-          _lastMessage = '\u5df2\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55\uff1a$folderPath';
+          _lastMessage =
+              '\u5df2\u6253\u5f00\u6570\u636e\u5e93\u76ee\u5f55\uff1a$folderPath';
         });
         return;
       }
 
       setState(() {
         _openingDatabaseFolder = false;
-        _lastMessage = '\u5f53\u524d\u6570\u636e\u5e93\u76ee\u5f55\uff1a$folderPath';
+        _lastMessage =
+            '\u5f53\u524d\u6570\u636e\u5e93\u76ee\u5f55\uff1a$folderPath';
       });
     } catch (error) {
       setState(() {
         _openingDatabaseFolder = false;
-        _lastMessage = '\u8bfb\u53d6\u6570\u636e\u5e93\u4f4d\u7f6e\u5931\u8d25\uff1a$error';
+        _lastMessage =
+            '\u8bfb\u53d6\u6570\u636e\u5e93\u4f4d\u7f6e\u5931\u8d25\uff1a$error';
       });
     }
   }
@@ -1758,6 +1861,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
     required int createdCount,
     required int updatedCount,
     required int skippedCount,
+    required int deletedCount,
   }) {
     switch (importMode) {
       case _IcsImportMode.smartMerge:
@@ -1769,8 +1873,7 @@ class _ICalImportExportPageState extends ConsumerState<ICalImportExportPage> {
             ? '\u5df2\u4ee5\u300c${importMode.label}\u300d\u6a21\u5f0f\u5b8c\u6210\u5bfc\u5165\u300c$calendarName\u300d\uff1a\u65b0\u589e $createdCount \u6761\uff0c\u8df3\u8fc7 $skippedCount \u6761\u5df2\u5b58\u5728\u7684\u65e5\u7a0b\u3002'
             : '\u5df2\u4ee5\u300c${importMode.label}\u300d\u6a21\u5f0f\u6210\u529f\u65b0\u589e $createdCount \u6761\u65e5\u7a0b\u5230\u300c$calendarName\u300d';
       case _IcsImportMode.replaceCalendar:
-        return '\u5df2\u5b8c\u6210\u300c$calendarName\u300d\u7684\u6e05\u7a7a\u540e\u5bfc\u5165\uff1a\u65b0\u5efa $createdCount \u6761\u65e5\u7a0b\u3002';
+        return '\u5df2\u5148\u6e05\u7a7a\u300c$calendarName\u300d\u4e2d\u7684 $deletedCount \u6761\u539f\u6709\u65e5\u7a0b\uff0c\u518d\u5bfc\u5165 $createdCount \u6761\u65b0\u65e5\u7a0b\u3002';
     }
   }
 }
-

@@ -5,6 +5,7 @@
 ///
 /// All functions iterate through a list of key candidates and return the
 /// first successfully typed value.
+library;
 
 // ---- String helpers ----
 

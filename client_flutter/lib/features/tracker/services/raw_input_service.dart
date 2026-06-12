@@ -248,7 +248,8 @@ class InputTelemetry {
   InputTelemetry add(InputTelemetry other) {
     return InputTelemetry(
       keyCount: keyCount + other.keyCount,
-      keyDistribution: _mergeDistribution(keyDistribution, other.keyDistribution),
+      keyDistribution:
+          _mergeDistribution(keyDistribution, other.keyDistribution),
       keySequence: _mergeSequence(keySequence, other.keySequence),
       clicks: clicks.add(other.clicks),
       scrollPx: scrollPx + other.scrollPx,
@@ -265,7 +266,8 @@ class InputTelemetry {
     final sequence = keySequence;
     return InputTelemetry(
       keyCount: (keyCount - base.keyCount).clamp(0, 1 << 31).toInt(),
-      keyDistribution: _subtractDistribution(keyDistribution, base.keyDistribution),
+      keyDistribution:
+          _subtractDistribution(keyDistribution, base.keyDistribution),
       keySequence: sequence,
       clicks: clicks.subtract(base.clicks),
       scrollPx: (scrollPx - base.scrollPx).clamp(0, 1 << 31).toInt(),
@@ -331,16 +333,24 @@ class InputTelemetry {
   }
 }
 
-class RawInputService {
-  static const _channel = MethodChannel('com.flowplanv2/raw_input');
+typedef PlatformProbe = bool Function();
 
+class RawInputService {
+  RawInputService({
+    PlatformProbe? isWindows,
+    MethodChannel? channel,
+  })  : _isWindows = isWindows ?? (() => Platform.isWindows),
+        _channel = channel ?? const MethodChannel('com.flowplanv2/raw_input');
+
+  final PlatformProbe _isWindows;
+  final MethodChannel _channel;
   bool _started = false;
   String? _lastError;
   bool get isRunning => _started;
   String? get lastError => _lastError;
 
   Future<void> start() async {
-    if (!Platform.isWindows || _started) return;
+    if (!_isWindows() || _started) return;
     try {
       await _channel.invokeMethod('start');
       _started = true;
@@ -364,7 +374,7 @@ class RawInputService {
   }
 
   Future<void> setSequenceRecording(bool _) async {
-    if (!Platform.isWindows) return;
+    if (!_isWindows()) return;
     try {
       await _channel.invokeMethod('setSequenceRecording', {'enabled': true});
       _lastError = null;
@@ -374,13 +384,14 @@ class RawInputService {
   }
 
   Future<InputTelemetry?> getStats() async {
-    if (!Platform.isWindows) return null;
+    if (!_isWindows()) return null;
     try {
       final result = await _channel.invokeMethod<Map>('getStats');
       if (result == null) return null;
       final nativeError = result['lastError'] as String?;
-      _lastError =
-          nativeError == null || nativeError.trim().isEmpty ? null : nativeError;
+      _lastError = nativeError == null || nativeError.trim().isEmpty
+          ? null
+          : nativeError;
 
       final rawKeyDist = result['keyDistribution'] as Map?;
       final keyDistribution = <int, int>{};
@@ -417,7 +428,7 @@ class RawInputService {
   Future<List<RawInputEvent>> getPendingInputEvents({
     int maxEvents = 1000,
   }) async {
-    if (!Platform.isWindows) return const <RawInputEvent>[];
+    if (!_isWindows()) return const <RawInputEvent>[];
     try {
       final result = await _channel.invokeMethod<List>(
         'getPendingInputEvents',
@@ -436,7 +447,7 @@ class RawInputService {
   }
 
   Future<void> ackInputEvents(int throughSequenceId) async {
-    if (!Platform.isWindows || throughSequenceId <= 0) return;
+    if (!_isWindows() || throughSequenceId <= 0) return;
     try {
       await _channel.invokeMethod(
         'ackInputEvents',
@@ -450,7 +461,7 @@ class RawInputService {
   }
 
   Future<void> resetStats() async {
-    if (!Platform.isWindows) return;
+    if (!_isWindows()) return;
     try {
       await _channel.invokeMethod('resetStats');
       _lastError = null;

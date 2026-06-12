@@ -1,4 +1,4 @@
-﻿part of 'tracker_page.dart';
+part of 'tracker_page.dart';
 
 class _HistoryToolbar extends ConsumerWidget {
   final DateTime selectedDate;
@@ -30,8 +30,9 @@ class _HistoryToolbar extends ConsumerWidget {
         IconButton(
           tooltip: '\u524d\u4e00\u5929',
           onPressed: () {
-            ref.read(trackerHistorySelectedHeatmapBucketProvider.notifier).state =
-                null;
+            ref
+                .read(trackerHistorySelectedHeatmapBucketProvider.notifier)
+                .state = null;
             ref
                 .read(trackerHistorySelectedAnalysisBucketProvider.notifier)
                 .state = null;
@@ -71,8 +72,9 @@ class _HistoryToolbar extends ConsumerWidget {
         ),
         TextButton(
           onPressed: () {
-            ref.read(trackerHistorySelectedHeatmapBucketProvider.notifier).state =
-                null;
+            ref
+                .read(trackerHistorySelectedHeatmapBucketProvider.notifier)
+                .state = null;
             ref
                 .read(trackerHistorySelectedAnalysisBucketProvider.notifier)
                 .state = null;
@@ -119,6 +121,41 @@ class _HistoryFilterPanel extends ConsumerStatefulWidget {
       _HistoryFilterPanelState();
 }
 
+@visibleForTesting
+Widget trackerPresentationDebugHistoryFilterPanel({
+  List<String> processOptions = const <String>[],
+  List<String> categoryOptions = const <String>[],
+  required String searchQuery,
+  required String? selectedProcess,
+  required String? selectedCategory,
+  required List<TaskItem> taskOptions,
+  required int? selectedTaskId,
+  required bool onlyWithInput,
+  required String? selectedTimeBucketLabel,
+  required int filteredSessionCount,
+  required int totalSessionCount,
+  required int? filteredLogCount,
+  required int? totalLogCount,
+}) {
+  return _HistoryFilterPanel(
+    options: TrackerHistoryFilterOptions(
+      processOptions: processOptions,
+      categoryOptions: categoryOptions,
+    ),
+    searchQuery: searchQuery,
+    selectedProcess: selectedProcess,
+    selectedCategory: selectedCategory,
+    taskOptions: taskOptions,
+    selectedTaskId: selectedTaskId,
+    onlyWithInput: onlyWithInput,
+    selectedTimeBucketLabel: selectedTimeBucketLabel,
+    filteredSessionCount: filteredSessionCount,
+    totalSessionCount: totalSessionCount,
+    filteredLogCount: filteredLogCount,
+    totalLogCount: totalLogCount,
+  );
+}
+
 class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
   late final TextEditingController _controller;
 
@@ -148,9 +185,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
   @override
   Widget build(BuildContext context) {
     final supportsInputAnalytics =
-        TrackerPlatformSource.current().supportsInputAnalytics;
-    final hasFilters =
-        widget.searchQuery.trim().isNotEmpty ||
+        _trackerPlatformForUi().supportsInputAnalytics;
+    final hasFilters = widget.searchQuery.trim().isNotEmpty ||
         widget.selectedProcess != null ||
         widget.selectedCategory != null ||
         widget.selectedTaskId != null ||
@@ -179,13 +215,17 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
               OutlinedButton.icon(
                 onPressed: () {
                   _controller.clear();
-                  ref.read(trackerHistorySearchQueryProvider.notifier).state = '';
-                  ref.read(trackerHistorySelectedProcessProvider.notifier).state =
-                      null;
-                  ref.read(trackerHistorySelectedCategoryProvider.notifier).state =
-                      null;
-                  ref.read(trackerHistorySelectedTaskIdProvider.notifier).state =
-                      null;
+                  ref.read(trackerHistorySearchQueryProvider.notifier).state =
+                      '';
+                  ref
+                      .read(trackerHistorySelectedProcessProvider.notifier)
+                      .state = null;
+                  ref
+                      .read(trackerHistorySelectedCategoryProvider.notifier)
+                      .state = null;
+                  ref
+                      .read(trackerHistorySelectedTaskIdProvider.notifier)
+                      .state = null;
                   ref.read(trackerHistoryOnlyWithInputProvider.notifier).state =
                       false;
                   ref
@@ -222,7 +262,8 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
                           onPressed: () {
                             _controller.clear();
                             ref
-                                .read(trackerHistorySearchQueryProvider.notifier)
+                                .read(
+                                    trackerHistorySearchQueryProvider.notifier)
                                 .state = '';
                           },
                           icon: const Icon(Icons.close),
@@ -237,8 +278,10 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String?>(
-                key: ValueKey<String?>('history-process-${widget.selectedProcess}'),
+                key: ValueKey<String?>(
+                    'history-process-${widget.selectedProcess}'),
                 initialValue: widget.selectedProcess,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText: '应用',
                   border: OutlineInputBorder(
@@ -263,16 +306,19 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
                   ),
                 ],
                 onChanged: (value) {
-                  ref.read(trackerHistorySelectedProcessProvider.notifier).state =
-                      value;
+                  ref
+                      .read(trackerHistorySelectedProcessProvider.notifier)
+                      .state = value;
                 },
               ),
             ),
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String?>(
-                key: ValueKey<String?>('history-category-${widget.selectedCategory}'),
+                key: ValueKey<String?>(
+                    'history-category-${widget.selectedCategory}'),
                 initialValue: widget.selectedCategory,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText: '分类',
                   border: OutlineInputBorder(
@@ -308,6 +354,7 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
               child: DropdownButtonFormField<int?>(
                 key: ValueKey<String>('history-task-${widget.selectedTaskId}'),
                 initialValue: widget.selectedTaskId,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText: '任务',
                   border: OutlineInputBorder(
@@ -332,8 +379,9 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
                   ),
                 ],
                 onChanged: (value) {
-                  ref.read(trackerHistorySelectedTaskIdProvider.notifier).state =
-                      value;
+                  ref
+                      .read(trackerHistorySelectedTaskIdProvider.notifier)
+                      .state = value;
                 },
               ),
             ),
@@ -403,4 +451,3 @@ class _HistoryFilterPanelState extends ConsumerState<_HistoryFilterPanel> {
     );
   }
 }
-

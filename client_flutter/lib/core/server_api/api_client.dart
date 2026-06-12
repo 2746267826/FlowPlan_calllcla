@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 
 import 'api_error.dart';
 import 'auth_token_store.dart';
@@ -87,6 +88,35 @@ class ApiClient {
     return _decodeObject(response);
   }
 
+  @visibleForTesting
+  Future<http.Response> sendForTesting(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+  }) {
+    return _send(method, path, query: query, body: body);
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> decodeObjectForTesting(
+    Object? decoded, {
+    int? statusCode,
+    String? body,
+  }) {
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw ApiError(
+      message: 'Expected JSON object response',
+      statusCode: statusCode,
+      body: body,
+    );
+  }
+
   Future<http.Response> _send(
     String method,
     String path, {
@@ -149,9 +179,8 @@ class ApiClient {
 
   Uri _buildUri(String path, Map<String, String>? query) {
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
-    final basePath = _baseUri.path.endsWith('/')
-        ? _baseUri.path
-        : '${_baseUri.path}/';
+    final basePath =
+        _baseUri.path.endsWith('/') ? _baseUri.path : '${_baseUri.path}/';
     return _baseUri.replace(
       path: '$basePath$normalizedPath',
       queryParameters: query == null || query.isEmpty ? null : query,
@@ -163,14 +192,8 @@ class ApiClient {
       return const <String, dynamic>{};
     }
     final decoded = jsonDecode(response.body);
-    if (decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-    if (decoded is Map) {
-      return Map<String, dynamic>.from(decoded);
-    }
-    throw ApiError(
-      message: 'Expected JSON object response',
+    return decodeObjectForTesting(
+      decoded,
       statusCode: response.statusCode,
       body: response.body,
     );

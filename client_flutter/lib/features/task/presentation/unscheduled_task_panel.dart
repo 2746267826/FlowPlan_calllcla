@@ -6,8 +6,15 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
 import 'task_detail_page.dart';
 
+typedef UnscheduledTaskDetailBuilder = Widget Function(
+  BuildContext context,
+  TaskItem task,
+);
+
 class UnscheduledTaskPanel extends ConsumerWidget {
-  const UnscheduledTaskPanel({super.key});
+  const UnscheduledTaskPanel({super.key, this.detailBuilder});
+
+  final UnscheduledTaskDetailBuilder? detailBuilder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,7 +60,8 @@ class UnscheduledTaskPanel extends ConsumerWidget {
               const Divider(height: 1),
               Expanded(
                 child: tasksAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (error, _) => Center(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -61,7 +69,8 @@ class UnscheduledTaskPanel extends ConsumerWidget {
                     ),
                   ),
                   data: (tasks) {
-                    final unscheduled = tasks.where((task) => task.dtstart == null).toList();
+                    final unscheduled =
+                        tasks.where((task) => task.dtstart == null).toList();
                     if (unscheduled.isEmpty) {
                       return _EmptyState(hovering: hovering);
                     }
@@ -72,6 +81,7 @@ class UnscheduledTaskPanel extends ConsumerWidget {
                         return _DraggableTaskTile(
                           task: unscheduled[index],
                           taskLists: taskLists,
+                          detailBuilder: detailBuilder,
                         );
                       },
                     );
@@ -115,7 +125,8 @@ class _PanelHeader extends StatelessWidget {
             ),
           ),
           Tooltip(
-            message: '\u957f\u6309\u4efb\u52a1\u5361\u7247\u53ef\u62d6\u62fd\u5230\u65f6\u95f4\u8f74\u6392\u7a0b',
+            message:
+                '\u957f\u6309\u4efb\u52a1\u5361\u7247\u53ef\u62d6\u62fd\u5230\u65f6\u95f4\u8f74\u6392\u7a0b',
             child: Icon(
               Icons.info_outline,
               size: 16,
@@ -167,14 +178,20 @@ class _DraggableTaskTile extends StatelessWidget {
   const _DraggableTaskTile({
     required this.task,
     required this.taskLists,
+    required this.detailBuilder,
   });
 
   final TaskItem task;
   final List<TaskList> taskLists;
+  final UnscheduledTaskDetailBuilder? detailBuilder;
 
   @override
   Widget build(BuildContext context) {
-    final content = _TaskTileContent(task: task, taskLists: taskLists);
+    final content = _TaskTileContent(
+      task: task,
+      taskLists: taskLists,
+      detailBuilder: detailBuilder,
+    );
     return LongPressDraggable<TaskItem>(
       data: task,
       delay: const Duration(milliseconds: 200),
@@ -182,7 +199,8 @@ class _DraggableTaskTile extends StatelessWidget {
       feedback: Material(
         elevation: 8,
         borderRadius: BorderRadius.circular(12),
-        child: SizedBox(width: 260, child: Opacity(opacity: 0.92, child: content)),
+        child:
+            SizedBox(width: 260, child: Opacity(opacity: 0.92, child: content)),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: content),
       child: content,
@@ -194,10 +212,12 @@ class _TaskTileContent extends StatelessWidget {
   const _TaskTileContent({
     required this.task,
     required this.taskLists,
+    required this.detailBuilder,
   });
 
   final TaskItem task;
   final List<TaskList> taskLists;
+  final UnscheduledTaskDetailBuilder? detailBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +232,8 @@ class _TaskTileContent extends StatelessWidget {
     Color? listColor;
     if (taskList != null) {
       try {
-        listColor = Color(int.parse('FF${taskList.colorHex.replaceAll('#', '')}', radix: 16));
+        listColor = Color(
+            int.parse('FF${taskList.colorHex.replaceAll('#', '')}', radix: 16));
       } catch (_) {
         listColor = Colors.grey;
       }
@@ -222,11 +243,21 @@ class _TaskTileContent extends StatelessWidget {
       onTap: () {
         showDialog<void>(
           context: context,
-          builder: (_) => Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
-            child: SizedBox(width: 560, child: TaskDetailPage(taskId: task.id)),
-          ),
+          builder: (dialogContext) =>
+              detailBuilder?.call(dialogContext, task) ??
+              Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 60,
+                  vertical: 40,
+                ),
+                child: SizedBox(
+                  width: 560,
+                  child: TaskDetailPage(taskId: task.id),
+                ),
+              ),
         );
       },
       child: Padding(
@@ -236,7 +267,8 @@ class _TaskTileContent extends StatelessWidget {
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+            border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,10 +289,12 @@ class _TaskTileContent extends StatelessWidget {
                       task.summary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w500),
                     ),
                   ),
-                  Icon(Icons.drag_indicator, size: 16, color: Colors.grey.withValues(alpha: 0.4)),
+                  Icon(Icons.drag_indicator,
+                      size: 16, color: Colors.grey.withValues(alpha: 0.4)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -271,7 +305,8 @@ class _TaskTileContent extends StatelessWidget {
                   if (taskList != null)
                     _MetaChip(
                       icon: Icons.folder_open_outlined,
-                      label: '${taskList.emoji == null ? '' : '${taskList.emoji!} '}${taskList.name}',
+                      label:
+                          '${taskList.emoji == null ? '' : '${taskList.emoji!} '}${taskList.name}',
                       color: listColor ?? Colors.grey,
                     ),
                   _MetaChip(
@@ -327,7 +362,8 @@ class _MetaChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 10, color: color, fontWeight: FontWeight.w500),
           ),
         ],
       ),

@@ -41,17 +41,22 @@ class CalendarShell extends ConsumerStatefulWidget {
     super.key,
     required this.child,
     required this.currentRoute,
+    this.debugAdditionalRoutesForKeys = const <String>[],
   });
 
   final Widget child;
   final String currentRoute;
+
+  @visibleForTesting
+  final List<String> debugAdditionalRoutesForKeys;
 
   @override
   ConsumerState<CalendarShell> createState() => _CalendarShellState();
 }
 
 class _CalendarShellState extends ConsumerState<CalendarShell> {
-  static const _items = <({IconData icon, IconData activeIcon, String label, String route})>[
+  static const _items =
+      <({IconData icon, IconData activeIcon, String label, String route})>[
     (
       icon: Icons.view_day_outlined,
       activeIcon: Icons.view_day_rounded,
@@ -180,7 +185,8 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('\u5df2\u6309\u4f60\u786e\u8ba4\u7684\u9884\u6848\u5e94\u7528\u91cd\u6392\uff1a${result.summary}'),
+        content: Text(
+            '\u5df2\u6309\u4f60\u786e\u8ba4\u7684\u9884\u6848\u5e94\u7528\u91cd\u6392\uff1a${result.summary}'),
       ),
     );
   }
@@ -201,21 +207,24 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     final options = <_ScheduleRangeChoice>[
       _ScheduleRangeChoice(
         label: '所选日期剩余时间',
-        description: '${_formatDateTime(selectedStart)} - ${_formatDateTime(selectedDay.add(const Duration(hours: 23, minutes: 59)))}',
+        description:
+            '${_formatDateTime(selectedStart)} - ${_formatDateTime(selectedDay.add(const Duration(hours: 23, minutes: 59)))}',
         date: selectedDay,
         from: selectedStart,
         until: selectedDay.add(const Duration(hours: 23, minutes: 59)),
       ),
       _ScheduleRangeChoice(
         label: '今天晚上',
-        description: '${_formatDateTime(today.add(const Duration(hours: 18)))} - ${_formatDateTime(today.add(const Duration(hours: 23, minutes: 59)))}',
+        description:
+            '${_formatDateTime(today.add(const Duration(hours: 18)))} - ${_formatDateTime(today.add(const Duration(hours: 23, minutes: 59)))}',
         date: today,
         from: today.add(const Duration(hours: 18)),
         until: today.add(const Duration(hours: 23, minutes: 59)),
       ),
       _ScheduleRangeChoice(
         label: '明天',
-        description: '${_formatDateTime(tomorrow)} - ${_formatDateTime(tomorrow.add(const Duration(hours: 23, minutes: 59)))}',
+        description:
+            '${_formatDateTime(tomorrow)} - ${_formatDateTime(tomorrow.add(const Duration(hours: 23, minutes: 59)))}',
         date: tomorrow,
         from: tomorrow,
         until: tomorrow.add(const Duration(hours: 23, minutes: 59)),
@@ -255,22 +264,22 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     required String decision,
   }) {
     return ref.read(dataOperationLogRepositoryProvider).record(
-          actor: '用户确认',
-          action: 'scheduler_draft_decision',
-          entityType: 'scheduler_run',
-          entityId: result.planRunId,
-          summary: decision == 'approved'
-              ? '用户批准排程草案：${result.summary}'
-              : '用户拒绝排程草案，未写入排程片段：${result.summary}',
-          metadata: {
-            'decision': decision,
-            'date': result.date.toIso8601String(),
-            'effective_start': result.effectiveStart.toIso8601String(),
-            'effective_end': result.effectiveEnd.toIso8601String(),
-            'scheduled_task_count': result.scheduledTaskCount,
-            'unscheduled_task_count': result.unscheduledTaskCount,
-          },
-        );
+      actor: '用户确认',
+      action: 'scheduler_draft_decision',
+      entityType: 'scheduler_run',
+      entityId: result.planRunId,
+      summary: decision == 'approved'
+          ? '用户批准排程草案：${result.summary}'
+          : '用户拒绝排程草案，未写入排程片段：${result.summary}',
+      metadata: {
+        'decision': decision,
+        'date': result.date.toIso8601String(),
+        'effective_start': result.effectiveStart.toIso8601String(),
+        'effective_end': result.effectiveEnd.toIso8601String(),
+        'scheduled_task_count': result.scheduledTaskCount,
+        'unscheduled_task_count': result.unscheduledTaskCount,
+      },
+    );
   }
 
   Future<void> _handlePlanDeviation(PlanDeviationSnapshot snapshot) async {
@@ -321,12 +330,13 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
       await ref
           .read(planFeedbackServiceProvider)
           .markDecision(snapshot, decision: 'accepted');
-      final result = await ref.read(schedulerEngineProvider).autoScheduleDetailed(
-            plan.planStart,
-            from: now,
-            forceMovableTaskIds: {plan.task.id},
-            trigger: 'plan_deviation_confirmed',
-          );
+      final result =
+          await ref.read(schedulerEngineProvider).autoScheduleDetailed(
+                plan.planStart,
+                from: now,
+                forceMovableTaskIds: {plan.task.id},
+                trigger: 'plan_deviation_confirmed',
+              );
       if (!mounted) {
         return;
       }
@@ -354,7 +364,8 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('\u5df2\u6839\u636e\u8ba1\u5212\u504f\u79bb\u786e\u8ba4\u987a\u5ef6\uff1a${result.summary}'),
+          content: Text(
+              '\u5df2\u6839\u636e\u8ba1\u5212\u504f\u79bb\u786e\u8ba4\u987a\u5ef6\uff1a${result.summary}'),
         ),
       );
     } finally {
@@ -373,7 +384,9 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(
-          allowApply ? '\u786e\u8ba4\u5e94\u7528\u91cd\u6392\u9884\u6848' : '\u6392\u7a0b\u53d8\u66f4\u8bb0\u5f55',
+          allowApply
+              ? '\u786e\u8ba4\u5e94\u7528\u91cd\u6392\u9884\u6848'
+              : '\u6392\u7a0b\u53d8\u66f4\u8bb0\u5f55',
         ),
         content: SizedBox(
           width: 560,
@@ -531,6 +544,16 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
     );
   }
 
+  List<Widget> _debugRouteKeyWidgets() {
+    return [
+      for (final route in widget.debugAdditionalRoutesForKeys)
+        KeyedSubtree(
+          key: _keyForRoute(route),
+          child: const SizedBox.shrink(),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<PlanDeviationSnapshot>>(
@@ -603,11 +626,14 @@ class _CalendarShellState extends ConsumerState<CalendarShell> {
                   for (var i = 0; i < _items.length; i++)
                     _NavItem(
                       key: _keyForRoute(_items[i].route),
-                      icon: _currentIndex == i ? _items[i].activeIcon : _items[i].icon,
+                      icon: _currentIndex == i
+                          ? _items[i].activeIcon
+                          : _items[i].icon,
                       label: _items[i].label,
                       selected: _currentIndex == i,
                       onTap: () => _navigate(i),
                     ),
+                  ..._debugRouteKeyWidgets(),
                   const Divider(height: 20, indent: 12, endIndent: 12),
                   Expanded(
                     child: _SidebarBooks(onManage: _showBooksPage),
@@ -799,7 +825,8 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
       initialTime: TimeOfDay.fromDateTime(initial),
     );
     if (time == null || !mounted) return;
-    final result = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final result =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute);
     setState(() {
       if (isStart) {
         _eventStart = result;
@@ -819,11 +846,15 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
       showDialog<void>(
         context: context,
         builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
           child: SizedBox(
             width: 560,
-            child: _tab == 0 ? const TaskDetailPage(taskId: null) : const EventDetailPage(eventId: null),
+            child: _tab == 0
+                ? const TaskDetailPage(taskId: null)
+                : const EventDetailPage(eventId: null),
           ),
         ),
       );
@@ -905,127 +936,172 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: TabBar(
-              controller: _tabController,
-              indicatorColor: AppColors.primary,
-              labelColor: AppColors.primary,
-              tabs: const [Tab(text: '\u4efb\u52a1'), Tab(text: '\u65e5\u7a0b')],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                TextField(
-                  key: _tab == 0
-                      ? AppKeys.taskSummaryField
-                      : AppKeys.eventSummaryField,
-                  controller: _titleController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: _tab == 0 ? '\u4efb\u52a1\u6807\u9898' : '\u65e5\u7a0b\u6807\u9898',
+    final mediaQuery = MediaQuery.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: mediaQuery.size.height * 0.9),
+          child: SingleChildScrollView(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: AppColors.primary,
+                      labelColor: AppColors.primary,
+                      tabs: const [
+                        Tab(key: AppKeys.quickAddTaskTab, text: '\u4efb\u52a1'),
+                        Tab(key: AppKeys.quickAddEventTab, text: '\u65e5\u7a0b')
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                if (_tab == 0)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          initialValue: _taskDuration,
-                          decoration: const InputDecoration(labelText: '\u65f6\u957f'),
-                          items: const [
-                            DropdownMenuItem(value: 15, child: Text('15 \u5206\u949f')),
-                            DropdownMenuItem(value: 30, child: Text('30 \u5206\u949f')),
-                            DropdownMenuItem(value: 60, child: Text('1 \u5c0f\u65f6')),
-                            DropdownMenuItem(value: 90, child: Text('1.5 \u5c0f\u65f6')),
-                            DropdownMenuItem(value: 120, child: Text('2 \u5c0f\u65f6')),
-                          ],
-                          onChanged: (value) => setState(() => _taskDuration = value ?? 60),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          initialValue: _taskPriority,
-                          decoration: const InputDecoration(labelText: '\u4f18\u5148\u7ea7'),
-                          items: const [
-                            DropdownMenuItem(value: 1, child: Text('\u9ad8')),
-                            DropdownMenuItem(value: 2, child: Text('\u4e2d')),
-                            DropdownMenuItem(value: 3, child: Text('\u4f4e')),
-                          ],
-                          onChanged: (value) => setState(() => _taskPriority = value ?? 2),
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => _pick(true),
-                          child: InputDecorator(
-                            decoration: const InputDecoration(labelText: '\u5f00\u59cb'),
-                            child: Text(_format(_eventStart)),
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        TextField(
+                          key: _tab == 0
+                              ? AppKeys.taskSummaryField
+                              : AppKeys.eventSummaryField,
+                          controller: _titleController,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            hintText: _tab == 0
+                                ? '\u4efb\u52a1\u6807\u9898'
+                                : '\u65e5\u7a0b\u6807\u9898',
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => _pick(false),
-                          child: InputDecorator(
-                            decoration: const InputDecoration(labelText: '\u7ed3\u675f'),
-                            child: Text(_format(_eventEnd)),
+                        const SizedBox(height: 12),
+                        if (_tab == 0)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: _taskDuration,
+                                  decoration: const InputDecoration(
+                                      labelText: '\u65f6\u957f'),
+                                  items: const [
+                                    DropdownMenuItem(
+                                        value: 15,
+                                        child: Text('15 \u5206\u949f')),
+                                    DropdownMenuItem(
+                                        value: 30,
+                                        child: Text('30 \u5206\u949f')),
+                                    DropdownMenuItem(
+                                        value: 60,
+                                        child: Text('1 \u5c0f\u65f6')),
+                                    DropdownMenuItem(
+                                        value: 90,
+                                        child: Text('1.5 \u5c0f\u65f6')),
+                                    DropdownMenuItem(
+                                        value: 120,
+                                        child: Text('2 \u5c0f\u65f6')),
+                                  ],
+                                  onChanged: (value) => setState(
+                                      () => _taskDuration = value ?? 60),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: _taskPriority,
+                                  decoration: const InputDecoration(
+                                      labelText: '\u4f18\u5148\u7ea7'),
+                                  items: const [
+                                    DropdownMenuItem(
+                                        value: 1, child: Text('\u9ad8')),
+                                    DropdownMenuItem(
+                                        value: 2, child: Text('\u4e2d')),
+                                    DropdownMenuItem(
+                                        value: 3, child: Text('\u4f4e')),
+                                  ],
+                                  onChanged: (value) => setState(
+                                      () => _taskPriority = value ?? 2),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => _pick(true),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                        labelText: '\u5f00\u59cb'),
+                                    child: Text(_format(_eventStart)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => _pick(false),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                        labelText: '\u7ed3\u675f'),
+                                    child: Text(_format(_eventEnd)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _openFullEditor,
+                            child: const Text('\u66f4\u591a\u8bbe\u7f6e'),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            key: _tab == 0
+                                ? AppKeys.taskSaveButton
+                                : AppKeys.eventSaveButton,
+                            onPressed: _saving ? null : _submit,
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))
+                                : const Text('\u5feb\u901f\u521b\u5efa'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _openFullEditor,
-                    child: const Text('\u66f4\u591a\u8bbe\u7f6e'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    key: _tab == 0
-                        ? AppKeys.taskSaveButton
-                        : AppKeys.eventSaveButton,
-                    onPressed: _saving ? null : _submit,
-                    child: _saving
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('\u5feb\u901f\u521b\u5efa'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1066,10 +1142,14 @@ class _SidebarBooks extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 6, 8, 4),
             child: Row(
               children: [
-                Expanded(child: Text(title, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey, letterSpacing: 0.8))),
+                Expanded(
+                    child: Text(title,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.grey, letterSpacing: 0.8))),
                 GestureDetector(
                   onTap: onManage,
-                  child: const Icon(Icons.settings_outlined, size: 14, color: Colors.grey),
+                  child: const Icon(Icons.settings_outlined,
+                      size: 14, color: Colors.grey),
                 ),
               ],
             ),
@@ -1083,17 +1163,28 @@ class _SidebarBooks extends ConsumerWidget {
                     (item) => InkWell(
                       onTap: () => toggle(idOf(item), !visibleOf(item)),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
                         child: Row(
                           children: [
-                            Container(width: 10, height: 10, decoration: BoxDecoration(color: visibleOf(item) ? _parseColor(colorOf(item)) : Colors.grey.withValues(alpha: 0.3), shape: BoxShape.circle)),
+                            Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                    color: visibleOf(item)
+                                        ? _parseColor(colorOf(item))
+                                        : Colors.grey.withValues(alpha: 0.3),
+                                    shape: BoxShape.circle)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 labelOf(item),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: visibleOf(item) ? null : Colors.grey),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        visibleOf(item) ? null : Colors.grey),
                               ),
                             ),
                           ],
@@ -1128,7 +1219,9 @@ class _SidebarBooks extends ConsumerWidget {
             repo.toggleTaskListVisible,
             (item) {
               final list = item as TaskList;
-              final prefix = list.emoji == null || list.emoji!.trim().isEmpty ? '' : '${list.emoji!.trim()} ';
+              final prefix = list.emoji == null || list.emoji!.trim().isEmpty
+                  ? ''
+                  : '${list.emoji!.trim()} ';
               return '$prefix${list.name}';
             },
             (item) => (item as TaskList).colorHex,
@@ -1169,11 +1262,18 @@ class _NavItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: selected ? AppColors.primary : Theme.of(context).iconTheme.color),
+            Icon(icon,
+                size: 20,
+                color: selected
+                    ? AppColors.primary
+                    : Theme.of(context).iconTheme.color),
             const SizedBox(width: 12),
             Text(
               label,
-              style: TextStyle(fontSize: 14, fontWeight: selected ? FontWeight.w600 : FontWeight.w400, color: selected ? AppColors.primary : null),
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? AppColors.primary : null),
             ),
           ],
         ),

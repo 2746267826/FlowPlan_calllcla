@@ -53,7 +53,8 @@ class AndroidUsageEvent {
     final rawEventType = map['eventType'] as String? ?? '';
     final eventType = AndroidUsageEventTypeValue.fromValue(rawEventType);
     if (eventType == null) {
-      throw ArgumentError('Unsupported Android usage event type: $rawEventType');
+      throw ArgumentError(
+          'Unsupported Android usage event type: $rawEventType');
     }
 
     final timestampMillis = (map['timestampMillis'] as num?)?.toInt() ?? 0;
@@ -67,14 +68,23 @@ class AndroidUsageEvent {
   }
 }
 
-class AndroidUsageStatsService {
-  const AndroidUsageStatsService();
+bool _defaultIsAndroid() => Platform.isAndroid;
 
-  static const MethodChannel _channel =
-      MethodChannel('com.flowplanv2.app/android_usage_stats');
+class AndroidUsageStatsService {
+  AndroidUsageStatsService({
+    bool Function()? isAndroid,
+    MethodChannel? channel,
+  })  : _isAndroid = isAndroid ?? _defaultIsAndroid,
+        _channel = channel ??
+            const MethodChannel(
+              'com.flowplanv2.app/android_usage_stats',
+            );
+
+  final bool Function() _isAndroid;
+  final MethodChannel _channel;
 
   Future<bool> hasUsageAccessPermission() async {
-    if (!Platform.isAndroid) {
+    if (!_isAndroid()) {
       return false;
     }
 
@@ -84,7 +94,7 @@ class AndroidUsageStatsService {
   }
 
   Future<void> openUsageAccessSettings() async {
-    if (!Platform.isAndroid) {
+    if (!_isAndroid()) {
       return;
     }
     await _channel.invokeMethod<void>('openUsageAccessSettings');
@@ -94,7 +104,7 @@ class AndroidUsageStatsService {
     required DateTime start,
     required DateTime end,
   }) async {
-    if (!Platform.isAndroid) {
+    if (!_isAndroid()) {
       return const <AndroidUsageEvent>[];
     }
 

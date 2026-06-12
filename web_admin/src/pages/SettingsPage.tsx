@@ -113,15 +113,15 @@ export function SettingsPage(props: {
         <Card title="远程配置编辑">
           <Form layout="vertical">
             <Form.Item label="配置 Key">
-              <Input value={configKey} onChange={(event) => setConfigKey(event.target.value)} placeholder="例如 outlook.sync.enabled" />
+              <Input aria-label="Remote config key" value={configKey} onChange={(event) => setConfigKey(event.target.value)} placeholder="例如 outlook.sync.enabled" />
             </Form.Item>
             <Form.Item label="配置值 JSON 或文本">
-              <Input.TextArea value={configValue} onChange={(event) => setConfigValue(event.target.value)} rows={8} />
+              <Input.TextArea aria-label="Remote config value" value={configValue} onChange={(event) => setConfigValue(event.target.value)} rows={8} />
             </Form.Item>
             <Form.Item label="敏感配置">
-              <Switch checked={sensitive} onChange={setSensitive} checkedChildren="是" unCheckedChildren="否" />
+              <Switch aria-label="Sensitive remote config" checked={sensitive} onChange={setSensitive} checkedChildren="是" unCheckedChildren="否" />
             </Form.Item>
-            <Button type="primary" onClick={saveSetting}>保存远程配置</Button>
+            <Button aria-label="Save remote config" type="primary" onClick={saveSetting}>保存远程配置</Button>
           </Form>
         </Card>
         <Card title="配置列表">
