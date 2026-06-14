@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 
+import { collectProductionConfigWarnings } from './common/config/app-config';
 import { formatEnvLoadMessage, loadEnvFile } from './common/config/env-files';
 
 const loadedEnv = loadEnvFile();
@@ -30,6 +31,10 @@ async function bootstrap() {
         : 'NOT SET - set FLOWPLANV2_ENCRYPTION_KEY in the environment'
     }`,
   );
+
+  for (const warning of collectProductionConfigWarnings()) {
+    logger.warn(warning);
+  }
 }
 
 bootstrap().catch((error) => {

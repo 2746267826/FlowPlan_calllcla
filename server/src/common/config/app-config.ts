@@ -37,3 +37,34 @@ export function loadConfig(): AppConfig {
     logFormat: process.env.LOG_FORMAT ?? 'dev',
   };
 }
+
+export function collectProductionConfigWarnings(
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  if (env.NODE_ENV !== 'production') {
+    return [];
+  }
+
+  const warnings: string[] = [];
+  if (!env.JWT_ACCESS_SECRET) {
+    warnings.push(
+      'JWT_ACCESS_SECRET is not set in production; configure a dedicated access token secret.',
+    );
+  }
+  if (!env.JWT_REFRESH_SECRET) {
+    warnings.push(
+      'JWT_REFRESH_SECRET is not set in production; configure a dedicated refresh token secret.',
+    );
+  }
+  if (!env.FLOWPLANV2_ENCRYPTION_KEY) {
+    warnings.push(
+      'FLOWPLANV2_ENCRYPTION_KEY is not set in production; encrypted integrations may be unavailable.',
+    );
+  }
+  if (!env.ADMIN_CORS_ORIGIN) {
+    warnings.push(
+      'ADMIN_CORS_ORIGIN is not set in production; configure the expected admin origin.',
+    );
+  }
+  return warnings;
+}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig } from './app-config';
+import { collectProductionConfigWarnings, loadConfig } from './app-config';
 
 const ENV_KEYS = [
   'FLOWPLANV2_DATABASE_URL',
@@ -14,6 +14,8 @@ const ENV_KEYS = [
   'JWT_REFRESH_EXPIRES',
   'LOG_LEVEL',
   'LOG_FORMAT',
+  'NODE_ENV',
+  'FLOWPLANV2_ENCRYPTION_KEY',
 ] as const;
 
 const originalEnv = Object.fromEntries(
@@ -104,5 +106,38 @@ describe('loadConfig', () => {
       jwtAccessSecret: 'access-only',
       jwtRefreshSecret: 'access-only',
     });
+  });
+
+  it('does not report production warnings outside production mode', () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key];
+    }
+    process.env.NODE_ENV = 'development';
+
+    expect(collectProductionConfigWarnings()).toEqual([]);
+  });
+
+  it('reports missing recommended production secrets and CORS origin', () => {
+    for (const key of ENV_KEYS) {
+      delete process.env[key];
+    }
+    process.env.NODE_ENV = 'production';
+
+    expect(collectProductionConfigWarnings()).toEqual([
+      'JWT_ACCESS_SECRET is not set in production; configure a dedicated access token secret.',
+      'JWT_REFRESH_SECRET is not set in production; configure a dedicated refresh token secret.',
+      'FLOWPLANV2_ENCRYPTION_KEY is not set in production; encrypted integrations may be unavailable.',
+      'ADMIN_CORS_ORIGIN is not set in production; configure the expected admin origin.',
+    ]);
+  });
+
+  it('accepts recommended production settings when all are configured', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.JWT_ACCESS_SECRET = 'access-secret';
+    process.env.JWT_REFRESH_SECRET = 'refresh-secret';
+    process.env.FLOWPLANV2_ENCRYPTION_KEY = 'encryption-secret';
+    process.env.ADMIN_CORS_ORIGIN = 'https://admin.example.com';
+
+    expect(collectProductionConfigWarnings()).toEqual([]);
   });
 });

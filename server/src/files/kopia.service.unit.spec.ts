@@ -20,6 +20,23 @@ describe('KopiaService', () => {
     delete process.env.KOPIA_TIMEOUT_MS;
   });
 
+  it('defaults to the Linux-friendly kopia executable unless overridden', async () => {
+    statMock.mockResolvedValue({});
+    execFileMock.mockImplementation((_exe, _args, _options, callback) =>
+      callback(null, '[]', ''),
+    );
+    const { KopiaService } = await import('./kopia.service');
+
+    await new KopiaService().listSnapshots('/data/project');
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      'kopia',
+      ['snapshot', 'list', '/data/project', '--json'],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
   it('creates snapshots with configured CLI and normalizes noisy Kopia JSON output', async () => {
     process.env.KOPIA_EXE = 'custom-kopia';
     process.env.KOPIA_TIMEOUT_MS = '5000';
