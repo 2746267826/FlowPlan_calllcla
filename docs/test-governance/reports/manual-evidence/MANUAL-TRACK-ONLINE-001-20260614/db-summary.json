@@ -1,0 +1,45 @@
+{
+  "batch": {
+    "id": "ab53c16a-07ad-4c3f-89be-c9aeefeb5ea4",
+    "batchUid": "manual-track-online-supplement-20260614-062130",
+    "dataKind": "activity_record",
+    "status": "completed_with_rejections",
+    "rawEventCount": 2,
+    "acceptedEventCount": 1,
+    "rejectedEventCount": 1,
+    "errorMessage": "Some tracking records were rejected during normalization"
+  },
+  "chunk": {
+    "id": "278b4129-e23e-4595-b7e6-247a170875f7",
+    "batchId": "ab53c16a-07ad-4c3f-89be-c9aeefeb5ea4",
+    "chunkIndex": 0,
+    "status": "received",
+    "sizeBytes": 521
+  },
+  "acceptedSyncObject": {
+    "id": "91f4d3f6-c060-4c59-b1c3-666b7f9d07c6",
+    "objectType": "activity_record",
+    "uid": "manual-track-online-supplement-20260614-062130-valid-1",
+    "localId": "9001",
+    "ingestBatchId": "ab53c16a-07ad-4c3f-89be-c9aeefeb5ea4",
+    "serverVersion": 1
+  },
+  "syncChange": {
+    "id": "303193",
+    "serverObjectId": "91f4d3f6-c060-4c59-b1c3-666b7f9d07c6",
+    "objectType": "activity_record",
+    "action": "upsert",
+    "serverVersion": 1,
+    "localId": "9001"
+  },
+  "audit": {
+    "id": "8fff3cec-c619-48e3-8767-f487cd7cf6c2",
+    "actor": "server",
+    "action": "tracking.ingest.batch.complete",
+    "entityType": "tracking_ingest",
+    "entityId": "ab53c16a-07ad-4c3f-89be-c9aeefeb5ea4",
+    "accepted": 1,
+    "rejected": 1,
+    "deduplicated": 0
+  }
+}

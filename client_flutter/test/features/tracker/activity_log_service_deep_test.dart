@@ -438,10 +438,13 @@ void main() {
 
     test('testing helper parses malformed day key as epoch fallback', () {
       final parsed = ActivityLogService.debugParseDayKeyForTesting('not-a-day');
+      final missingParts =
+          ActivityLogService.debugParseDayKeyForTesting('notaday');
 
       expect(parsed.year, 1970);
       expect(parsed.month, 1);
       expect(parsed.day, 1);
+      expect(missingParts, DateTime.fromMillisecondsSinceEpoch(0));
     });
   });
 }

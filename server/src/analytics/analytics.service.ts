@@ -49,29 +49,6 @@ type NamedMetricRow = QueryResultRow & {
   total_minutes?: string | number;
 };
 
-type KeyMetricRow = QueryResultRow & {
-  key_code: string | number;
-  label: string | null;
-  event_count: string | number;
-};
-
-type MouseMetricRow = QueryResultRow & {
-  name: string | null;
-  event_count: string | number;
-};
-
-type ProcessInputMetricRow = QueryResultRow & {
-  process_name: string | null;
-  event_count: string | number;
-  keyboard_event_count: string | number;
-  mouse_button_event_count: string | number;
-  wheel_event_count: string | number;
-  mouse_move_event_count: string | number;
-  mouse_move_distance: string | number;
-  active_minutes: string | number;
-  intensity_score: string | number;
-};
-
 type DetailRow = QueryResultRow & {
   server_id: string;
   object_type: string;
@@ -80,6 +57,14 @@ type DetailRow = QueryResultRow & {
   payload: Record<string, unknown>;
   metric_count?: string | number;
   metric_minutes?: string | number;
+};
+
+type InputHeatmapRow = QueryResultRow & {
+  buckets?: unknown;
+  key_counts?: unknown;
+  top_keys?: unknown;
+  mouse_counts?: unknown;
+  process_intensities?: unknown;
 };
 
 @Injectable()
@@ -236,55 +221,45 @@ export class AnalyticsService {
     const processName = this.cleanFilter(query.processName);
     const category = this.cleanFilter(query.category);
     const eventKind = this.cleanFilter(query.eventKind);
-    const commonParams = [userId, range.start, range.end, processName, category, eventKind];
-    const [bucketResult, keyResult, mouseResult, processResult] = await Promise.all([
-      this.database.query<BucketRow>(
+    const result = await this.database.query<InputHeatmapRow>(
       `
-      WITH input_events AS (${this.inputSourceSql()})
-      SELECT
-        date_trunc($4, occurred_at) AS bucket_start,
-        COALESCE(SUM(event_count), 0)::int AS event_count,
-        COALESCE(SUM(CASE WHEN event_kind = 'key_down' THEN event_count ELSE 0 END), 0)::int AS keyboard_event_count,
-        COALESCE(SUM(CASE WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
-        COALESCE(SUM(CASE WHEN event_kind = 'mouse_wheel' THEN event_count ELSE 0 END), 0)::int AS wheel_event_count,
-        COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0)::int AS mouse_move_event_count,
-        COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance ELSE 0 END), 0)::int AS mouse_move_distance
-      FROM input_events
-      WHERE occurred_at >= $2
-        AND occurred_at < $3
-        AND ($5::text IS NULL OR process_name = $5)
-        AND ($6::text IS NULL OR category = $6)
-        AND ($7::text IS NULL OR event_kind = $7)
-      GROUP BY bucket_start
-      ORDER BY bucket_start ASC
-      `,
-      [userId, range.start, range.end, bucket, processName, category, eventKind],
+      WITH input_events AS (${this.inputSourceSql()}),
+      filtered_events AS MATERIALIZED (
+        SELECT *
+        FROM input_events
+        WHERE occurred_at >= $2
+          AND occurred_at < $3
+          AND ($5::text IS NULL OR process_name = $5)
+          AND ($6::text IS NULL OR category = $6)
+          AND ($7::text IS NULL OR event_kind = $7)
       ),
-      this.database.query<KeyMetricRow>(
-        `
-        WITH input_events AS (${this.inputSourceSql()})
+      bucket_rows AS (
+        SELECT
+          date_trunc($4, occurred_at) AS bucket_start,
+          COALESCE(SUM(event_count), 0)::int AS event_count,
+          COALESCE(SUM(CASE WHEN event_kind = 'key_down' THEN event_count ELSE 0 END), 0)::int AS keyboard_event_count,
+          COALESCE(SUM(CASE WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN event_count ELSE 0 END), 0)::int AS mouse_button_event_count,
+          COALESCE(SUM(CASE WHEN event_kind = 'mouse_wheel' THEN event_count ELSE 0 END), 0)::int AS wheel_event_count,
+          COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0)::int AS mouse_move_event_count,
+          COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance ELSE 0 END), 0)::int AS mouse_move_distance
+        FROM filtered_events
+        GROUP BY bucket_start
+      ),
+      key_rows AS (
         SELECT
           key_code,
           COALESCE(NULLIF(MAX(key_label), ''), key_code::text) AS label,
           COALESCE(SUM(event_count), 0)::int AS event_count
-        FROM input_events
-        WHERE occurred_at >= $2
-          AND occurred_at < $3
-          AND ($4::text IS NULL OR process_name = $4)
-          AND ($5::text IS NULL OR category = $5)
-          AND ($6::text IS NULL OR event_kind = $6)
-          AND event_kind = 'key_down'
+        FROM filtered_events
+        WHERE event_kind = 'key_down'
           AND key_code IS NOT NULL
         GROUP BY key_code
         ORDER BY event_count DESC, key_code ASC
         LIMIT 60
-        `,
-        commonParams,
       ),
-      this.database.query<MouseMetricRow>(
-        `
-        WITH input_events AS (${this.inputSourceSql()}),
-        mouse_events AS (
+      mouse_rows AS (
+        SELECT name, COALESCE(SUM(event_count), 0)::int AS event_count
+        FROM (
           SELECT
             CASE
               WHEN event_kind IN ('mouse_button', 'mouse_button_down') THEN COALESCE(NULLIF(mouse_button, ''), 'button')
@@ -295,24 +270,12 @@ export class AnalyticsService {
               ELSE NULL
             END AS name,
             event_count
-          FROM input_events
-          WHERE occurred_at >= $2
-            AND occurred_at < $3
-            AND ($4::text IS NULL OR process_name = $4)
-            AND ($5::text IS NULL OR category = $5)
-            AND ($6::text IS NULL OR event_kind = $6)
-        )
-        SELECT name, COALESCE(SUM(event_count), 0)::int AS event_count
-        FROM mouse_events
+          FROM filtered_events
+        ) mouse_events
         WHERE name IS NOT NULL
         GROUP BY name
-        ORDER BY event_count DESC, name ASC
-        `,
-        commonParams,
       ),
-      this.database.query<ProcessInputMetricRow>(
-        `
-        WITH input_events AS (${this.inputSourceSql()})
+      process_rows AS (
         SELECT
           COALESCE(NULLIF(process_name, ''), 'unknown') AS process_name,
           COALESCE(SUM(event_count), 0)::int AS event_count,
@@ -329,31 +292,80 @@ export class AnalyticsService {
             COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN event_count ELSE 0 END), 0) +
             COALESCE(SUM(CASE WHEN event_kind = 'mouse_move' THEN move_distance / 200 ELSE 0 END), 0)
           )::int AS intensity_score
-        FROM input_events
-        WHERE occurred_at >= $2
-          AND occurred_at < $3
-          AND ($4::text IS NULL OR process_name = $4)
-          AND ($5::text IS NULL OR category = $5)
-          AND ($6::text IS NULL OR event_kind = $6)
+        FROM filtered_events
         GROUP BY process_name
         ORDER BY intensity_score DESC, event_count DESC, process_name ASC
         LIMIT 12
-        `,
-        commonParams,
-      ),
-    ]);
-
-    const keyCounts = keyResult.rows.reduce<Record<string, number>>((acc, row) => {
-      acc[String(row.key_code)] = toNumber(row.event_count);
-      return acc;
-    }, {});
-    const mouseCounts = mouseResult.rows.reduce<Record<string, number>>((acc, row) => {
-      const name = row.name ?? 'unknown';
-      acc[name] = toNumber(row.event_count);
-      return acc;
-    }, {});
-    const keyboardTotal = keyResult.rows.reduce(
-      (sum, row) => sum + toNumber(row.event_count),
+      )
+      SELECT
+        COALESCE(
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'bucketStart', to_jsonb(bucket_start),
+              'eventCount', event_count,
+              'keyboardEventCount', keyboard_event_count,
+              'mouseButtonEventCount', mouse_button_event_count,
+              'wheelEventCount', wheel_event_count,
+              'mouseMoveEventCount', mouse_move_event_count,
+              'mouseMoveDistance', mouse_move_distance
+            ) ORDER BY bucket_start ASC)
+            FROM bucket_rows
+          ),
+          '[]'::jsonb
+        ) AS buckets,
+        COALESCE(
+          (
+            SELECT jsonb_object_agg(key_code::text, event_count)
+            FROM key_rows
+          ),
+          '{}'::jsonb
+        ) AS key_counts,
+        COALESCE(
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'keyCode', key_code,
+              'label', label,
+              'count', event_count
+            ) ORDER BY event_count DESC, key_code ASC)
+            FROM key_rows
+          ),
+          '[]'::jsonb
+        ) AS top_keys,
+        COALESCE(
+          (
+            SELECT jsonb_object_agg(name, event_count)
+            FROM mouse_rows
+          ),
+          '{}'::jsonb
+        ) AS mouse_counts,
+        COALESCE(
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'processName', process_name,
+              'totalEvents', event_count,
+              'keyEvents', keyboard_event_count,
+              'mouseButtonEvents', mouse_button_event_count,
+              'wheelEvents', wheel_event_count,
+              'mouseMoveEvents', mouse_move_event_count,
+              'moveDistance', mouse_move_distance,
+              'activeMinutes', active_minutes,
+              'intensityScore', intensity_score
+            ) ORDER BY intensity_score DESC, event_count DESC, process_name ASC)
+            FROM process_rows
+          ),
+          '[]'::jsonb
+        ) AS process_intensities
+      `,
+      [userId, range.start, range.end, bucket, processName, category, eventKind],
+    );
+    const row = result.rows[0] ?? {};
+    const buckets = this.readJsonArray(row.buckets);
+    const keyCounts = this.readStringNumberMap(row.key_counts);
+    const mouseCounts = this.readStringNumberMap(row.mouse_counts);
+    const topKeys = this.readJsonArray(row.top_keys);
+    const processIntensities = this.readJsonArray(row.process_intensities);
+    const keyboardTotal = topKeys.reduce(
+      (sum, item) => sum + toNumber(item.count),
       0,
     );
 
@@ -361,36 +373,36 @@ export class AnalyticsService {
       range,
       bucket,
       source: 'server-live-sync-objects',
-      buckets: bucketResult.rows.map((row) => ({
-        bucketStart: iso(row.bucket_start),
-        eventCount: toNumber(row.event_count),
-        keyboardEventCount: toNumber(row.keyboard_event_count),
-        mouseButtonEventCount: toNumber(row.mouse_button_event_count),
-        wheelEventCount: toNumber(row.wheel_event_count),
-        mouseMoveEventCount: toNumber(row.mouse_move_event_count),
-        mouseMoveDistance: toNumber(row.mouse_move_distance),
+      buckets: buckets.map((item) => ({
+        bucketStart: iso(this.dateValue(item.bucketStart)),
+        eventCount: toNumber(item.eventCount),
+        keyboardEventCount: toNumber(item.keyboardEventCount),
+        mouseButtonEventCount: toNumber(item.mouseButtonEventCount),
+        wheelEventCount: toNumber(item.wheelEventCount),
+        mouseMoveEventCount: toNumber(item.mouseMoveEventCount),
+        mouseMoveDistance: toNumber(item.mouseMoveDistance),
       })),
       keyCounts,
-      topKeys: keyResult.rows.map((row) => {
-        const count = toNumber(row.event_count);
+      topKeys: topKeys.map((item) => {
+        const count = toNumber(item.count);
         return {
-          keyCode: toNumber(row.key_code),
-          label: row.label ?? String(row.key_code),
+          keyCode: toNumber(item.keyCode),
+          label: this.stringValue(item.label) ?? String(item.keyCode),
           count,
           share: keyboardTotal > 0 ? count / keyboardTotal : 0,
         };
       }),
       mouseCounts,
-      processIntensities: processResult.rows.map((row) => ({
-        processName: row.process_name ?? 'unknown',
-        totalEvents: toNumber(row.event_count),
-        keyEvents: toNumber(row.keyboard_event_count),
-        mouseButtonEvents: toNumber(row.mouse_button_event_count),
-        wheelEvents: toNumber(row.wheel_event_count),
-        mouseMoveEvents: toNumber(row.mouse_move_event_count),
-        moveDistance: toNumber(row.mouse_move_distance),
-        activeMinutes: toNumber(row.active_minutes),
-        intensityScore: toNumber(row.intensity_score),
+      processIntensities: processIntensities.map((item) => ({
+        processName: this.stringValue(item.processName) ?? 'unknown',
+        totalEvents: toNumber(item.totalEvents),
+        keyEvents: toNumber(item.keyEvents),
+        mouseButtonEvents: toNumber(item.mouseButtonEvents),
+        wheelEvents: toNumber(item.wheelEvents),
+        mouseMoveEvents: toNumber(item.mouseMoveEvents),
+        moveDistance: toNumber(item.moveDistance),
+        activeMinutes: toNumber(item.activeMinutes),
+        intensityScore: toNumber(item.intensityScore),
       })),
     };
   }
@@ -500,6 +512,37 @@ export class AnalyticsService {
       [userId, range.start, range.end, limit, taskId || null],
     );
     return this.namedMetricResponse(range, result.rows);
+  }
+
+  private readJsonArray(value: unknown): Record<string, unknown>[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value.filter(
+      (item): item is Record<string, unknown> =>
+        item !== null && typeof item === 'object' && !Array.isArray(item),
+    );
+  }
+
+  private readStringNumberMap(value: unknown): Record<string, number> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    return Object.entries(value).reduce<Record<string, number>>(
+      (acc, [key, raw]) => {
+        acc[key] = toNumber(raw);
+        return acc;
+      },
+      {},
+    );
+  }
+
+  private stringValue(value: unknown): string | null {
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  private dateValue(value: unknown): Date | string | null {
+    return value instanceof Date || typeof value === 'string' ? value : null;
   }
 
   async focusTrends(query: AnalyticsQuery, context: FlowPlanV2RequestContext) {

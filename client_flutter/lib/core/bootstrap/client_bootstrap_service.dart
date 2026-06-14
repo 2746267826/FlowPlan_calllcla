@@ -55,7 +55,8 @@ class ClientBootstrapService extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<ClientRuntimeState> bootstrapAndSync({String source = 'manual'}) async {
+  Future<ClientRuntimeState> bootstrapAndSync(
+      {String source = 'manual'}) async {
     _reportProgress('preparing', source: source, message: 'Preparing sync');
     _setState(_state.copyWith(syncing: true, lastError: null));
     Map<String, dynamic>? bootstrapSnapshot;
@@ -68,18 +69,12 @@ class ClientBootstrapService extends ChangeNotifier {
       final remoteSettings = await _remoteSettingsRepository.refresh();
       settingsVersion = remoteSettings.version;
       final engine = await _syncEngineLoader();
-      _reportProgress('pushing', source: source, message: 'Pushing local changes');
-      final push = await engine.pushPending();
       _reportProgress(
-        'tracking_upload',
+        'pulling',
         source: source,
-        current: push.processedCount,
-        total: push.pendingCount,
-        message: 'Uploading tracking buffer',
+        message: 'Pulling server changes',
       );
-      final trackingUpload = await _tryUploadTrackingBuffer(source);
-      _reportProgress('pulling', source: source, message: 'Pulling server changes');
-      final pull = await engine.pullChanges(
+      final pull = await engine.refreshCacheFromServer(
         onProgress: (pulled, pages) {
           _reportProgress(
             'applying',
@@ -89,24 +84,25 @@ class ClientBootstrapService extends ChangeNotifier {
           );
         },
       );
+      _reportProgress(
+        'tracking_upload',
+        source: source,
+        message: 'Uploading tracking buffer',
+      );
+      final trackingUpload = await _tryUploadTrackingBuffer(source);
+      final syncSummary = await _syncSummary(
+        source: source,
+        pull: pull,
+        trackingUpload: trackingUpload,
+      );
       await _operationLogs.record(
         actor: 'system',
         action: 'client_bootstrap_sync',
         entityType: 'server_sync',
         summary: '客户端启动或手动触发服务端化同步',
         metadata: <String, Object?>{
-          'source': source,
           'settingsVersion': remoteSettings.version,
-          'pulledChanges': (pull['changes'] as List?)?.length ?? 0,
-          'appliedChanges': pull['appliedChanges'] ?? 0,
-          'skippedChanges': pull['skippedChanges'] ?? 0,
-          'failedChanges': pull['failedChanges'] ?? 0,
-          'perType': pull['perType'] ?? const <String, Object?>{},
-          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
-          'accepted': push.acceptedCount,
-          'conflicts': push.conflictCount,
-          'rejected': push.rejectedCount,
-          'trackingUpload': trackingUpload,
+          ...syncSummary,
         },
       );
       final next = ClientRuntimeState.fromBootstrap(
@@ -121,23 +117,9 @@ class ClientBootstrapService extends ChangeNotifier {
       _reportProgress(
         'completed',
         source: source,
-        current: (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+        current: _pulledChanges(pull),
         message: 'Sync completed',
-        summary: <String, Object?>{
-          'source': source,
-          'accepted': push.acceptedCount,
-          'conflicts': push.conflictCount,
-          'rejected': push.rejectedCount,
-          'pushed': push.processedCount,
-          'pulledChanges':
-              (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
-          'appliedChanges': pull['appliedChanges'] ?? 0,
-          'skippedChanges': pull['skippedChanges'] ?? 0,
-          'failedChanges': pull['failedChanges'] ?? 0,
-          'perType': pull['perType'] ?? const <String, Object?>{},
-          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
-          'trackingUpload': trackingUpload,
-        },
+        summary: syncSummary,
       );
       return _state;
     } catch (error) {
@@ -189,18 +171,12 @@ class ClientBootstrapService extends ChangeNotifier {
     _setState(_state.copyWith(syncing: true, lastError: null));
     try {
       final engine = await _syncEngineLoader();
-      _reportProgress('pushing', source: source, message: 'Pushing local changes');
-      final push = await engine.pushPending();
       _reportProgress(
-        'tracking_upload',
+        'pulling',
         source: source,
-        current: push.processedCount,
-        total: push.pendingCount,
-        message: 'Uploading tracking buffer',
+        message: 'Pulling server changes',
       );
-      final trackingUpload = await _tryUploadTrackingBuffer(source);
-      _reportProgress('pulling', source: source, message: 'Pulling server changes');
-      final pull = await engine.pullChanges(
+      final pull = await engine.refreshCacheFromServer(
         onProgress: (pulled, pages) {
           _reportProgress(
             'applying',
@@ -210,23 +186,24 @@ class ClientBootstrapService extends ChangeNotifier {
           );
         },
       );
+      _reportProgress(
+        'tracking_upload',
+        source: source,
+        message: 'Uploading tracking buffer',
+      );
+      final trackingUpload = await _tryUploadTrackingBuffer(source);
+      final syncSummary = await _syncSummary(
+        source: source,
+        pull: pull,
+        trackingUpload: trackingUpload,
+      );
       await _operationLogs.record(
         actor: source == 'manual' ? 'user' : 'system',
         action: 'client_sync_now',
         entityType: 'server_sync',
         summary: '立即同步服务端',
         metadata: <String, Object?>{
-          'source': source,
-          'accepted': push.acceptedCount,
-          'conflicts': push.conflictCount,
-          'rejected': push.rejectedCount,
-          'pulledChanges': (pull['changes'] as List?)?.length ?? 0,
-          'appliedChanges': pull['appliedChanges'] ?? 0,
-          'skippedChanges': pull['skippedChanges'] ?? 0,
-          'failedChanges': pull['failedChanges'] ?? 0,
-          'perType': pull['perType'] ?? const <String, Object?>{},
-          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
-          'trackingUpload': trackingUpload,
+          ...syncSummary,
         },
       );
       _setState(_state.copyWith(
@@ -238,23 +215,9 @@ class ClientBootstrapService extends ChangeNotifier {
       _reportProgress(
         'completed',
         source: source,
-        current: (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
+        current: _pulledChanges(pull),
         message: 'Sync completed',
-        summary: <String, Object?>{
-          'source': source,
-          'accepted': push.acceptedCount,
-          'conflicts': push.conflictCount,
-          'rejected': push.rejectedCount,
-          'pushed': push.processedCount,
-          'pulledChanges':
-              (pull['pulledChanges'] as int?) ?? (pull['changes'] as List?)?.length ?? 0,
-          'appliedChanges': pull['appliedChanges'] ?? 0,
-          'skippedChanges': pull['skippedChanges'] ?? 0,
-          'failedChanges': pull['failedChanges'] ?? 0,
-          'perType': pull['perType'] ?? const <String, Object?>{},
-          'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
-          'trackingUpload': trackingUpload,
-        },
+        summary: syncSummary,
       );
       return _state;
     } catch (error) {
@@ -334,9 +297,11 @@ class ClientBootstrapService extends ChangeNotifier {
 
   Future<List<Map<String, Object?>>> _selectTable(String table) async {
     try {
-      final rows = await _database.customSelect(
-        'SELECT * FROM $table ORDER BY id ASC LIMIT 5000',
-      ).get();
+      final rows = await _database
+          .customSelect(
+            'SELECT * FROM $table ORDER BY id ASC LIMIT 5000',
+          )
+          .get();
       return rows.map(_rowToJson).toList(growable: false);
     } catch (_) {
       return const <Map<String, Object?>>[];
@@ -385,6 +350,81 @@ class ClientBootstrapService extends ChangeNotifier {
     };
   }
 
+  Future<Map<String, Object?>> _syncSummary({
+    required String source,
+    required Map<String, dynamic> pull,
+    required Map<String, Object?> trackingUpload,
+  }) async {
+    final summary = <String, Object?>{
+      'source': source,
+      'trackingUpload': trackingUpload,
+      'pulledChanges': _pulledChanges(pull),
+      'appliedChanges': pull['appliedChanges'] ?? 0,
+      'skippedChanges': pull['skippedChanges'] ?? 0,
+      'failedChanges': pull['failedChanges'] ?? 0,
+      'perType': pull['perType'] ?? const <String, Object?>{},
+      'orphanCalendarEvents': pull['orphanCalendarEvents'] ?? 0,
+    };
+    final legacyQueue = await _legacyQueueSummary(pull);
+    if (legacyQueue.isNotEmpty) {
+      summary['legacyQueue'] = legacyQueue;
+    }
+    return summary;
+  }
+
+  Future<Map<String, Object?>> _legacyQueueSummary(
+    Map<String, dynamic> pull,
+  ) async {
+    final value = pull['legacyQueue'];
+    if (value is Map) {
+      return Map<String, Object?>.from(value);
+    }
+    return _localLegacyQueueSummary();
+  }
+
+  Future<Map<String, Object?>> _localLegacyQueueSummary() async {
+    try {
+      final row = await _database.customSelect(
+        '''
+        SELECT
+          COALESCE(SUM(CASE WHEN status IN ('pending', 'sending') THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+          COALESCE(SUM(CASE WHEN status = 'conflict' THEN 1 ELSE 0 END), 0) AS conflict_count
+        FROM offline_mutations
+        ''',
+      ).getSingle();
+      return <String, Object?>{
+        'pendingCount': _readSummaryInt(row.data['pending_count']) ?? 0,
+        'failedCount': _readSummaryInt(row.data['failed_count']) ?? 0,
+        'conflictCount': _readSummaryInt(row.data['conflict_count']) ?? 0,
+      };
+    } catch (_) {
+      return const <String, Object?>{};
+    }
+  }
+
+  int _pulledChanges(Map<String, dynamic> pull) {
+    return (pull['pulledChanges'] as int?) ??
+        (pull['changes'] as List?)?.length ??
+        0;
+  }
+
+  int? _readSummaryInt(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value.toString());
+  }
+
+  @visibleForTesting
+  int? readSummaryIntForTesting(Object? value) => _readSummaryInt(value);
+
   Future<Map<String, Object?>> _tryUploadTrackingBuffer(String source) async {
     final runner = _trackingUploadRunner;
     if (runner == null) {
@@ -398,7 +438,8 @@ class ClientBootstrapService extends ChangeNotifier {
         ...result,
       };
     } catch (error) {
-      await _database.setSetting('tracking.upload.last_error', error.toString());
+      await _database.setSetting(
+          'tracking.upload.last_error', error.toString());
       await _operationLogs.record(
         actor: 'system',
         action: 'tracking_upload_failed',

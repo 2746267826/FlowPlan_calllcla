@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
 
@@ -126,6 +128,49 @@ void main() {
     expect(find.text('Actual coding'), findsOneWidget);
     expect(find.text('Open record is hidden'), findsNothing);
     expect(find.byType(TaskBlock), findsNWidgets(5));
+  });
+
+  testWidgets('uses one-hour fallback for events without an end time',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final today = _today();
+    final visibleHour = _visibleHour();
+
+    await _pumpTimeline(
+      tester,
+      db: db,
+      size: const Size(520, 920),
+      fakeStore: fakeStore,
+      events: [
+        _event(
+          id: 80,
+          summary: 'Fallback event',
+          start: _at(today, visibleHour),
+        ),
+      ],
+    );
+
+    final blockFinder = find.ancestor(
+      of: find.text('Fallback event'),
+      matching: find.byType(TaskBlock),
+    );
+    expect(blockFinder, findsOneWidget);
+
+    final eventBlock = tester.widget<TaskBlock>(blockFinder);
+    expect(eventBlock.height, 80);
+    expect(eventBlock.durationText, contains('1'));
+
+    await tester.drag(find.text('Fallback event'), const Offset(0, 80));
+    await _pumpUntilFound(tester, find.text('确认移动日程'));
+    await tester.tap(find.text('确认'));
+    await _pumpUntil(tester, () => fakeStore.updatedEvents.isNotEmpty);
+
+    final payload = fakeStore.updatedEvents.single.payload;
+    final movedStart = DateTime.parse(payload['startAt']! as String);
+    final movedEnd = DateTime.parse(payload['endAt']! as String);
+    expect(movedEnd.difference(movedStart), const Duration(hours: 1));
   });
 
   testWidgets('taps task and event blocks through narrow-screen routes',
@@ -335,6 +380,9 @@ Future<void> _pumpTimeline(
       ),
       taskEventServerFirstStoreProvider.overrideWith(
         (ref) async => fakeStore ?? FakeTaskEventServerFirstStore(),
+      ),
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
       ),
     ],
     child: MaterialApp.router(routerConfig: router),

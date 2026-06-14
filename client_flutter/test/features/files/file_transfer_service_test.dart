@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/server_api/file_cloud_api.dart';
 import 'package:flowplanv2/features/audit/data_operation_log_repository.dart';
 import 'package:flowplanv2/features/files/services/file_transfer_service.dart';
@@ -122,6 +124,32 @@ void main() {
     expect(api.uploadedChunks.single['bytes'], bytes);
   });
 
+  test('upload missing chunks rejects a job without a server session',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final api = FakeFileCloudApi();
+    final service = _createService(db, api);
+    addTearDown(service.dispose);
+    final job = _transferJob(
+      direction: FileTransferDirection.upload,
+      localPath: r'C:\FlowPlanV2\missing-session.txt',
+      fileName: 'missing-session.txt',
+      totalBytes: 12,
+      chunkSize: 12,
+      expectedChunks: 1,
+      status: FileTransferStatus.uploading,
+    );
+
+    await expectLater(
+      service.debugUploadMissingChunksUncheckedForCoverage(job),
+      throwsStateError,
+    );
+
+    expect(api.missingUploadSessionIds, isEmpty);
+    expect(api.uploadedChunks, isEmpty);
+  });
+
   test('zero byte upload completes without chunk writes', () async {
     final db = createTestDatabase();
     addTearDown(db.close);
@@ -191,13 +219,40 @@ void main() {
     expect(await _auditActions(db), contains('file_transfer.upload.failed'));
   });
 
-  test('upload session failure records job metadata for retry', () async {
+  test('offline policy rejects upload before session or local job', () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final tempDir = await _createTempDir('flowplanv2-upload-offline-');
+    final file = File('${tempDir.path}${Platform.pathSeparator}offline.txt');
+    await file.writeAsString('offline');
+    final api = FakeFileCloudApi();
+    final service = _createService(
+      db,
+      api,
+      policy: const OnlinePrimaryPolicy(
+        serverReachable: false,
+        authenticated: true,
+        level: ServerConnectionLevel.offline,
+      ),
+    );
+    addTearDown(service.dispose);
+
+    await expectLater(
+      service.uploadFile(file.path),
+      throwsA(isA<OnlinePrimaryWriteRejected>()),
+    );
+
+    expect(service.jobs, isEmpty);
+    expect(api.createdUploadSessions, isEmpty);
+    expect(await _auditActions(db), isEmpty);
+  });
+
+  test('upload session failure leaves no local job or audit entry', () async {
     final db = createTestDatabase();
     addTearDown(db.close);
     final tempDir = await _createTempDir('flowplanv2-upload-session-failure-');
     final file = File('${tempDir.path}${Platform.pathSeparator}denied.txt');
-    final bytes = utf8.encode('session denied');
-    await file.writeAsBytes(bytes);
+    await file.writeAsString('session denied');
     final api = FakeFileCloudApi(failCreateUploadSession: true);
     final service = _createService(db, api);
     addTearDown(service.dispose);
@@ -213,20 +268,15 @@ void main() {
       ),
     );
 
-    final failed = service.jobs.single;
-    expect(failed.status, FileTransferStatus.failed);
-    expect(failed.checksum, sha256.convert(bytes).toString());
+    expect(service.jobs, isEmpty);
+    expect(api.createdUploadSessions, hasLength(1));
     expect(
         api.createdUploadSessions.single['metadata'],
-        containsPair(
-          'flowplanv2_transfer_job_id',
-          failed.id,
+        isNot(
+          contains('flowplanv2_transfer_job_id'),
         ));
     expect(api.uploadedChunks, isEmpty);
-    expect(await _auditActions(db), <String>[
-      'file_transfer.upload.start',
-      'file_transfer.upload.failed',
-    ]);
+    expect(await _auditActions(db), isEmpty);
   });
 
   test('upload hash mismatch fails after server completion', () async {
@@ -723,10 +773,16 @@ void main() {
 
 FileTransferService _createService(
   AppDatabase db,
-  FakeFileCloudApi api,
-) {
+  FakeFileCloudApi api, {
+  OnlinePrimaryPolicy policy = const OnlinePrimaryPolicy(
+    serverReachable: true,
+    authenticated: true,
+    level: ServerConnectionLevel.online,
+  ),
+}) {
   return FileTransferService(
     apiLoader: () async => api,
+    policyLoader: () async => policy,
     operationLogs: DataOperationLogRepository(db),
   );
 }

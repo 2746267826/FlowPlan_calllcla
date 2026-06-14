@@ -16,6 +16,7 @@ param(
   [switch]$SkipFlutterApk,
   [switch]$SkipRunFlutterWeb,
   [switch]$SuppressNodeWarnings,
+  [switch]$ShowNodeWarnings,
   [switch]$NoPause
 )
 
@@ -338,10 +339,15 @@ function Write-CopyableCommands {
     ('cd /d ' + (Quote-CmdValue $FlutterDir)),
     "flutter build apk $FlutterModeArg --split-per-abi"
   )
+  $flutterWebRunCommand = if ($FlutterWebPort -le 0) {
+    "flutter run -d chrome $FlutterModeArg"
+  } else {
+    "flutter run -d chrome --web-port $FlutterWebPort $FlutterModeArg"
+  }
   Write-CommandBlock '# 7. Flutter Web run' @(
     ('cd /d ' + (Quote-CmdValue $FlutterDir)),
     (New-CmdSetLine -Name 'FLOWPLANV2_API_BASE_URL' -Value "http://localhost:$ServerPort/api"),
-    "flutter run -d chrome --web-port $FlutterWebPort $FlutterModeArg"
+    $flutterWebRunCommand
   )
   Write-Host '============================================================='
   Add-Content -Path $SummaryLog -Value '=============================================================' -Encoding UTF8
@@ -417,6 +423,12 @@ function Start-LongRunningProcess {
   foreach ($key in $Environment.Keys) {
     $cmdParts += (New-CmdSetLine -Name $key -Value ([string]$Environment[$key]))
   }
+  $runnerScript = @"
+`$ErrorActionPreference = 'Continue'
+& `$env:ComSpec /d /c $(Quote-PsString ($Command + ' 2>&1')) | Tee-Object -FilePath $(Quote-PsString $log)
+exit `$LASTEXITCODE
+"@
+  $runnerEncodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($runnerScript))
   $cmdParts += @(
     ('echo ' + $header),
     ('echo ' + (Join-FlowText @($T.Module, $ModuleDescription))),
@@ -428,7 +440,7 @@ function Start-LongRunningProcess {
     ('echo ' + (Join-FlowText @($T.CloseHow, $T.CloseText))),
     ('echo ' + (Join-FlowText @($T.Note, $CommonNote))),
     ('echo ' + $footer),
-    ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& { $ErrorActionPreference = ''Continue''; ' + $Command + ' 2>&1 | Tee-Object -FilePath ' + (Quote-PsString $log) + '; exit $LASTEXITCODE }"'),
+    ('powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $runnerEncodedCommand),
     'echo.',
     ('echo [' + $DisplayName + '] ' + $T.Exited)
   )
@@ -474,14 +486,14 @@ try {
     [Environment]::SetEnvironmentVariable('FLOWPLANV2_DATABASE_URL', $env:DATABASE_URL, 'Process')
   }
 
-  if ($SuppressNodeWarnings) {
+  if (-not $ShowNodeWarnings) {
     [Environment]::SetEnvironmentVariable('NODE_NO_WARNINGS', '1', 'Process')
-    Write-FlowLog 'SuppressNodeWarnings enabled: Node warnings will be hidden.' 'WARN'
+    Write-FlowLog 'Node warnings are hidden by default; use -ShowNodeWarnings to display them.'
   }
 
   $npm = Resolve-NpmCommandPath
   $flutter = Resolve-CommandPath 'flutter'
-  $npmRunDev = Join-PsInvocation -FilePath $npm -Arguments @('run', 'dev')
+  $npmRunDev = Join-CmdInvocation -FilePath $npm -Arguments @('run', 'dev')
 
   Test-Directory $ServerDir
   Test-Directory $AdminDir
@@ -510,7 +522,7 @@ try {
       -SwitchHint "-ServerPort $($ServerPort + 1)"
     if ($serverPrecheck -ne 'ready') {
       $serverEnv = @{ PORT = $ServerPort; FLOWPLANV2_DATABASE_URL = $env:FLOWPLANV2_DATABASE_URL }
-      if ($SuppressNodeWarnings) { $serverEnv.NODE_NO_WARNINGS = '1' }
+      if (-not $ShowNodeWarnings) { $serverEnv.NODE_NO_WARNINGS = '1' }
       $serverDisplay = Join-FlowText @('FlowPlanV2 ', $T.Server)
       Start-LongRunningProcess `
         -Name 'flowplanv2-server' `
@@ -539,7 +551,7 @@ try {
       -SwitchHint "-AdminPort $($AdminPort + 1)"
     if ($adminPrecheck -ne 'ready') {
       $adminEnv = @{ PORT = $AdminPort; VITE_PORT = $AdminPort; VITE_API_BASE_URL = "http://localhost:$ServerPort/api" }
-      if ($SuppressNodeWarnings) { $adminEnv.NODE_NO_WARNINGS = '1' }
+      if (-not $ShowNodeWarnings) { $adminEnv.NODE_NO_WARNINGS = '1' }
       $adminDisplay = Join-FlowText @('FlowPlanV2 ', $T.Admin)
       Start-LongRunningProcess `
         -Name 'flowplanv2-web-admin' `
@@ -584,14 +596,10 @@ try {
   }
 
   if (-not $SkipRunFlutterWeb) {
-    $flutterWebUrl = "http://localhost:$FlutterWebPort"
-    $flutterWebPrecheck = Test-PortBeforeStart `
-      -ModuleName 'FlowPlanV2 Flutter Web' `
-      -Port $FlutterWebPort `
-      -Url $flutterWebUrl `
-      -SwitchHint "-FlutterWebPort $($FlutterWebPort + 1)"
-    $runArgs = "flutter run -d chrome --web-port $FlutterWebPort $flutterModeArg"
-    if ($flutterWebPrecheck -ne 'ready') {
+    $flutterWebUsesAutomaticPort = $FlutterWebPort -le 0
+    if ($flutterWebUsesAutomaticPort) {
+      $flutterWebUrl = 'Flutter will choose an available local port automatically.'
+      $runArgs = "flutter run -d chrome $flutterModeArg"
       $webDisplay = Join-FlowText @('FlowPlanV2 ', $T.WebClient)
       Start-LongRunningProcess `
         -Name "flowplanv2-flutter-web-$Mode" `
@@ -599,12 +607,35 @@ try {
         -WindowTitle "$webDisplay - Port $FlutterWebPort" `
         -ModuleDescription $T.WebDesc `
         -Url $flutterWebUrl `
-        -HealthUrl $flutterWebUrl `
+        -HealthUrl '' `
         -CommonNote $T.WebNote `
         -WorkingDirectory $FlutterDir `
         -Command $runArgs `
         -Environment @{ FLOWPLANV2_API_BASE_URL = "http://localhost:$ServerPort/api" }
-      Write-FlowLog "Flutter Web will try to open Chrome automatically. URL: $flutterWebUrl"
+      Write-FlowLog 'Flutter Web will ask Flutter to choose an available local port automatically.'
+    } else {
+      $flutterWebUrl = "http://localhost:$FlutterWebPort"
+      $flutterWebPrecheck = Test-PortBeforeStart `
+        -ModuleName 'FlowPlanV2 Flutter Web' `
+        -Port $FlutterWebPort `
+        -Url $flutterWebUrl `
+        -SwitchHint "-FlutterWebPort $($FlutterWebPort + 1)"
+      $runArgs = "flutter run -d chrome --web-port $FlutterWebPort $flutterModeArg"
+      if ($flutterWebPrecheck -ne 'ready') {
+        $webDisplay = Join-FlowText @('FlowPlanV2 ', $T.WebClient)
+        Start-LongRunningProcess `
+          -Name "flowplanv2-flutter-web-$Mode" `
+          -DisplayName $webDisplay `
+          -WindowTitle "$webDisplay - Port $FlutterWebPort" `
+          -ModuleDescription $T.WebDesc `
+          -Url $flutterWebUrl `
+          -HealthUrl $flutterWebUrl `
+          -CommonNote $T.WebNote `
+          -WorkingDirectory $FlutterDir `
+          -Command $runArgs `
+          -Environment @{ FLOWPLANV2_API_BASE_URL = "http://localhost:$ServerPort/api" }
+        Write-FlowLog "Flutter Web will try to open Chrome automatically. URL: $flutterWebUrl"
+      }
     }
   }
 

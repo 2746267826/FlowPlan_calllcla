@@ -1,11 +1,16 @@
 import 'dart:async';
 
+import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/server_api/tracking_ingest_api.dart';
+import 'package:flowplanv2/features/audit/data_operation_log_repository.dart';
 import 'package:flowplanv2/core/server_first/tracking_server_first_store.dart';
 import 'package:flowplanv2/features/tracker/models/input_event_query.dart';
+import 'package:flowplanv2/features/tracker/services/tracking_upload_service.dart';
 import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../test_support/test_database.dart';
 import '../../test_support/tracking_store_test_double.dart';
 
 void main() {
@@ -142,6 +147,64 @@ void main() {
     expect(summary.hourlyDistribution[10].moveDistance, 120);
   });
 
+  test('inputHeatmapSummaryProvider ignores local refresh ticks', () async {
+    final start = DateTime(2026, 6, 9, 9);
+    final end = DateTime(2026, 6, 9, 12);
+    var serverEventCount = 4;
+    final store = TrackingStoreTestDouble(
+      inputHeatmapResponseBuilder: (_) => <String, dynamic>{
+        'buckets': <Map<String, Object?>>[
+          <String, Object?>{
+            'bucketStart': start.toIso8601String(),
+            'eventCount': serverEventCount,
+            'keyboardEventCount': serverEventCount,
+          },
+        ],
+      },
+    );
+    final container = createContainer(store);
+    final query = InputEventQuery(start: start, end: end);
+
+    final firstSummary = await container.read(
+      inputHeatmapSummaryProvider(query).future,
+    );
+
+    serverEventCount = 99;
+    final tick = container.read(activityLogRefreshTickProvider.notifier);
+    tick.state = tick.state + 1;
+    final secondSummary = await container.read(
+      inputHeatmapSummaryProvider(query).future,
+    );
+
+    expect(store.inputHeatmapCalls, hasLength(1));
+    expect(firstSummary.totalEventCount, 4);
+    expect(secondSummary.totalEventCount, 4);
+  });
+
+  test('inputEventProcessOptionsProvider ignores local refresh ticks',
+      () async {
+    final store = TrackingStoreTestDouble(
+      processOptions: const <String>['Code.exe'],
+      categoryOptions: const <String>['coding'],
+    );
+    final container = createContainer(store);
+
+    final firstOptions = await container.read(
+      inputEventProcessOptionsProvider.future,
+    );
+
+    store.processOptions = <String>['Terminal.exe'];
+    final tick = container.read(activityLogRefreshTickProvider.notifier);
+    tick.state = tick.state + 1;
+    final secondOptions = await container.read(
+      inputEventProcessOptionsProvider.future,
+    );
+
+    expect(store.filterOptionsCalls, hasLength(1));
+    expect(firstOptions, <String>['Code.exe']);
+    expect(secondOptions, <String>['Code.exe']);
+  });
+
   test('serverInputEventsPageProvider forwards page query parameters',
       () async {
     final start = DateTime(2026, 6, 9, 8);
@@ -249,6 +312,67 @@ void main() {
     expect(call.taskId, 123);
     expect(call.limit, 30);
     expect(call.offset, 60);
+  });
+
+  test('trackingUploadDiagnosticsProvider passes through service diagnostics',
+      () async {
+    final database = createTestDatabase();
+    addTearDown(database.close);
+    final service = _DiagnosticsTrackingUploadService(
+      database,
+      <String, Object?>{
+        'pendingActivityRecords': 2,
+        'pendingInputEvents': 3,
+        'pendingRawLogs': 5,
+        'deletedConfirmedTrackingUploads': 7,
+        'quarantinedTrackingUploads': 11,
+        'rejectedTrackingUploads': 13,
+        'lastError': 'upload offline',
+      },
+    );
+    final container = ProviderContainer(
+      overrides: <Override>[
+        trackingUploadServiceProvider.overrideWith((ref) async => service),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final diagnostics =
+        await container.read(trackingUploadDiagnosticsProvider.future);
+
+    expect(diagnostics['pendingActivityRecords'], 2);
+    expect(diagnostics['pendingInputEvents'], 3);
+    expect(diagnostics['pendingRawLogs'], 5);
+    expect(diagnostics['deletedConfirmedTrackingUploads'], 7);
+    expect(diagnostics['quarantinedTrackingUploads'], 11);
+    expect(diagnostics['rejectedTrackingUploads'], 13);
+    expect(diagnostics['lastError'], 'upload offline');
+  });
+
+  test('tracking diagnostics debug mapper accepts legacy map shapes', () {
+    expect(
+      trackerProvidersDebugTrackingUploadDiagnosticsMap(
+        <Object?, Object?>{1: 'one', 'pendingInputEvents': 3},
+      ),
+      <String, Object?>{'1': 'one', 'pendingInputEvents': 3},
+    );
+  });
+
+  test('tracking diagnostics debug mapper accepts model-backed json', () {
+    expect(
+      trackerProvidersDebugTrackingUploadDiagnosticsMap(
+        _JsonDiagnostics(<Object?, Object?>{7: 'seven'}),
+      ),
+      <String, Object?>{'7': 'seven'},
+    );
+  });
+
+  test('tracking diagnostics debug mapper returns empty map for unknown shape',
+      () {
+    expect(
+      trackerProvidersDebugTrackingUploadDiagnosticsMap(Object()),
+      isEmpty,
+    );
   });
 
   test('trackerServerFilterOptionsProvider exposes loading and errors',
@@ -363,4 +487,35 @@ void main() {
     expect(summary.totalEventCount, 4);
     expect(summary.hourlyDistribution[23].totalEvents, 4);
   });
+}
+
+class _DiagnosticsTrackingUploadService extends TrackingUploadService {
+  _DiagnosticsTrackingUploadService(
+    AppDatabase database,
+    this._diagnostics,
+  ) : super(
+          database: database,
+          api: _UnusedTrackingIngestApi(),
+          operationLogs: DataOperationLogRepository(database),
+        );
+
+  final Map<String, Object?> _diagnostics;
+
+  @override
+  Future<Map<String, Object?>> buildUploadDiagnostics() async {
+    return Map<String, Object?>.from(_diagnostics);
+  }
+}
+
+class _JsonDiagnostics {
+  const _JsonDiagnostics(this._json);
+
+  final Map<Object?, Object?> _json;
+
+  Map<Object?, Object?> toJson() => _json;
+}
+
+class _UnusedTrackingIngestApi implements TrackingIngestApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -12,6 +12,7 @@ import 'package:flowplanv2/core/sync/server_sync_change_applier.dart';
 import 'package:flowplanv2/core/sync/sync_cursor_store.dart';
 import 'package:flowplanv2/core/sync/sync_engine.dart';
 import 'package:flowplanv2/core/sync/sync_object_state_store.dart';
+import 'package:flowplanv2/core/sync/sync_result.dart';
 import 'package:flowplanv2/core/sync/sync_status.dart';
 import 'package:flowplanv2/core/sync/sync_write_recorder.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,7 +114,19 @@ void main() {
     expect(await cursorStore.readLastPushAt(), isNull);
   });
 
-  test('applier skips malformed and unsupported changes while applying valid ones',
+  test('ServerSyncResult processedCount excludes still-pending mutations', () {
+    const result = ServerSyncResult(
+      acceptedCount: 2,
+      conflictCount: 3,
+      rejectedCount: 4,
+      pendingCount: 9,
+    );
+
+    expect(result.processedCount, 9);
+  });
+
+  test(
+      'applier skips malformed and unsupported changes while applying valid ones',
       () async {
     final db = createTestDatabase();
     addTearDown(db.close);
@@ -199,7 +212,8 @@ void main() {
     expect(failed.single.lastSyncError, contains('first failure'));
   });
 
-  test('write recorder records pending update metadata and suppresses audit hook',
+  test(
+      'write recorder records pending update metadata and suppresses audit hook',
       () async {
     final db = createTestDatabase();
     addTearDown(db.close);

@@ -59,6 +59,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
     final eventsAsync = ref.watch(eventsForSelectedDateProvider);
     final taskSegmentsAsync =
         ref.watch(taskScheduleSegmentsForSelectedDateProvider);
+    final readOnlyCache = ref.watch(onlinePrimaryPolicyProvider).readOnlyCache;
 
     return Scaffold(
       body: Column(
@@ -76,7 +77,8 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                     _buildHourColumn(context),
                     Container(
                       width: 1,
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                      color:
+                          Theme.of(context).dividerColor.withValues(alpha: 0.3),
                     ),
                     Expanded(
                       child: Stack(
@@ -94,6 +96,7 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                                   tasksAsync: tasksAsync,
                                   eventsAsync: eventsAsync,
                                   taskSegmentsAsync: taskSegmentsAsync,
+                                  readOnlyCache: readOnlyCache,
                                   onHoverChanged: (top, task) {
                                     setState(() {
                                       _hoverTop = top;
@@ -104,7 +107,9 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                               ),
                               Container(
                                 width: 1,
-                                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                                color: Theme.of(context)
+                                    .dividerColor
+                                    .withValues(alpha: 0.2),
                               ),
                               Expanded(
                                 flex: 2,
@@ -167,15 +172,18 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
             const Spacer(),
             if (!isToday)
               TextButton(
-                onPressed: () => ref.read(selectedDateProvider.notifier).goToToday(),
+                onPressed: () =>
+                    ref.read(selectedDateProvider.notifier).goToToday(),
                 child: const Text('\u4eca\u65e5'),
               ),
             IconButton(
-              onPressed: () => ref.read(selectedDateProvider.notifier).goToPrevDay(),
+              onPressed: () =>
+                  ref.read(selectedDateProvider.notifier).goToPrevDay(),
               icon: const Icon(Icons.chevron_left),
             ),
             IconButton(
-              onPressed: () => ref.read(selectedDateProvider.notifier).goToNextDay(),
+              onPressed: () =>
+                  ref.read(selectedDateProvider.notifier).goToNextDay(),
               icon: const Icon(Icons.chevron_right),
             ),
           ],
@@ -205,7 +213,9 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
         itemCount: 14,
         itemBuilder: (context, index) {
           final day = anchor.subtract(Duration(days: 7 - index));
-          final isToday = day.year == now.year && day.month == now.month && day.day == now.day;
+          final isToday = day.year == now.year &&
+              day.month == now.month &&
+              day.day == now.day;
           final isSelected = day.year == selectedDate.year &&
               day.month == selectedDate.month &&
               day.day == selectedDate.day;
@@ -239,7 +249,9 @@ class _TimelineViewState extends ConsumerState<TimelineView> {
                     '${day.day}',
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: isSelected || isToday ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: isSelected || isToday
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                       color: isSelected
                           ? Colors.white
                           : Theme.of(context).textTheme.bodyLarge?.color,
@@ -307,6 +319,7 @@ class _PlanColumn extends ConsumerWidget {
     required this.tasksAsync,
     required this.eventsAsync,
     required this.taskSegmentsAsync,
+    required this.readOnlyCache,
     required this.onHoverChanged,
   });
 
@@ -317,59 +330,71 @@ class _PlanColumn extends ConsumerWidget {
   final AsyncValue<List<TaskItem>> tasksAsync;
   final AsyncValue<List<CalendarEvent>> eventsAsync;
   final AsyncValue<List<TaskScheduleSegmentWithTask>> taskSegmentsAsync;
+  final bool readOnlyCache;
   final void Function(double? top, TaskItem? task) onHoverChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DragTarget<TaskItem>(
-      onAcceptWithDetails: (details) async {
-        onHoverChanged(null, null);
-        final renderBox = context.findRenderObject() as RenderBox;
-        final local = renderBox.globalToLocal(details.offset);
-        final start = _topToDateTime(local.dy, selectedDate);
-        final confirmed = await _confirmChange(
-          context,
-          title: '\u786e\u8ba4\u5b89\u6392\u4efb\u52a1',
-          message:
-              '\u8981\u628a\u4efb\u52a1\u300c${details.data.summary}\u300d\u5b89\u6392\u5230 ${_formatDateTime(start)} \u5417\uff1f',
-        );
-        if (!confirmed) {
-          return;
-        }
-        final store = await ref.read(taskEventServerFirstStoreProvider.future);
-        await store.updateLocalTask(
-          localId: details.data.id,
-          patch: <String, Object?>{'dtstart': start.toIso8601String()},
-          changedFields: const <String>['dtstart'],
-        );
-        await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
-              taskId: details.data.id,
-              actor: '\u7528\u6237\u786e\u8ba4',
-              summary: '\u624b\u52a8\u4ece\u672a\u6392\u7a0b\u9762\u677f\u5b89\u6392\u4efb\u52a1\u300c${details.data.summary}\u300d',
-            );
-        await ref.read(dataOperationLogRepositoryProvider).record(
-              actor: '\u7528\u6237\u786e\u8ba4',
-              action: 'manual_schedule_task',
-              entityType: 'task',
-              entityId: details.data.id.toString(),
-              summary: '\u624b\u52a8\u5b89\u6392\u4efb\u52a1\u300c${details.data.summary}\u300d',
-              before: {'dtstart': details.data.dtstart?.toIso8601String()},
-              after: {'dtstart': start.toIso8601String()},
-            );
-      },
-      onMove: (details) {
-        final renderBox = context.findRenderObject() as RenderBox;
-        final local = renderBox.globalToLocal(details.offset);
-        onHoverChanged(local.dy, details.data);
-      },
-      onLeave: (_) => onHoverChanged(null, null),
+      onWillAcceptWithDetails: readOnlyCache ? (_) => false : null,
+      onAcceptWithDetails: readOnlyCache
+          ? null
+          : (details) async {
+              onHoverChanged(null, null);
+              final renderBox = context.findRenderObject() as RenderBox;
+              final local = renderBox.globalToLocal(details.offset);
+              final start = _topToDateTime(local.dy, selectedDate);
+              final confirmed = await _confirmChange(
+                context,
+                title: '\u786e\u8ba4\u5b89\u6392\u4efb\u52a1',
+                message:
+                    '\u8981\u628a\u4efb\u52a1\u300c${details.data.summary}\u300d\u5b89\u6392\u5230 ${_formatDateTime(start)} \u5417\uff1f',
+              );
+              if (!confirmed) {
+                return;
+              }
+              final store =
+                  await ref.read(taskEventServerFirstStoreProvider.future);
+              await store.updateLocalTask(
+                localId: details.data.id,
+                patch: <String, Object?>{'dtstart': start.toIso8601String()},
+                changedFields: const <String>['dtstart'],
+              );
+              await ref
+                  .read(taskScheduleSegmentRepositoryProvider)
+                  .clearForTask(
+                    taskId: details.data.id,
+                    actor: '\u7528\u6237\u786e\u8ba4',
+                    summary:
+                        '\u624b\u52a8\u4ece\u672a\u6392\u7a0b\u9762\u677f\u5b89\u6392\u4efb\u52a1\u300c${details.data.summary}\u300d',
+                  );
+              await ref.read(dataOperationLogRepositoryProvider).record(
+                actor: '\u7528\u6237\u786e\u8ba4',
+                action: 'manual_schedule_task',
+                entityType: 'task',
+                entityId: details.data.id.toString(),
+                summary:
+                    '\u624b\u52a8\u5b89\u6392\u4efb\u52a1\u300c${details.data.summary}\u300d',
+                before: {'dtstart': details.data.dtstart?.toIso8601String()},
+                after: {'dtstart': start.toIso8601String()},
+              );
+            },
+      onMove: readOnlyCache
+          ? null
+          : (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final local = renderBox.globalToLocal(details.offset);
+              onHoverChanged(local.dy, details.data);
+            },
+      onLeave: readOnlyCache ? null : (_) => onHoverChanged(null, null),
       builder: (context, candidateData, rejectedData) {
         final hovering = candidateData.isNotEmpty;
         return Stack(
           children: [
             if (hovering)
               Positioned.fill(
-                child: Container(color: AppColors.primary.withValues(alpha: 0.06)),
+                child:
+                    Container(color: AppColors.primary.withValues(alpha: 0.06)),
               ),
             Positioned(
               top: 4,
@@ -387,30 +412,36 @@ class _PlanColumn extends ConsumerWidget {
                   .map(
                     (event) => TaskBlock(
                       key: ValueKey('timeline_event_${event.id}'),
-                      top: (event.dtstart.hour + event.dtstart.minute / 60) * hourHeight,
-                      height: ((event.dtend ?? event.dtstart.add(const Duration(hours: 1)))
-                                      .difference(event.dtstart)
-                                      .inMinutes /
-                                  60 *
-                                  hourHeight)
-                              .clamp(20.0, 999.0),
+                      top: (event.dtstart.hour + event.dtstart.minute / 60) *
+                          hourHeight,
+                      height: ((event.dtend ??
+                                      event.dtstart
+                                          .add(const Duration(hours: 1)))
+                                  .difference(event.dtstart)
+                                  .inMinutes /
+                              60 *
+                              hourHeight)
+                          .clamp(20.0, 999.0),
                       label: event.summary,
                       location: event.location,
                       note: event.description,
                       durationText: _durationLabel(
-                        (event.dtend ?? event.dtstart.add(const Duration(hours: 1)))
+                        (event.dtend ??
+                                event.dtstart.add(const Duration(hours: 1)))
                             .difference(event.dtstart)
                             .inMinutes,
                       ),
                       color: _parseColor(event.colorHex),
-                      isDraggable: event.source != 'outlook',
-                      onDragEnd: event.source == 'outlook'
+                      isDraggable: !readOnlyCache && event.source != 'outlook',
+                      onDragEnd: readOnlyCache || event.source == 'outlook'
                           ? null
                           : (finalTop) async {
-                              final start = _topToDateTime(finalTop, selectedDate);
-                              final duration =
-                                  (event.dtend ?? event.dtstart.add(const Duration(hours: 1)))
-                                      .difference(event.dtstart);
+                              final start =
+                                  _topToDateTime(finalTop, selectedDate);
+                              final duration = (event.dtend ??
+                                      event.dtstart
+                                          .add(const Duration(hours: 1)))
+                                  .difference(event.dtstart);
                               final confirmed = await _confirmChange(
                                 context,
                                 title: '\u786e\u8ba4\u79fb\u52a8\u65e5\u7a0b',
@@ -420,73 +451,89 @@ class _PlanColumn extends ConsumerWidget {
                               if (!confirmed) {
                                 return;
                               }
-                              final store = await ref
-                                  .read(taskEventServerFirstStoreProvider.future);
+                              final store = await ref.read(
+                                  taskEventServerFirstStoreProvider.future);
                               await store.updateLocalEvent(
                                 localId: event.id,
                                 patch: <String, Object?>{
                                   'startAt': start.toIso8601String(),
-                                  'endAt': start.add(duration).toIso8601String(),
+                                  'endAt':
+                                      start.add(duration).toIso8601String(),
                                 },
-                                changedFields: const <String>['startAt', 'endAt'],
+                                changedFields: const <String>[
+                                  'startAt',
+                                  'endAt'
+                                ],
                               );
-                              await ref.read(dataOperationLogRepositoryProvider).record(
-                                    actor: '\u7528\u6237\u786e\u8ba4',
-                                    action: 'manual_move_event',
-                                    entityType: 'calendar_event',
-                                    entityId: event.id.toString(),
-                                    summary: '\u624b\u52a8\u79fb\u52a8\u65e5\u7a0b\u300c${event.summary}\u300d',
-                                    before: {
-                                      'dtstart': event.dtstart.toIso8601String(),
-                                      'dtend': event.dtend?.toIso8601String(),
-                                    },
-                                    after: {
-                                      'dtstart': start.toIso8601String(),
-                                      'dtend': start.add(duration).toIso8601String(),
-                                    },
-                                  );
+                              await ref
+                                  .read(dataOperationLogRepositoryProvider)
+                                  .record(
+                                actor: '\u7528\u6237\u786e\u8ba4',
+                                action: 'manual_move_event',
+                                entityType: 'calendar_event',
+                                entityId: event.id.toString(),
+                                summary:
+                                    '\u624b\u52a8\u79fb\u52a8\u65e5\u7a0b\u300c${event.summary}\u300d',
+                                before: {
+                                  'dtstart': event.dtstart.toIso8601String(),
+                                  'dtend': event.dtend?.toIso8601String(),
+                                },
+                                after: {
+                                  'dtstart': start.toIso8601String(),
+                                  'dtend':
+                                      start.add(duration).toIso8601String(),
+                                },
+                              );
                             },
-                      onResizeEnd: event.source == 'outlook'
+                      onResizeEnd: readOnlyCache || event.source == 'outlook'
                           ? null
                           : (finalHeight) async {
-                              final minutes =
-                                  _heightToMinutes(finalHeight).clamp(15, 1440).toInt();
+                              final minutes = _heightToMinutes(finalHeight)
+                                  .clamp(15, 1440)
+                                  .toInt();
                               final newEnd =
                                   event.dtstart.add(Duration(minutes: minutes));
                               final confirmed = await _confirmChange(
                                 context,
-                                title: '\u786e\u8ba4\u8c03\u6574\u65e5\u7a0b\u65f6\u957f',
+                                title:
+                                    '\u786e\u8ba4\u8c03\u6574\u65e5\u7a0b\u65f6\u957f',
                                 message:
                                     '\u8981\u628a\u65e5\u7a0b\u300c${event.summary}\u300d\u7684\u7ed3\u675f\u65f6\u95f4\u6539\u5230 ${_formatDateTime(newEnd)} \u5417\uff1f',
                               );
                               if (!confirmed) {
                                 return;
                               }
-                              final store = await ref
-                                  .read(taskEventServerFirstStoreProvider.future);
+                              final store = await ref.read(
+                                  taskEventServerFirstStoreProvider.future);
                               await store.updateLocalEvent(
                                 localId: event.id,
                                 patch: <String, Object?>{
                                   'startAt': event.dtstart.toIso8601String(),
                                   'endAt': newEnd.toIso8601String(),
                                 },
-                                changedFields: const <String>['startAt', 'endAt'],
+                                changedFields: const <String>[
+                                  'startAt',
+                                  'endAt'
+                                ],
                               );
-                              await ref.read(dataOperationLogRepositoryProvider).record(
-                                    actor: '\u7528\u6237\u786e\u8ba4',
-                                    action: 'manual_resize_event',
-                                    entityType: 'calendar_event',
-                                    entityId: event.id.toString(),
-                                    summary: '\u624b\u52a8\u8c03\u6574\u65e5\u7a0b\u300c${event.summary}\u300d\u65f6\u957f',
-                                    before: {
-                                      'dtstart': event.dtstart.toIso8601String(),
-                                      'dtend': event.dtend?.toIso8601String(),
-                                    },
-                                    after: {
-                                      'dtstart': event.dtstart.toIso8601String(),
-                                      'dtend': newEnd.toIso8601String(),
-                                    },
-                                  );
+                              await ref
+                                  .read(dataOperationLogRepositoryProvider)
+                                  .record(
+                                actor: '\u7528\u6237\u786e\u8ba4',
+                                action: 'manual_resize_event',
+                                entityType: 'calendar_event',
+                                entityId: event.id.toString(),
+                                summary:
+                                    '\u624b\u52a8\u8c03\u6574\u65e5\u7a0b\u300c${event.summary}\u300d\u65f6\u957f',
+                                before: {
+                                  'dtstart': event.dtstart.toIso8601String(),
+                                  'dtend': event.dtend?.toIso8601String(),
+                                },
+                                after: {
+                                  'dtstart': event.dtstart.toIso8601String(),
+                                  'dtend': newEnd.toIso8601String(),
+                                },
+                              );
                             },
                       onTap: () => _openEvent(context, event.id),
                     ),
@@ -502,95 +549,123 @@ class _PlanColumn extends ConsumerWidget {
                   orElse: () => <int>{},
                 );
                 return tasks
-                  .where(
-                    (task) =>
-                        task.dtstart != null &&
-                        !segmentedTaskIds.contains(task.id),
-                  )
-                  .map(
-                    (task) => TaskBlock(
-                      top: (task.dtstart!.hour + task.dtstart!.minute / 60) * hourHeight,
-                      height:
-                          (task.durationMinutes / 60 * hourHeight).clamp(20.0, 999.0),
-                      label: task.summary,
-                      location: task.location,
-                      note: task.description,
-                      durationText: _durationLabel(task.durationMinutes),
-                      color: _priorityColor(task.priorityLocal),
-                      isDraggable: true,
-                      onDragEnd: (finalTop) async {
-                        final start = _topToDateTime(finalTop, selectedDate);
-                        final confirmed = await _confirmChange(
-                          context,
-                          title: '\u786e\u8ba4\u79fb\u52a8\u4efb\u52a1',
-                          message:
-                              '\u8981\u628a\u4efb\u52a1\u300c${task.summary}\u300d\u79fb\u52a8\u5230 ${_formatDateTime(start)} \u5417\uff1f',
-                        );
-                        if (!confirmed) {
-                          return;
-                        }
-                        final store =
-                            await ref.read(taskEventServerFirstStoreProvider.future);
-                        await store.updateLocalTask(
-                          localId: task.id,
-                          patch: <String, Object?>{
-                            'dtstart': start.toIso8601String(),
-                          },
-                          changedFields: const <String>['dtstart'],
-                        );
-                        await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
-                              taskId: task.id,
-                              actor: '\u7528\u6237\u786e\u8ba4',
-                              summary: '\u624b\u52a8\u79fb\u52a8\u4efb\u52a1\u300c${task.summary}\u300d\u540e\u6e05\u9664\u65e7\u6392\u7a0b\u7247\u6bb5',
-                            );
-                        await ref.read(dataOperationLogRepositoryProvider).record(
-                              actor: '\u7528\u6237\u786e\u8ba4',
-                              action: 'manual_move_task',
-                              entityType: 'task',
-                              entityId: task.id.toString(),
-                              summary: '\u624b\u52a8\u79fb\u52a8\u4efb\u52a1\u300c${task.summary}\u300d',
-                              before: {'dtstart': task.dtstart?.toIso8601String()},
-                              after: {'dtstart': start.toIso8601String()},
-                            );
-                      },
-                      onResizeEnd: (finalHeight) async {
-                        final minutes =
-                            _heightToMinutes(finalHeight).clamp(15, 1440).toInt();
-                        final confirmed = await _confirmChange(
-                          context,
-                          title: '\u786e\u8ba4\u8c03\u6574\u4efb\u52a1\u65f6\u957f',
-                          message:
-                              '\u8981\u628a\u4efb\u52a1\u300c${task.summary}\u300d\u7684\u9884\u8ba1\u65f6\u957f\u6539\u4e3a $minutes \u5206\u949f\u5417\uff1f',
-                        );
-                        if (!confirmed) {
-                          return;
-                        }
-                        final store =
-                            await ref.read(taskEventServerFirstStoreProvider.future);
-                        await store.updateLocalTask(
-                          localId: task.id,
-                          patch: <String, Object?>{'durationMinutes': minutes},
-                          changedFields: const <String>['durationMinutes'],
-                        );
-                        await ref.read(taskScheduleSegmentRepositoryProvider).clearForTask(
-                              taskId: task.id,
-                              actor: '\u7528\u6237\u786e\u8ba4',
-                              summary: '\u624b\u52a8\u8c03\u6574\u4efb\u52a1\u300c${task.summary}\u300d\u65f6\u957f\u540e\u6e05\u9664\u65e7\u6392\u7a0b\u7247\u6bb5',
-                            );
-                        await ref.read(dataOperationLogRepositoryProvider).record(
-                              actor: '\u7528\u6237\u786e\u8ba4',
-                              action: 'manual_resize_task',
-                              entityType: 'task',
-                              entityId: task.id.toString(),
-                              summary: '\u624b\u52a8\u8c03\u6574\u4efb\u52a1\u300c${task.summary}\u300d\u65f6\u957f',
-                              before: {'duration_minutes': task.durationMinutes},
-                              after: {'duration_minutes': minutes},
-                            );
-                      },
-                      onTap: () => _openTask(context, task.id),
-                    ),
-                  )
-                  .toList();
+                    .where(
+                      (task) =>
+                          task.dtstart != null &&
+                          !segmentedTaskIds.contains(task.id),
+                    )
+                    .map(
+                      (task) => TaskBlock(
+                        top: (task.dtstart!.hour + task.dtstart!.minute / 60) *
+                            hourHeight,
+                        height: (task.durationMinutes / 60 * hourHeight)
+                            .clamp(20.0, 999.0),
+                        label: task.summary,
+                        location: task.location,
+                        note: task.description,
+                        durationText: _durationLabel(task.durationMinutes),
+                        color: _priorityColor(task.priorityLocal),
+                        isDraggable: !readOnlyCache,
+                        onDragEnd: readOnlyCache
+                            ? null
+                            : (finalTop) async {
+                                final start =
+                                    _topToDateTime(finalTop, selectedDate);
+                                final confirmed = await _confirmChange(
+                                  context,
+                                  title: '\u786e\u8ba4\u79fb\u52a8\u4efb\u52a1',
+                                  message:
+                                      '\u8981\u628a\u4efb\u52a1\u300c${task.summary}\u300d\u79fb\u52a8\u5230 ${_formatDateTime(start)} \u5417\uff1f',
+                                );
+                                if (!confirmed) {
+                                  return;
+                                }
+                                final store = await ref.read(
+                                    taskEventServerFirstStoreProvider.future);
+                                await store.updateLocalTask(
+                                  localId: task.id,
+                                  patch: <String, Object?>{
+                                    'dtstart': start.toIso8601String(),
+                                  },
+                                  changedFields: const <String>['dtstart'],
+                                );
+                                await ref
+                                    .read(taskScheduleSegmentRepositoryProvider)
+                                    .clearForTask(
+                                      taskId: task.id,
+                                      actor: '\u7528\u6237\u786e\u8ba4',
+                                      summary:
+                                          '\u624b\u52a8\u79fb\u52a8\u4efb\u52a1\u300c${task.summary}\u300d\u540e\u6e05\u9664\u65e7\u6392\u7a0b\u7247\u6bb5',
+                                    );
+                                await ref
+                                    .read(dataOperationLogRepositoryProvider)
+                                    .record(
+                                  actor: '\u7528\u6237\u786e\u8ba4',
+                                  action: 'manual_move_task',
+                                  entityType: 'task',
+                                  entityId: task.id.toString(),
+                                  summary:
+                                      '\u624b\u52a8\u79fb\u52a8\u4efb\u52a1\u300c${task.summary}\u300d',
+                                  before: {
+                                    'dtstart': task.dtstart?.toIso8601String()
+                                  },
+                                  after: {'dtstart': start.toIso8601String()},
+                                );
+                              },
+                        onResizeEnd: readOnlyCache
+                            ? null
+                            : (finalHeight) async {
+                                final minutes = _heightToMinutes(finalHeight)
+                                    .clamp(15, 1440)
+                                    .toInt();
+                                final confirmed = await _confirmChange(
+                                  context,
+                                  title:
+                                      '\u786e\u8ba4\u8c03\u6574\u4efb\u52a1\u65f6\u957f',
+                                  message:
+                                      '\u8981\u628a\u4efb\u52a1\u300c${task.summary}\u300d\u7684\u9884\u8ba1\u65f6\u957f\u6539\u4e3a $minutes \u5206\u949f\u5417\uff1f',
+                                );
+                                if (!confirmed) {
+                                  return;
+                                }
+                                final store = await ref.read(
+                                    taskEventServerFirstStoreProvider.future);
+                                await store.updateLocalTask(
+                                  localId: task.id,
+                                  patch: <String, Object?>{
+                                    'durationMinutes': minutes
+                                  },
+                                  changedFields: const <String>[
+                                    'durationMinutes'
+                                  ],
+                                );
+                                await ref
+                                    .read(taskScheduleSegmentRepositoryProvider)
+                                    .clearForTask(
+                                      taskId: task.id,
+                                      actor: '\u7528\u6237\u786e\u8ba4',
+                                      summary:
+                                          '\u624b\u52a8\u8c03\u6574\u4efb\u52a1\u300c${task.summary}\u300d\u65f6\u957f\u540e\u6e05\u9664\u65e7\u6392\u7a0b\u7247\u6bb5',
+                                    );
+                                await ref
+                                    .read(dataOperationLogRepositoryProvider)
+                                    .record(
+                                  actor: '\u7528\u6237\u786e\u8ba4',
+                                  action: 'manual_resize_task',
+                                  entityType: 'task',
+                                  entityId: task.id.toString(),
+                                  summary:
+                                      '\u624b\u52a8\u8c03\u6574\u4efb\u52a1\u300c${task.summary}\u300d\u65f6\u957f',
+                                  before: {
+                                    'duration_minutes': task.durationMinutes
+                                  },
+                                  after: {'duration_minutes': minutes},
+                                );
+                              },
+                        onTap: () => _openTask(context, task.id),
+                      ),
+                    )
+                    .toList();
               },
               orElse: () => const <Widget>[],
             ),
@@ -604,14 +679,14 @@ class _PlanColumn extends ConsumerWidget {
                       top: (item.segment.startAt.hour +
                               item.segment.startAt.minute / 60) *
                           hourHeight,
-                      height:
-                          (item.segment.durationMinutes / 60 * hourHeight)
-                              .clamp(20.0, 999.0),
+                      height: (item.segment.durationMinutes / 60 * hourHeight)
+                          .clamp(20.0, 999.0),
                       label:
                           '${item.task.summary} (${item.segment.segmentIndex + 1})',
                       location: item.task.location,
                       note: item.task.description,
-                      durationText: _durationLabel(item.segment.durationMinutes),
+                      durationText:
+                          _durationLabel(item.segment.durationMinutes),
                       color: _priorityColor(item.task.priorityLocal),
                       isDraggable: false,
                       onTap: () => _openTask(context, item.task.id),
@@ -625,7 +700,9 @@ class _PlanColumn extends ConsumerWidget {
                 top: hoverTop!,
                 left: 4,
                 right: 4,
-                height: ((hoverTask!.durationMinutes <= 0 ? 30 : hoverTask!.durationMinutes) /
+                height: ((hoverTask!.durationMinutes <= 0
+                            ? 30
+                            : hoverTask!.durationMinutes) /
                         60 *
                         hourHeight)
                     .clamp(20.0, 999.0),
@@ -653,8 +730,10 @@ class _PlanColumn extends ConsumerWidget {
       showDialog<void>(
         context: context,
         builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
           child: SizedBox(width: 560, child: EventDetailPage(eventId: eventId)),
         ),
       );
@@ -668,8 +747,10 @@ class _PlanColumn extends ConsumerWidget {
       showDialog<void>(
         context: context,
         builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
           child: SizedBox(width: 560, child: TaskDetailPage(taskId: taskId)),
         ),
       );
@@ -775,11 +856,12 @@ class _ActualColumn extends ConsumerWidget {
           ),
         ),
         ...recordsAsync.maybeWhen(
-          data: (records) => records
-              .where((record) => record.endTime != null)
-              .map((record) {
-            final startMinutes = record.startTime.hour * 60 + record.startTime.minute;
-            final endMinutes = record.endTime!.hour * 60 + record.endTime!.minute;
+          data: (records) =>
+              records.where((record) => record.endTime != null).map((record) {
+            final startMinutes =
+                record.startTime.hour * 60 + record.startTime.minute;
+            final endMinutes =
+                record.endTime!.hour * 60 + record.endTime!.minute;
             final top = (startMinutes / 60) * hourHeight;
             final height = ((endMinutes - startMinutes) / 60) * hourHeight;
             if (height < 2) return const SizedBox.shrink();
@@ -797,10 +879,14 @@ class _ActualColumn extends ConsumerWidget {
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Text(
-                  record.manualLabel ?? record.category ?? record.processName ?? '',
+                  record.manualLabel ??
+                      record.category ??
+                      record.processName ??
+                      '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                      fontSize: 10, color: color, fontWeight: FontWeight.w500),
                 ),
               ),
             );

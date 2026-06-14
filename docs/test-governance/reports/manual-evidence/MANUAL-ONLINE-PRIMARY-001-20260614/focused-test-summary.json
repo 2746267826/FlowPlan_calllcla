@@ -1,0 +1,38 @@
+﻿[
+    {
+        "name":  "online-primary-policy",
+        "command":  "flutter test test\\core\\online\\online_primary_policy_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\online-primary-policy-output.txt"
+    },
+    {
+        "name":  "task-event-server-first-store",
+        "command":  "flutter test test\\core\\server_first\\task_event_server_first_store_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\task-event-server-first-store-output.txt"
+    },
+    {
+        "name":  "client-bootstrap-service",
+        "command":  "flutter test test\\core\\bootstrap\\client_bootstrap_service_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\client-bootstrap-service-output.txt"
+    },
+    {
+        "name":  "offline-read-only-banner",
+        "command":  "flutter test test\\shared\\widgets\\offline_read_only_banner_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\offline-read-only-banner-output.txt"
+    },
+    {
+        "name":  "task-detail-read-only",
+        "command":  "flutter test test\\widgets\\user_workflow_task_detail_worker_j_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\task-detail-read-only-output.txt"
+    },
+    {
+        "name":  "data-management-read-only",
+        "command":  "flutter test test\\widgets\\user_workflow_data_management_test.dart --concurrency=1",
+        "exitCode":  0,
+        "log":  "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-ONLINE-PRIMARY-001-20260614\\data-management-read-only-output.txt"
+    }
+]

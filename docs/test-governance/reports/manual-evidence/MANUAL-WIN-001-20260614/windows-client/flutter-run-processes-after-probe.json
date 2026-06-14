@@ -1,0 +1,14 @@
+[
+    {
+        "ProcessId":  4544,
+        "ParentProcessId":  25460,
+        "Name":  "powershell.exe",
+        "CommandLine":  "\"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -Command \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\nGet-CimInstance Win32_Process | Where-Object { $_.Name -match \u0027flutter|dart|flowplanv2\u0027 -or $_.CommandLine -like \u0027*run -d windows*\u0027 } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Depth 5 | Set-Content \u0027docs\\test-governance\\reports\\manual-evidence\\MANUAL-WIN-001-20260614\\windows-client\\flutter-run-processes-after-probe.json\u0027; Get-Content \u0027docs\\test-governance\\reports\\manual-evidence\\MANUAL-WIN-001-20260614\\windows-client\\flutter-run-processes-after-probe.json\u0027\""
+    },
+    {
+        "ProcessId":  4072,
+        "ParentProcessId":  25460,
+        "Name":  "powershell.exe",
+        "CommandLine":  "\"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -Command \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n$self=$PID; $pids = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $self -and ($_.Name -match \u0027flowplanv2\u0027 -or $_.CommandLine -like \u0027*run -d windows --debug*\u0027 -or $_.CommandLine -like \u0027*flutter_tools.snapshot*run -d windows*\u0027) } | Select-Object -ExpandProperty ProcessId -Unique; if ($pids) { Stop-Process -Id $pids -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 2; Get-CimInstance Win32_Process | Where-Object { $_.Name -match \u0027flowplanv2\u0027 -or $_.CommandLine -like \u0027*run -d windows --debug*\u0027 } | Select-Object ProcessId,Name,CommandLine\""
+    }
+]

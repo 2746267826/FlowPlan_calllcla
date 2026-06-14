@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/offline_queue/offline_mutation_store.dart';
 import 'package:flowplanv2/core/sync/sync_object_state_store.dart';
 import 'package:flowplanv2/core/sync/sync_write_recorder.dart';
@@ -82,6 +84,43 @@ void main() {
     await tester.tap(find.byKey(AppKeys.fileTransferStartButton));
     await tester.pump();
 
+    expect(service.uploadedPaths, isEmpty);
+    expect(service.jobs, isEmpty);
+  });
+
+  testWidgets('file transfer upload requires server before opening picker', (
+    tester,
+  ) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final service = FakeFileTransferService(db);
+    final picker = FakeFilePicker('/virtual/report.pdf');
+    FilePicker.platform = picker;
+
+    await _pumpFileTransferCenter(
+      tester,
+      service: service,
+      overrides: [
+        onlinePrimaryPolicyProvider.overrideWith(
+          (ref) => const OnlinePrimaryPolicy(
+            serverReachable: false,
+            authenticated: true,
+            level: ServerConnectionLevel.offline,
+          ),
+        ),
+      ],
+    );
+
+    await tester.tap(find.byKey(AppKeys.fileTransferStartButton));
+    await tester.pump();
+
+    expect(
+      find.text(
+        'Server connection is required before this write can be accepted.',
+      ),
+      findsOneWidget,
+    );
+    expect(picker.pickCalls, 0);
     expect(service.uploadedPaths, isEmpty);
     expect(service.jobs, isEmpty);
   });
@@ -185,6 +224,7 @@ void main() {
 Future<void> _pumpFileTransferCenter(
   WidgetTester tester, {
   required FakeFileTransferService service,
+  List<Override> overrides = const [],
 }) async {
   final previousFilePicker = FilePicker.platform;
   addTearDown(() {
@@ -193,7 +233,15 @@ Future<void> _pumpFileTransferCenter(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        onlinePrimaryPolicyProvider.overrideWith(
+          (ref) => const OnlinePrimaryPolicy(
+            serverReachable: true,
+            authenticated: true,
+            level: ServerConnectionLevel.online,
+          ),
+        ),
         fileTransferServiceProvider.overrideWith((ref) => service),
+        ...overrides,
       ],
       child: const MaterialApp(
         home: FileTransferCenterPage(),
@@ -209,6 +257,7 @@ class FakeFilePicker extends FilePicker {
   final String? path;
   final queuedSavePaths = <String?>[];
   final saveRequests = <Map<String, Object?>>[];
+  var pickCalls = 0;
 
   @override
   Future<FilePickerResult?> pickFiles({
@@ -225,6 +274,7 @@ class FakeFilePicker extends FilePicker {
     bool lockParentWindow = false,
     bool readSequential = false,
   }) async {
+    pickCalls++;
     if (path == null) {
       return null;
     }

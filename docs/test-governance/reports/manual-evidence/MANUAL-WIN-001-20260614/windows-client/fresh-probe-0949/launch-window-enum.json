@@ -1,0 +1,85 @@
+{
+  "startedPid": 51656,
+  "exe": "C:\\Users\\a2746\\Desktop\\calll260426\\client_flutter\\build\\windows\\x64\\runner\\Debug\\flowplanv2.exe",
+  "windows": [
+    {
+      "hwnd": 7475672,
+      "pid": 51656,
+      "title": "flowplanv2",
+      "visible": false,
+      "rect": [
+        10,
+        10,
+        1290,
+        730
+      ],
+      "iconic": false
+    },
+    {
+      "hwnd": 1507612,
+      "pid": 55208,
+      "title": "FlowPlanV2 - Google Chrome",
+      "visible": true,
+      "rect": [
+        10,
+        10,
+        1275,
+        1382
+      ],
+      "iconic": false
+    },
+    {
+      "hwnd": 1900982,
+      "pid": 30184,
+      "title": "FlowPlanV2 管理端 - Port 35174 ",
+      "visible": true,
+      "rect": [
+        70,
+        78,
+        1199,
+        713
+      ],
+      "iconic": false
+    },
+    {
+      "hwnd": 131626,
+      "pid": 25164,
+      "title": "flowplan",
+      "visible": false,
+      "rect": [
+        15,
+        15,
+        1935,
+        1095
+      ],
+      "iconic": false
+    },
+    {
+      "hwnd": 26808750,
+      "pid": 51656,
+      "title": "Default IME",
+      "visible": false,
+      "rect": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "iconic": false
+    },
+    {
+      "hwnd": 14094728,
+      "pid": 51656,
+      "title": "MSCTFIME UI",
+      "visible": false,
+      "rect": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "iconic": false
+    }
+  ],
+  "poll": null
+}

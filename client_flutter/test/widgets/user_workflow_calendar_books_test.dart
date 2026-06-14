@@ -172,6 +172,38 @@ void main() {
     );
   });
 
+  testWidgets('Outlook calendar edit action is guarded when invoked',
+      (tester) async {
+    CalendarBooksPage.debugExposeOutlookCalendarEditAction = true;
+    addTearDown(() {
+      CalendarBooksPage.debugExposeOutlookCalendarEditAction = false;
+    });
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final repository = CalendarBooksRepository(db);
+    await repository.createEventCalendar(
+      EventCalendarsCompanion.insert(
+        name: 'Outlook Guarded',
+        source: const Value('outlook'),
+        syncUrl: const Value('remote-guarded-calendar'),
+        createdAt: fixtureNow(),
+      ),
+      audit: false,
+    );
+
+    await _pumpCalendarBooks(tester, db);
+    await _pumpUntilText(tester, 'Outlook Guarded');
+
+    await _openTileMenu(tester, 'Outlook Guarded');
+    await _tapPopupValue(tester, 'edit');
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(
+      find.textContaining('不能在 FlowPlanV2 中直接编辑'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
       'bound task lists explain Outlook mirror impact when archived and deleted',
       (tester) async {

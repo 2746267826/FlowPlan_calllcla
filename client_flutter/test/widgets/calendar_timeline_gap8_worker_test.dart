@@ -19,6 +19,8 @@ import '../test_support/calendar_shell_quick_add_harness.dart';
 import '../test_support/fixtures.dart';
 import '../test_support/provider_harness.dart';
 import '../test_support/test_database.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/user_workflow_harness.dart';
 
 class _MockPlanFeedbackService extends Mock implements PlanFeedbackService {}
@@ -296,6 +298,9 @@ Future<void> _pumpTimeline(
       ),
       taskEventServerFirstStoreProvider.overrideWith(
         (ref) async => FakeTaskEventServerFirstStore(),
+      ),
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
       ),
     ],
     child: MaterialApp.router(routerConfig: router),

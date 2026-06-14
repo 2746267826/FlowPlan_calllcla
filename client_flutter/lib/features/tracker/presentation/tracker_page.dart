@@ -45,6 +45,11 @@ typedef TrackerProcessStarter = Future<Object?> Function(
 );
 
 @visibleForTesting
+final trackerPageProcessStarterProvider = Provider<TrackerProcessStarter>(
+  (ref) => Process.start,
+);
+
+@visibleForTesting
 Future<void> openTrackerDatabaseFolderForPlatform({
   required String folderPath,
   required bool isWindows,
@@ -57,11 +62,12 @@ Future<void> openTrackerDatabaseFolderForPlatform({
 
 final trackerPageDatabaseFolderOpenerProvider =
     Provider<TrackerDatabaseFolderOpener>((ref) {
+  final startProcess = ref.watch(trackerPageProcessStarterProvider);
   return (folderPath) async {
     await openTrackerDatabaseFolderForPlatform(
       folderPath: folderPath,
       isWindows: Platform.isWindows,
-      startProcess: Process.start,
+      startProcess: startProcess,
     );
   };
 });

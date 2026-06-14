@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/offline_queue/offline_mutation.dart';
 import 'package:flowplanv2/core/offline_queue/offline_mutation_store.dart';
 import 'package:flowplanv2/core/sync/sync_object_state_store.dart';
 import 'package:flowplanv2/core/sync/sync_write_recorder.dart';
+import 'package:flowplanv2/core/sync/sync_object_registry.dart';
 import 'package:flowplanv2/features/audit/data_operation_log_repository.dart';
 import 'package:flowplanv2/features/calendar/data/calendar_books_repository.dart';
 import 'package:flowplanv2/features/calendar/data/event_repository.dart';
@@ -20,6 +24,86 @@ typedef _Evidence = ({
 });
 
 void main() {
+  test('fallback defaults and audited updates queue calendar book mutations',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    await _clearCalendarData(db);
+    final evidence = _createEvidence(db);
+    final repository = CalendarBooksRepository(
+      db,
+      evidence.auditRepository,
+      evidence.recorder,
+    );
+
+    final fallbackDefaults = EventCalendarDefaults.fallback();
+    final calendarId = await repository.createEventCalendar(
+      EventCalendarsCompanion.insert(
+        name: 'Mutable Calendar',
+        createdAt: fixtureNow(),
+      ),
+      audit: false,
+    );
+
+    final updated = await repository.updateEventCalendar(
+      EventCalendarsCompanion(
+        id: Value(calendarId),
+        name: const Value('Synced Calendar Name'),
+      ),
+    );
+
+    final mutations = await evidence.mutationStore.listPending();
+    final updateMutation = mutations.singleWhere(
+      (mutation) =>
+          mutation.objectType == SyncObjectType.calendarBook.key &&
+          mutation.localId == calendarId.toString() &&
+          mutation.action == OfflineMutationAction.update,
+    );
+    final payload = jsonDecode(updateMutation.payloadJson) as Map;
+
+    expect(fallbackDefaults.defaultIsBlock, isFalse);
+    expect(updated, isTrue);
+    expect(payload['name'], 'Synced Calendar Name');
+  });
+
+  test('audited task list updates queue task list mutations', () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    await _clearCalendarData(db);
+    final evidence = _createEvidence(db);
+    final repository = CalendarBooksRepository(
+      db,
+      evidence.auditRepository,
+      evidence.recorder,
+    );
+    final taskListId = await repository.createTaskList(
+      TaskListsCompanion.insert(
+        name: 'Mutable Tasks',
+        createdAt: fixtureNow(),
+      ),
+      audit: false,
+    );
+
+    final updated = await repository.updateTaskList(
+      TaskListsCompanion(
+        id: Value(taskListId),
+        name: const Value('Synced Task List Name'),
+      ),
+    );
+
+    final mutations = await evidence.mutationStore.listPending();
+    final updateMutation = mutations.singleWhere(
+      (mutation) =>
+          mutation.objectType == SyncObjectType.taskList.key &&
+          mutation.localId == taskListId.toString() &&
+          mutation.action == OfflineMutationAction.update,
+    );
+    final payload = jsonDecode(updateMutation.payloadJson) as Map;
+
+    expect(updated, isTrue);
+    expect(payload['name'], 'Synced Task List Name');
+  });
+
   test('creates writable defaults and persists per-container defaults',
       () async {
     final db = createTestDatabase();

@@ -23,8 +23,7 @@ void main() {
   });
 
   test('OutlookOAuthPlatformConfig exposes platform defaults', () {
-    expect(
-        const OutlookOAuthPlatformConfig(), isA<OutlookOAuthPlatformConfig>());
+    expect(OutlookOAuthPlatformConfig(), isA<OutlookOAuthPlatformConfig>());
     expect(OutlookOAuthPlatformConfig.preferTimezone, 'Asia/Shanghai');
     expect(OutlookOAuthPlatformConfig.scopeString, 'Calendars.Read');
   });

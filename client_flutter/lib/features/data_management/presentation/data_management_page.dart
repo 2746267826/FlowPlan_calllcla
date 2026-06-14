@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/app_providers.dart';
+import '../../../shared/widgets/offline_read_only_banner.dart';
 
 enum _ManagementTypeFilter { all, events, tasks }
 
@@ -42,6 +43,7 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
     final tasksAsync = ref.watch(managementTasksProvider);
     final calendarsAsync = ref.watch(allEventCalendarsProvider);
     final taskListsAsync = ref.watch(allTaskListsProvider);
+    final readOnlyCache = ref.watch(onlinePrimaryPolicyProvider).readOnlyCache;
 
     final loading = eventsAsync.isLoading ||
         tasksAsync.isLoading ||
@@ -69,9 +71,11 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
       calendarNames: calendarNames,
       taskListNames: taskListNames,
     );
-    final visibleItems = allItems.where(_matchesFilters).toList(growable: false);
+    final visibleItems =
+        allItems.where(_matchesFilters).toList(growable: false);
     final visibleKeys = visibleItems.map((item) => item.key).toSet();
-    _selectedKeys.removeWhere((key) => !allItems.any((item) => item.key == key));
+    _selectedKeys
+        .removeWhere((key) => !allItems.any((item) => item.key == key));
     final selectedVisibleCount =
         _selectedKeys.where(visibleKeys.contains).length;
 
@@ -103,8 +107,13 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
                       selectedCount: _selectedKeys.length,
                       selectedVisibleCount: selectedVisibleCount,
                       visibleKeys: visibleKeys,
+                      readOnlyCache: readOnlyCache,
                     ),
                     const Divider(height: 1),
+                    if (readOnlyCache)
+                      const OfflineReadOnlyBanner(
+                        reason: 'Reconnect to change tasks or events.',
+                      ),
                     Expanded(
                       child: visibleItems.isEmpty
                           ? const _EmptyState()
@@ -144,6 +153,7 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
     required int selectedCount,
     required int selectedVisibleCount,
     required Set<String> visibleKeys,
+    required bool readOnlyCache,
   }) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -235,20 +245,24 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
               OutlinedButton.icon(
                 onPressed: _working || selectedVisibleCount == 0
                     ? null
-                    : () => setState(() => _selectedKeys.removeAll(visibleKeys)),
+                    : () =>
+                        setState(() => _selectedKeys.removeAll(visibleKeys)),
                 icon: const Icon(Icons.remove_done_outlined, size: 18),
                 label: const Text('取消当前选择'),
               ),
               FilledButton.icon(
-                onPressed:
-                    _working || !_selectedKeys.any((key) => key.startsWith('task:'))
-                        ? null
-                        : _completeSelectedTasks,
+                onPressed: _working ||
+                        readOnlyCache ||
+                        !_selectedKeys.any((key) => key.startsWith('task:'))
+                    ? null
+                    : _completeSelectedTasks,
                 icon: const Icon(Icons.check_circle_outline, size: 18),
                 label: const Text('完成所选任务'),
               ),
               FilledButton.icon(
-                onPressed: _working || selectedCount == 0 ? null : _deleteSelected,
+                onPressed: _working || readOnlyCache || selectedCount == 0
+                    ? null
+                    : _deleteSelected,
                 icon: _working
                     ? const SizedBox(
                         width: 16,
@@ -257,7 +271,8 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
                       )
                     : const Icon(Icons.delete_outline, size: 18),
                 label: const Text('删除所选'),
-                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                style:
+                    FilledButton.styleFrom(backgroundColor: Colors.redAccent),
               ),
             ],
           ),
@@ -310,7 +325,8 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
     if (_typeFilter == _ManagementTypeFilter.tasks && !item.isTask) {
       return false;
     }
-    if (_sourceFilter == _ManagementSourceFilter.local && item.source != 'local') {
+    if (_sourceFilter == _ManagementSourceFilter.local &&
+        item.source != 'local') {
       return false;
     }
     if (_sourceFilter == _ManagementSourceFilter.outlook &&
@@ -364,6 +380,10 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
   }
 
   Future<void> _deleteSelected() async {
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
     final selected = _selectedKeys.toList(growable: false);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -423,6 +443,10 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
   }
 
   Future<void> _completeSelectedTasks() async {
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
     final taskIds = _selectedKeys
         .map(_parseKey)
         .whereType<_ParsedManagementKey>()
@@ -458,6 +482,14 @@ class _DataManagementPageState extends ConsumerState<DataManagementPage> {
         SnackBar(content: Text('完成任务失败：$error')),
       );
     }
+  }
+
+  void _showReadOnlyCacheMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Offline cache is read-only. Reconnect to save changes.'),
+      ),
+    );
   }
 
   void _openItem(_ManagementItem item) {
@@ -582,7 +614,8 @@ class _ManagementItemTile extends StatelessWidget {
               Text(
                 [
                   if ((item.location ?? '').isNotEmpty) '地点：${item.location}',
-                  if ((item.description ?? '').isNotEmpty) '备注：${item.description}',
+                  if ((item.description ?? '').isNotEmpty)
+                    '备注：${item.description}',
                 ].join('  '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

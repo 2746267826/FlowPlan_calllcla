@@ -56,7 +56,7 @@ void main() {
 
     await _tapIcon(tester, Icons.view_week_outlined);
     final weekLoadCount = harness.api.getQueries['/web/events']!.length;
-    await tester.tap(find.textContaining('Week-only sync').first);
+    await _tapDayCardContaining(tester, 'Week-only sync');
     await _pumpFrames(tester, 8);
 
     expect(harness.api.getQueries['/web/events']!.last['view'], 'timeline');
@@ -65,7 +65,7 @@ void main() {
 
     await _tapIcon(tester, Icons.calendar_view_month_outlined);
     final monthLoadCount = harness.api.getQueries['/web/events']!.length;
-    await tester.tap(find.textContaining('Month-only planning').first);
+    await _tapDayCardContaining(tester, 'Month-only planning');
     await _pumpFrames(tester, 8);
 
     expect(harness.api.getQueries['/web/events']!.last['view'], 'timeline');
@@ -247,6 +247,18 @@ Future<void> _tapIcon(
   await _pumpFrames(tester, 8);
 }
 
+Future<void> _tapDayCardContaining(WidgetTester tester, String text) async {
+  final title = find.textContaining(text);
+  expect(title, findsOneWidget);
+  final card = find.ancestor(
+    of: title,
+    matching: find.byType(Card),
+  );
+  expect(card, findsOneWidget);
+  await tester.ensureVisible(card);
+  await tester.tap(card);
+}
+
 Future<void> _openShellDestination(WidgetTester tester, Key key) async {
   await tester.tap(find.byKey(key));
   await _pumpFrames(tester, 8);
@@ -314,7 +326,9 @@ class _GapWebApiClient extends WebApiClient {
   _DownloadMode downloadMode = _DownloadMode.ok;
 
   late final DateTime today = DateTime.now();
-  late final DateTime weekEventDay = today.add(const Duration(days: 2));
+  late final DateTime weekEventDay = today
+      .subtract(Duration(days: today.weekday - 1))
+      .add(const Duration(days: 3));
   late final DateTime monthEventDay = DateTime(today.year, today.month, 20);
 
   final reports = <Map<String, dynamic>>[

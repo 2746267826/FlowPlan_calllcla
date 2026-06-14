@@ -79,6 +79,7 @@ class TrackingUploadService {
     var uploadedBatches = 0;
     var uploadedRecords = 0;
     var rejectedRecords = 0;
+    var retryableSourceRowsPreserved = false;
 
     const maxRounds = 10;
     for (var round = 0; round < maxRounds; round++) {
@@ -89,6 +90,7 @@ class TrackingUploadService {
       ];
 
       var roundHasData = false;
+      var stopAfterRound = false;
       for (final export in kinds) {
         if (export.records.isEmpty) {
           continue;
@@ -100,13 +102,17 @@ class TrackingUploadService {
           uploadedBatches++;
           uploadedRecords += export.records.length;
           rejectedRecords += _readInt(detail['rejected']) ?? 0;
+          if (detail['retryableSourceRowsPreserved'] == true) {
+            retryableSourceRowsPreserved = true;
+            stopAfterRound = true;
+          }
         } catch (error) {
           await _recordUploadError(export.dataKind, error);
           rethrow;
         }
       }
 
-      if (!roundHasData) {
+      if (!roundHasData || stopAfterRound) {
         break;
       }
     }
@@ -116,7 +122,7 @@ class TrackingUploadService {
         lastCompletedAtKey,
         DateTime.now().toIso8601String(),
       );
-      if (rejectedRecords == 0) {
+      if (rejectedRecords == 0 && !retryableSourceRowsPreserved) {
         await _database.deleteSetting(lastErrorKey);
       }
     }
@@ -145,7 +151,10 @@ class TrackingUploadService {
       details: <Map<String, Object?>>[
         <String, Object?>{'summary': 'diagnostics', ...diagnostics},
         if (rejectedRecords > 0)
-          <String, Object?>{'summary': 'rejectedRecords', 'count': rejectedRecords},
+          <String, Object?>{
+            'summary': 'rejectedRecords',
+            'count': rejectedRecords
+          },
         ...details,
       ],
     );
@@ -206,10 +215,23 @@ class TrackingUploadService {
       );
       throw StateError(
         'Tracking ingest rejected all $rejected ${export.dataKind} records; '
-        'local upload cursor was preserved for retry.',
+        'local source rows were preserved for retry.',
       );
     }
-    if (rejected > 0) {
+    final cleanup = await _applyCompletionCleanup(
+      export,
+      completed,
+      batchId: batchId,
+      accepted: accepted,
+      rejected: rejected,
+    );
+    if (cleanup.retryableSourceRowsPreserved) {
+      await _database.setSetting(
+        lastErrorKey,
+        'Tracking ingest left ${export.dataKind} source rows retryable '
+        'because some completion results lacked known local ids.',
+      );
+    } else if (rejected > 0) {
       await _database.setSetting(
         lastErrorKey,
         'Tracking ingest accepted $accepted, rejected $rejected '
@@ -227,6 +249,10 @@ class TrackingUploadService {
       'maxLocalId': export.maxId,
       'accepted': completed['accepted'],
       'rejected': completed['rejected'],
+      'deletedLocalRows': cleanup.deletedRows,
+      'quarantinedLocalRows': cleanup.quarantinedRows,
+      if (cleanup.retryableSourceRowsPreserved)
+        'retryableSourceRowsPreserved': true,
     };
   }
 
@@ -237,12 +263,160 @@ class TrackingUploadService {
       actor: 'system',
       action: 'tracking_upload_failed',
       entityType: 'tracking_ingest',
-      summary: 'Tracking upload failed and local cursor was preserved.',
+      summary: 'Tracking upload failed and local source rows were preserved.',
       metadata: <String, Object?>{
         'dataKind': dataKind,
         'error': error.toString(),
         'diagnostics': diagnostics,
       },
+    );
+  }
+
+  Future<_TrackingCompletionCleanup> _applyCompletionCleanup(
+    _TrackingKindExport export,
+    Map<String, dynamic> completed, {
+    required String batchId,
+    required int accepted,
+    required int rejected,
+  }) async {
+    final rejectedSamples = _readRejectedSamples(completed);
+    final rejectedIds = _rejectedLocalIds(rejectedSamples);
+    final localIds = export.localIds.toSet();
+    final knownRejectedIds = rejectedIds.intersection(localIds);
+    final unknownRejectedCount =
+        math.max(0, rejected - knownRejectedIds.length);
+    final confirmedOutcomeCount = accepted + knownRejectedIds.length;
+    final unconfirmedCount =
+        math.max(0, export.localIds.length - confirmedOutcomeCount);
+
+    if (rejected > 0 && knownRejectedIds.isEmpty) {
+      await _database.setSetting(
+        lastErrorKey,
+        'Tracking ingest rejected $rejected ${export.dataKind} records '
+        'without known local ids; local source rows were preserved.',
+      );
+      return const _TrackingCompletionCleanup(
+        deletedRows: 0,
+        quarantinedRows: 0,
+        retryableSourceRowsPreserved: true,
+      );
+    }
+
+    final acceptedIds = export.localIds
+        .where((id) => !knownRejectedIds.contains(id))
+        .take(accepted)
+        .toList(growable: false);
+    final preserveUnconfirmed =
+        unknownRejectedCount > 0 || unconfirmedCount > 0;
+
+    await _database.transaction(() async {
+      if (knownRejectedIds.isNotEmpty) {
+        await _quarantineRejected(
+          export: export,
+          rejectedSamples: rejectedSamples,
+          rejectedIds: knownRejectedIds,
+          batchId: batchId,
+          fallbackReason: rejected > knownRejectedIds.length
+              ? 'server_rejected_record_partial_local_ids'
+              : 'server_rejected_record',
+        );
+      }
+      if (acceptedIds.isNotEmpty) {
+        await _deleteSourceRows(export, acceptedIds);
+      }
+    });
+
+    return _TrackingCompletionCleanup(
+      deletedRows: acceptedIds.length,
+      quarantinedRows: knownRejectedIds.length,
+      retryableSourceRowsPreserved: preserveUnconfirmed,
+    );
+  }
+
+  List<Map<String, Object?>> _readRejectedSamples(
+    Map<String, dynamic> completed,
+  ) {
+    final raw = completed['rejectedSamples'] ??
+        completed['rejectedRecords'] ??
+        completed['rejections'];
+    if (raw is! List) {
+      return const <Map<String, Object?>>[];
+    }
+    return raw
+        .whereType<Map>()
+        .map((sample) => Map<String, Object?>.from(sample))
+        .toList(growable: false);
+  }
+
+  Set<int> _rejectedLocalIds(List<Map<String, Object?>> rejectedSamples) {
+    return rejectedSamples
+        .map((sample) => _readInt(sample['localId'] ?? sample['local_id']))
+        .whereType<int>()
+        .toSet();
+  }
+
+  Future<void> _quarantineRejected({
+    required _TrackingKindExport export,
+    required List<Map<String, Object?>> rejectedSamples,
+    required Set<int> rejectedIds,
+    required String batchId,
+    required String fallbackReason,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final samplesByLocalId = <int, Map<String, Object?>>{};
+    for (final sample in rejectedSamples) {
+      final localId = _readInt(sample['localId'] ?? sample['local_id']);
+      if (localId != null) {
+        samplesByLocalId[localId] = sample;
+      }
+    }
+
+    for (final localId in rejectedIds) {
+      final sample = samplesByLocalId[localId] ?? const <String, Object?>{};
+      final reason = sample['reason']?.toString() ??
+          sample['error']?.toString() ??
+          fallbackReason;
+      await _database.customStatement(
+        '''
+        INSERT INTO tracking_upload_quarantine (
+          data_kind,
+          local_id,
+          reason,
+          batch_id,
+          server_payload_json,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(data_kind, local_id) DO UPDATE SET
+          reason = excluded.reason,
+          batch_id = excluded.batch_id,
+          server_payload_json = excluded.server_payload_json,
+          updated_at = excluded.updated_at
+        ''',
+        <Object?>[
+          export.dataKind,
+          localId.toString(),
+          reason,
+          batchId,
+          jsonEncode(sample),
+          now,
+          now,
+        ],
+      );
+    }
+  }
+
+  Future<void> _deleteSourceRows(
+    _TrackingKindExport export,
+    List<int> acceptedIds,
+  ) async {
+    final parameterMarkers = List<String>.filled(
+      acceptedIds.length,
+      '?',
+    ).join(', ');
+    await _database.customStatement(
+      'DELETE FROM ${export.sourceTable} WHERE id IN ($parameterMarkers)',
+      acceptedIds,
     );
   }
 
@@ -252,14 +426,20 @@ class TrackingUploadService {
       '''
       SELECT *
       FROM activity_records
-      WHERE id > ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM tracking_upload_quarantine q
+        WHERE q.data_kind = 'activity_record'
+          AND CAST(q.local_id AS INTEGER) = activity_records.id
+      )
       ORDER BY id ASC
       LIMIT ?
       ''',
-      variables: [Variable<int>(lastId), Variable<int>(limit)],
+      variables: [Variable<int>(limit)],
     ).get();
     return _TrackingKindExport(
       dataKind: 'activity_record',
+      sourceTable: 'activity_records',
       lastIdKey: _lastActivityRecordIdKey,
       previousLastId: lastId,
       rows: rows,
@@ -273,14 +453,20 @@ class TrackingUploadService {
       '''
       SELECT *
       FROM tracked_input_events
-      WHERE id > ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM tracking_upload_quarantine q
+        WHERE q.data_kind = 'tracked_input_event'
+          AND CAST(q.local_id AS INTEGER) = tracked_input_events.id
+      )
       ORDER BY id ASC
       LIMIT ?
       ''',
-      variables: [Variable<int>(lastId), Variable<int>(limit)],
+      variables: [Variable<int>(limit)],
     ).get();
     return _TrackingKindExport(
       dataKind: 'tracked_input_event',
+      sourceTable: 'tracked_input_events',
       lastIdKey: _lastInputEventIdKey,
       previousLastId: lastId,
       rows: rows,
@@ -294,14 +480,20 @@ class TrackingUploadService {
       '''
       SELECT *
       FROM raw_activity_logs
-      WHERE id > ?
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM tracking_upload_quarantine q
+        WHERE q.data_kind = 'raw_activity_log'
+          AND CAST(q.local_id AS INTEGER) = raw_activity_logs.id
+      )
       ORDER BY id ASC
       LIMIT ?
       ''',
-      variables: [Variable<int>(lastId), Variable<int>(limit)],
+      variables: [Variable<int>(limit)],
     ).get();
     return _TrackingKindExport(
       dataKind: 'raw_activity_log',
+      sourceTable: 'raw_activity_logs',
       lastIdKey: _lastRawLogIdKey,
       previousLastId: lastId,
       rows: rows,
@@ -318,23 +510,42 @@ class TrackingUploadService {
     final lastActivityRecordId = await _readLastId(_lastActivityRecordIdKey);
     final lastInputEventId = await _readLastId(_lastInputEventIdKey);
     final lastRawLogId = await _readLastId(_lastRawLogIdKey);
-    Future<int> pendingCount(String table, int lastId) async {
+    Future<int> pendingCount(String table, String dataKind) async {
       final row = await _database.customSelect(
-        'SELECT COUNT(*) AS count FROM $table WHERE id > ?',
-        variables: [Variable<int>(lastId)],
+        '''
+        SELECT COUNT(*) AS count
+        FROM $table
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tracking_upload_quarantine q
+          WHERE q.data_kind = ?
+            AND CAST(q.local_id AS INTEGER) = $table.id
+        )
+        ''',
+        variables: [Variable<String>(dataKind)],
       ).getSingleOrNull();
       return row?.read<int?>('count') ?? 0;
     }
+
+    final quarantinedRecords = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS count FROM tracking_upload_quarantine',
+        )
+        .getSingleOrNull()
+        .then((row) => row?.read<int?>('count') ?? 0);
 
     return <String, Object?>{
       'lastActivityRecordId': lastActivityRecordId,
       'lastInputEventId': lastInputEventId,
       'lastRawLogId': lastRawLogId,
       'pendingActivityRecords':
-          await pendingCount('activity_records', lastActivityRecordId),
+          await pendingCount('activity_records', 'activity_record'),
       'pendingInputEvents':
-          await pendingCount('tracked_input_events', lastInputEventId),
-      'pendingRawLogs': await pendingCount('raw_activity_logs', lastRawLogId),
+          await pendingCount('tracked_input_events', 'tracked_input_event'),
+      'pendingRawLogs':
+          await pendingCount('raw_activity_logs', 'raw_activity_log'),
+      'quarantinedRecords': quarantinedRecords,
+      'quarantinedTrackingUploads': quarantinedRecords,
       'lastCompletedAt': await _database.getSetting(lastCompletedAtKey),
       'lastError': await _database.getSetting(lastErrorKey),
     };
@@ -484,7 +695,8 @@ class TrackingUploadService {
     if (utf8.encode(trimmed).length <= _maxSyncUidBytes) {
       return trimmed;
     }
-    final digest = sha256.convert(utf8.encode(trimmed)).toString().substring(0, 32);
+    final digest =
+        sha256.convert(utf8.encode(trimmed)).toString().substring(0, 32);
     return '$fallback:$digest';
   }
 
@@ -520,9 +732,7 @@ class TrackingUploadService {
       return value;
     }
     if (value is int) {
-      final milliseconds = value.abs() < 100000000000
-          ? value * 1000
-          : value;
+      final milliseconds = value.abs() < 100000000000 ? value * 1000 : value;
       return DateTime.fromMillisecondsSinceEpoch(milliseconds);
     }
     return DateTime.tryParse(value.toString());
@@ -551,6 +761,7 @@ class TrackingUploadService {
 class _TrackingKindExport {
   _TrackingKindExport({
     required this.dataKind,
+    required this.sourceTable,
     required this.lastIdKey,
     required this.previousLastId,
     required this.rows,
@@ -558,10 +769,18 @@ class _TrackingKindExport {
   });
 
   final String dataKind;
+  final String sourceTable;
   final String lastIdKey;
   final int previousLastId;
   final List<QueryRow> rows;
   final List<Map<String, dynamic>> records;
+
+  List<int> get localIds {
+    return rows
+        .map((row) => TrackingUploadService._readInt(row.data['id']))
+        .whereType<int>()
+        .toList(growable: false);
+  }
 
   int get maxId {
     var result = previousLastId;
@@ -584,9 +803,8 @@ class _TrackingKindExport {
     for (final record in records) {
       final rawStart = record['startTime'] ?? record['timestamp'];
       final rawEnd = record['endTime'] ?? record['occurredAt'] ?? rawStart;
-      final startDate = rawStart == null
-          ? null
-          : DateTime.tryParse(rawStart.toString());
+      final startDate =
+          rawStart == null ? null : DateTime.tryParse(rawStart.toString());
       final endDate =
           rawEnd == null ? null : DateTime.tryParse(rawEnd.toString());
       if (startDate != null && (start == null || startDate.isBefore(start))) {
@@ -598,4 +816,16 @@ class _TrackingKindExport {
     }
     return (start, end);
   }
+}
+
+class _TrackingCompletionCleanup {
+  const _TrackingCompletionCleanup({
+    required this.deletedRows,
+    required this.quarantinedRows,
+    required this.retryableSourceRowsPreserved,
+  });
+
+  final int deletedRows;
+  final int quarantinedRows;
+  final bool retryableSourceRowsPreserved;
 }

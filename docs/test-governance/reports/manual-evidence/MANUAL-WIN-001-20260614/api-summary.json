@@ -1,0 +1,165 @@
+﻿{
+    "marker":  "manual-win-001-supplement-20260614-085222",
+    "generatedAt":  "2026-06-14T08:52:23.5459856+08:00",
+    "apiBase":  "http://127.0.0.1:3202/api",
+    "taskId":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+    "create":  {
+                   "ok":  true,
+                   "canonical":  true,
+                   "item":  {
+                                "id":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+                                "uid":  "task_item:148cf928-b562-4c04-b521-f1092a69414a",
+                                "objectType":  "task_item",
+                                "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                "status":  "todo",
+                                "location":  "",
+                                "syncStatus":  "server",
+                                "serverVersion":  1,
+                                "updatedAt":  "2026-06-14T00:52:22.472Z",
+                                "payload":  {
+                                                "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                "status":  "todo",
+                                                "priority":  "normal",
+                                                "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                "isLocked":  false,
+                                                "isAutoScheduled":  true,
+                                                "isSplittable":  true,
+                                                "source":  "manual-win-001-supplemental-api"
+                                            }
+                            },
+                   "serverVersion":  1,
+                   "syncChangeId":  "303196",
+                   "auditId":  "b02777ac-245e-4369-b19a-5b0a3d0fc995",
+                   "replayed":  false
+               },
+    "complete":  {
+                     "ok":  true,
+                     "canonical":  true,
+                     "item":  {
+                                  "id":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+                                  "uid":  "task_item:148cf928-b562-4c04-b521-f1092a69414a",
+                                  "objectType":  "task_item",
+                                  "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                  "status":  "done",
+                                  "location":  "",
+                                  "syncStatus":  "server",
+                                  "serverVersion":  2,
+                                  "updatedAt":  "2026-06-14T00:52:22.493Z",
+                                  "payload":  {
+                                                  "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                  "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                  "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                  "status":  "done",
+                                                  "priority":  "normal",
+                                                  "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                  "isLocked":  false,
+                                                  "isAutoScheduled":  true,
+                                                  "isSplittable":  true,
+                                                  "source":  "manual-win-001-supplemental-api"
+                                              }
+                              },
+                     "serverVersion":  2,
+                     "syncChangeId":  "303197",
+                     "auditId":  "9636ec77-f9e1-4e47-a0a4-198b339741f2"
+                 },
+    "adminTaskRows":  [
+                          {
+                              "id":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+                              "objectType":  "task_item",
+                              "uid":  "task_item:148cf928-b562-4c04-b521-f1092a69414a",
+                              "payload":  {
+                                              "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                              "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                              "source":  "manual-win-001-supplemental-api",
+                                              "status":  "done",
+                                              "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                              "isLocked":  false,
+                                              "priority":  "normal",
+                                              "completedAt":  "2026-06-14T00:52:22.4874662Z",
+                                              "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                              "updatedFrom":  "client",
+                                              "isSplittable":  true,
+                                              "isAutoScheduled":  true
+                                          },
+                              "serverVersion":  2,
+                              "deletedAt":  null,
+                              "createdAt":  "2026-06-14T00:52:22.472Z",
+                              "updatedAt":  "2026-06-14T00:52:22.493Z",
+                              "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222"
+                          }
+                      ],
+    "matchingAuditRows":  [
+                              {
+                                  "id":  "9636ec77-f9e1-4e47-a0a4-198b339741f2",
+                                  "actor":  "web",
+                                  "action":  "web.task_item.update",
+                                  "targetType":  "web",
+                                  "targetId":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+                                  "summary":  "web.task_item.update",
+                                  "details":  {
+                                                  "after":  {
+                                                                "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                "source":  "manual-win-001-supplemental-api",
+                                                                "status":  "done",
+                                                                "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                "isLocked":  false,
+                                                                "priority":  "normal",
+                                                                "completedAt":  "2026-06-14T00:52:22.4874662Z",
+                                                                "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                "updatedFrom":  "client",
+                                                                "isSplittable":  true,
+                                                                "isAutoScheduled":  true
+                                                            },
+                                                  "before":  {
+                                                                 "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                 "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                 "source":  "manual-win-001-supplemental-api",
+                                                                 "status":  "todo",
+                                                                 "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                 "isLocked":  false,
+                                                                 "priority":  "normal",
+                                                                 "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                 "isSplittable":  true,
+                                                                 "isAutoScheduled":  true
+                                                             },
+                                                  "objectId":  "63da95c4-58be-461f-a137-fa740fc4a88a"
+                                              },
+                                  "occurredAt":  "2026-06-14T00:52:22.493Z",
+                                  "createdAt":  "2026-06-14T00:52:22.493Z",
+                                  "deviceId":  "00000000-0000-4000-8000-000000000101",
+                                  "deviceName":  "Unregistered device"
+                              },
+                              {
+                                  "id":  "b02777ac-245e-4369-b19a-5b0a3d0fc995",
+                                  "actor":  "web",
+                                  "action":  "web.task_item.create",
+                                  "targetType":  "web",
+                                  "targetId":  "63da95c4-58be-461f-a137-fa740fc4a88a",
+                                  "summary":  "web.task_item.create",
+                                  "details":  {
+                                                  "uid":  "task_item:148cf928-b562-4c04-b521-f1092a69414a",
+                                                  "payload":  {
+                                                                  "notes":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                  "title":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                  "source":  "manual-win-001-supplemental-api",
+                                                                  "status":  "todo",
+                                                                  "summary":  "MANUAL-WIN-001 supplemental manual-win-001-supplement-20260614-085222",
+                                                                  "isLocked":  false,
+                                                                  "priority":  "normal",
+                                                                  "description":  "Supplemental API/Web Admin audit evidence. Not a real Windows client screenshot run.",
+                                                                  "isSplittable":  true,
+                                                                  "isAutoScheduled":  true
+                                                              },
+                                                  "objectId":  "63da95c4-58be-461f-a137-fa740fc4a88a"
+                                              },
+                                  "occurredAt":  "2026-06-14T00:52:22.472Z",
+                                  "createdAt":  "2026-06-14T00:52:22.472Z",
+                                  "deviceId":  "00000000-0000-4000-8000-000000000101",
+                                  "deviceName":  "Unregistered device"
+                              }
+                          ],
+    "auditRowCount":  2
+}

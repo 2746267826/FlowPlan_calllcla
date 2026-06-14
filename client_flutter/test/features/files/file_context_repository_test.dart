@@ -1048,6 +1048,10 @@ void main() {
       localPath: tempDir.path,
       displayName: 'Preserved Folder',
     );
+    final secondFolder = await repository.upsertLocalFolder(
+      localPath: '${tempDir.path}${Platform.pathSeparator}Second',
+      displayName: 'Second Folder',
+    );
     final first = await repository.upsertLocalFile(
       localPath: localFile.path,
       folderId: folder.id,
@@ -1066,6 +1070,52 @@ void main() {
     expect(jsonDecode(updated.metadataJson), containsPair('phase', 'second'));
     expect(
         (await repository.listFilesForFolder(folder.id)).single.id, first.id);
+
+    final moved = await repository.upsertLocalFile(
+      localPath: localFile.path,
+      folderId: secondFolder.id,
+      previewMode: 'text',
+      metadata: <String, Object?>{'phase': 'third'},
+    );
+
+    expect(moved.id, first.id);
+    expect(moved.folderId, secondFolder.id);
+  });
+
+  test('local file no-sync upsert preserves folder when folderId is omitted',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final tempDir = await Directory.systemTemp.createTemp(
+      'flowplanv2-file-no-sync-folder-preserve-',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    final localFile = File(
+      '${tempDir.path}${Platform.pathSeparator}preserve-no-sync.md',
+    );
+    await localFile.writeAsString('# Preserve no sync');
+    final repository = FileContextRepository(db);
+    final folder = await repository.upsertLocalFolder(
+      localPath: tempDir.path,
+      displayName: 'Preserved No Sync Folder',
+    );
+    final first = await repository.upsertLocalFileWithoutSyncForTesting(
+      localPath: localFile.path,
+      folderId: folder.id,
+      previewMode: 'text',
+    );
+
+    final updated = await repository.upsertLocalFileWithoutSyncForTesting(
+      localPath: localFile.path,
+      previewMode: 'text',
+    );
+
+    expect(updated.id, first.id);
+    expect(updated.folderId, folder.id);
   });
 
   test('folder and file bind helpers update existing links without downgrading',

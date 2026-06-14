@@ -1,14 +1,19 @@
 // 所有核心 Provider：手写形式（不依赖 riverpod_generator，避免 codegen 问题）
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/bootstrap/client_bootstrap_service.dart';
+import '../../core/connection/server_connection_state.dart';
 import '../../core/connection/server_connection_service.dart';
 import '../../core/database/app_database.dart';
+import '../../core/offline_queue/legacy_offline_mutation_cleanup_service.dart';
 import '../../core/offline_queue/offline_mutation_store.dart';
 import '../../core/offline_queue/offline_mutation_runner.dart';
+import '../../core/online/online_primary_policy.dart';
 import '../../core/platform/device_identity_service.dart';
 import '../../core/server_api/api_client.dart';
 import '../../core/server_api/analytics_api.dart';
@@ -79,61 +84,50 @@ part 'tracker_providers.dart';
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  return TaskRepository(db, operationLogs, syncRecorder);
+  return TaskRepository(db, operationLogs);
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
 ]);
 
 final eventRepositoryProvider = Provider<EventRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  return EventRepository(db, operationLogs, syncRecorder);
+  return EventRepository(db, operationLogs);
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
 ]);
 
 final calendarBooksRepositoryProvider =
     Provider<CalendarBooksRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  return CalendarBooksRepository(db, operationLogs, syncRecorder);
+  return CalendarBooksRepository(db, operationLogs);
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
 ]);
 
 final actualActivityLogRepositoryProvider =
     Provider<ActualActivityLogRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  final repository =
-      ActualActivityLogRepository(db, operationLogs, syncRecorder);
+  final repository = ActualActivityLogRepository(db, operationLogs);
   ref.onDispose(repository.dispose);
   return repository;
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
 ]);
 
 final reportRepositoryProvider = Provider<ReportRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
-  return ReportRepository(db, operationLogs, syncRecorder);
+  return ReportRepository(db, operationLogs);
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
 ]);
 
 final reportGenerationServiceProvider =
@@ -168,17 +162,15 @@ final reportPushServiceProvider = Provider<ReportPushService>((ref) {
 final fileContextRepositoryProvider = Provider<FileContextRepository>((ref) {
   final db = ref.watch(databaseProvider);
   final operationLogs = ref.watch(dataOperationLogRepositoryProvider);
-  final syncRecorder = ref.watch(syncWriteRecorderProvider);
   return FileContextRepository(
     db,
     operationLogs,
-    syncRecorder,
+    null,
     () => ref.read(fileContextApiProvider.future),
   );
 }, dependencies: [
   databaseProvider,
   dataOperationLogRepositoryProvider,
-  syncWriteRecorderProvider,
   fileContextApiProvider,
 ]);
 
@@ -194,11 +186,16 @@ final fileTransferServiceProvider =
     ChangeNotifierProvider<FileTransferService>((ref) {
   final service = FileTransferService(
     apiLoader: () => ref.read(fileCloudApiProvider.future),
+    policyLoader: () async => ref.read(onlinePrimaryPolicyProvider),
     operationLogs: ref.watch(dataOperationLogRepositoryProvider),
   );
   service.load();
   return service;
-}, dependencies: [fileCloudApiProvider, dataOperationLogRepositoryProvider]);
+}, dependencies: [
+  fileCloudApiProvider,
+  onlinePrimaryPolicyProvider,
+  dataOperationLogRepositoryProvider,
+]);
 
 final dataOperationLogRepositoryProvider =
     Provider<DataOperationLogRepository>((ref) {
@@ -522,6 +519,34 @@ final serverConnectionServiceProvider =
   clientApiProvider,
   clientBootstrapServiceProvider,
 ]);
+
+final serverConnectionStateProvider =
+    StreamProvider<ServerConnectionState>((ref) async* {
+  final service = await ref.watch(serverConnectionServiceProvider.future);
+  yield service.state;
+  final controller = StreamController<ServerConnectionState>();
+  void listener() {
+    controller.add(service.state);
+  }
+
+  service.addListener(listener);
+  ref.onDispose(() {
+    service.removeListener(listener);
+    unawaited(controller.close());
+  });
+  yield* controller.stream;
+}, dependencies: [serverConnectionServiceProvider]);
+
+final onlinePrimaryPolicyProvider = Provider<OnlinePrimaryPolicy>((ref) {
+  final state = ref.watch(serverConnectionStateProvider).valueOrNull ??
+      const ServerConnectionState(level: ServerConnectionLevel.localCacheOnly);
+  return OnlinePrimaryPolicy.fromConnectionState(state);
+}, dependencies: [serverConnectionStateProvider]);
+
+final legacyOfflineMutationCleanupServiceProvider =
+    Provider<LegacyOfflineMutationCleanupService>((ref) {
+  return LegacyOfflineMutationCleanupService(ref.watch(databaseProvider));
+}, dependencies: [databaseProvider]);
 
 final taskScheduleSegmentRepositoryProvider =
     Provider<TaskScheduleSegmentRepository>((ref) {

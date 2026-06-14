@@ -55,34 +55,19 @@ class TaskEventServerFirstStore {
   Future<ServerFirstWriteResult> createTask(
       Map<String, Object?> payload) async {
     final writePayload = _ensureUid(payload);
-    try {
-      final result = await _repository.createTask(
-        writePayload,
-        queueOnFailure: false,
-      );
-      final localId =
-          await _createLocalTask(_payloadForLocal(result, writePayload));
-      await _markSyncedFromResult(
-        objectType: SyncObjectType.taskItem.key,
-        localId: localId.toString(),
-        fallbackUid: stringFromMap(writePayload, 'uid'),
-        result: result,
-      );
-      return result;
-    } catch (error) {
-      final localId = await _createLocalTask(writePayload);
-      final queued = await queueLegacyCacheMutation(
-        objectType: SyncObjectType.taskItem.key,
-        localId: localId.toString(),
-        action: OfflineMutationAction.create,
-        payload: writePayload,
-        changedFields: writePayload.keys.toList(growable: false),
-      );
-      return ServerFirstWriteResult.pending(
-        queuedMutation: queued,
-        error: error,
-      );
-    }
+    final result = await _repository.createTask(
+      writePayload,
+      queueOnFailure: false,
+    );
+    final localId =
+        await _createLocalTask(_payloadForLocal(result, writePayload));
+    await _markSyncedFromResult(
+      objectType: SyncObjectType.taskItem.key,
+      localId: localId.toString(),
+      fallbackUid: stringFromMap(writePayload, 'uid'),
+      result: result,
+    );
+    return result;
   }
 
   Future<ServerFirstWriteResult> updateTask({
@@ -96,6 +81,7 @@ class TaskEventServerFirstStore {
       patch: patch,
       baseServerVersion: baseServerVersion,
       changedFields: changedFields,
+      queueOnFailure: false,
     );
   }
 
@@ -111,55 +97,26 @@ class TaskEventServerFirstStore {
     );
     final serverId = _usableServerId(state);
     final version = baseServerVersion ?? state?.serverVersion;
-    if (serverId != null) {
-      try {
-        final result = await _repository.updateTask(
-          id: serverId,
-          patch: patch,
-          baseServerVersion: version,
-          changedFields: changedFields,
-          queueOnFailure: false,
-        );
-        await _updateLocalTask(localId, _payloadForLocal(result, patch));
-        await _markSyncedFromResult(
-          objectType: SyncObjectType.taskItem.key,
-          localId: localId.toString(),
-          fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
-          fallbackServerId: serverId,
-          result: result,
-        );
-        return result;
-      } catch (error) {
-        await _updateLocalTask(localId, patch);
-        final queued = await queueLegacyCacheMutation(
-          objectType: SyncObjectType.taskItem.key,
-          localId: localId.toString(),
-          serverId: serverId,
-          action: OfflineMutationAction.update,
-          payload: patch,
-          baseServerVersion: version,
-          changedFields: changedFields,
-        );
-        return ServerFirstWriteResult.pending(
-          queuedMutation: queued,
-          error: error,
-        );
-      }
+    if (serverId == null) {
+      throw StateError('Task has no server id yet.');
     }
 
-    await _updateLocalTask(localId, patch);
-    final queued = await queueLegacyCacheMutation(
-      objectType: SyncObjectType.taskItem.key,
-      localId: localId.toString(),
-      action: OfflineMutationAction.update,
-      payload: patch,
+    final result = await _repository.updateTask(
+      id: serverId,
+      patch: patch,
       baseServerVersion: version,
       changedFields: changedFields,
+      queueOnFailure: false,
     );
-    return ServerFirstWriteResult.pending(
-      queuedMutation: queued,
-      error: StateError('Task has no server id yet. Queued locally.'),
+    await _updateLocalTask(localId, _payloadForLocal(result, patch));
+    await _markSyncedFromResult(
+      objectType: SyncObjectType.taskItem.key,
+      localId: localId.toString(),
+      fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
+      fallbackServerId: serverId,
+      result: result,
     );
+    return result;
   }
 
   Future<ServerFirstWriteResult> completeTask({
@@ -171,6 +128,7 @@ class TaskEventServerFirstStore {
       id: id,
       body: body,
       baseServerVersion: baseServerVersion,
+      queueOnFailure: false,
     );
   }
 
@@ -195,7 +153,11 @@ class TaskEventServerFirstStore {
     required String id,
     int? baseServerVersion,
   }) {
-    return _repository.deleteTask(id: id, baseServerVersion: baseServerVersion);
+    return _repository.deleteTask(
+      id: id,
+      baseServerVersion: baseServerVersion,
+      queueOnFailure: false,
+    );
   }
 
   Future<ServerFirstWriteResult> deleteLocalTask({
@@ -208,88 +170,43 @@ class TaskEventServerFirstStore {
     );
     final serverId = _usableServerId(state);
     final version = baseServerVersion ?? state?.serverVersion;
-    if (serverId != null) {
-      try {
-        final result = await _repository.deleteTask(
-          id: serverId,
-          baseServerVersion: version,
-          queueOnFailure: false,
-        );
-        await _taskRepository.delete(localId, audit: false);
-        await _markSyncedFromResult(
-          objectType: SyncObjectType.taskItem.key,
-          localId: localId.toString(),
-          fallbackUid: state?.uid,
-          fallbackServerId: serverId,
-          result: result,
-        );
-        return result;
-      } catch (error) {
-        await _taskRepository.delete(localId, audit: false);
-        final queued = await queueLegacyCacheMutation(
-          objectType: SyncObjectType.taskItem.key,
-          localId: localId.toString(),
-          serverId: serverId,
-          action: OfflineMutationAction.delete,
-          payload: <String, Object?>{
-            'id': localId.toString(),
-            'uid': state?.uid
-          },
-          baseServerVersion: version,
-        );
-        return ServerFirstWriteResult.pending(
-          queuedMutation: queued,
-          error: error,
-        );
-      }
+    if (serverId == null) {
+      throw StateError('Task has no server id yet.');
     }
 
+    final result = await _repository.deleteTask(
+      id: serverId,
+      baseServerVersion: version,
+      queueOnFailure: false,
+    );
     await _taskRepository.delete(localId, audit: false);
-    final queued = await queueLegacyCacheMutation(
+    await _markSyncedFromResult(
       objectType: SyncObjectType.taskItem.key,
       localId: localId.toString(),
-      action: OfflineMutationAction.delete,
-      payload: <String, Object?>{'id': localId.toString(), 'uid': state?.uid},
-      baseServerVersion: version,
+      fallbackUid: state?.uid,
+      fallbackServerId: serverId,
+      result: result,
     );
-    return ServerFirstWriteResult.pending(
-      queuedMutation: queued,
-      error: StateError('Task has no server id yet. Queued locally.'),
-    );
+    return result;
   }
 
   Future<ServerFirstWriteResult> createEvent(
     Map<String, Object?> payload,
   ) async {
     final writePayload = _ensureUid(payload);
-    try {
-      final result = await _repository.createEvent(
-        writePayload,
-        queueOnFailure: false,
-      );
-      final localId =
-          await _createLocalEvent(_payloadForLocal(result, writePayload));
-      await _markSyncedFromResult(
-        objectType: SyncObjectType.calendarEvent.key,
-        localId: localId.toString(),
-        fallbackUid: stringFromMap(writePayload, 'uid'),
-        result: result,
-      );
-      return result;
-    } catch (error) {
-      final localId = await _createLocalEvent(writePayload);
-      final queued = await queueLegacyCacheMutation(
-        objectType: SyncObjectType.calendarEvent.key,
-        localId: localId.toString(),
-        action: OfflineMutationAction.create,
-        payload: writePayload,
-        changedFields: writePayload.keys.toList(growable: false),
-      );
-      return ServerFirstWriteResult.pending(
-        queuedMutation: queued,
-        error: error,
-      );
-    }
+    final result = await _repository.createEvent(
+      writePayload,
+      queueOnFailure: false,
+    );
+    final localId =
+        await _createLocalEvent(_payloadForLocal(result, writePayload));
+    await _markSyncedFromResult(
+      objectType: SyncObjectType.calendarEvent.key,
+      localId: localId.toString(),
+      fallbackUid: stringFromMap(writePayload, 'uid'),
+      result: result,
+    );
+    return result;
   }
 
   Future<ServerFirstWriteResult> updateEvent({
@@ -303,6 +220,7 @@ class TaskEventServerFirstStore {
       patch: patch,
       baseServerVersion: baseServerVersion,
       changedFields: changedFields,
+      queueOnFailure: false,
     );
   }
 
@@ -318,55 +236,26 @@ class TaskEventServerFirstStore {
     );
     final serverId = _usableServerId(state);
     final version = baseServerVersion ?? state?.serverVersion;
-    if (serverId != null) {
-      try {
-        final result = await _repository.updateEvent(
-          id: serverId,
-          patch: patch,
-          baseServerVersion: version,
-          changedFields: changedFields,
-          queueOnFailure: false,
-        );
-        await _updateLocalEvent(localId, _payloadForLocal(result, patch));
-        await _markSyncedFromResult(
-          objectType: SyncObjectType.calendarEvent.key,
-          localId: localId.toString(),
-          fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
-          fallbackServerId: serverId,
-          result: result,
-        );
-        return result;
-      } catch (error) {
-        await _updateLocalEvent(localId, patch);
-        final queued = await queueLegacyCacheMutation(
-          objectType: SyncObjectType.calendarEvent.key,
-          localId: localId.toString(),
-          serverId: serverId,
-          action: OfflineMutationAction.update,
-          payload: patch,
-          baseServerVersion: version,
-          changedFields: changedFields,
-        );
-        return ServerFirstWriteResult.pending(
-          queuedMutation: queued,
-          error: error,
-        );
-      }
+    if (serverId == null) {
+      throw StateError('Event has no server id yet.');
     }
 
-    await _updateLocalEvent(localId, patch);
-    final queued = await queueLegacyCacheMutation(
-      objectType: SyncObjectType.calendarEvent.key,
-      localId: localId.toString(),
-      action: OfflineMutationAction.update,
-      payload: patch,
+    final result = await _repository.updateEvent(
+      id: serverId,
+      patch: patch,
       baseServerVersion: version,
       changedFields: changedFields,
+      queueOnFailure: false,
     );
-    return ServerFirstWriteResult.pending(
-      queuedMutation: queued,
-      error: StateError('Event has no server id yet. Queued locally.'),
+    await _updateLocalEvent(localId, _payloadForLocal(result, patch));
+    await _markSyncedFromResult(
+      objectType: SyncObjectType.calendarEvent.key,
+      localId: localId.toString(),
+      fallbackUid: state?.uid ?? stringFromMap(patch, 'uid'),
+      fallbackServerId: serverId,
+      result: result,
     );
+    return result;
   }
 
   Future<ServerFirstWriteResult> deleteEvent({
@@ -374,7 +263,10 @@ class TaskEventServerFirstStore {
     int? baseServerVersion,
   }) {
     return _repository.deleteEvent(
-        id: id, baseServerVersion: baseServerVersion);
+      id: id,
+      baseServerVersion: baseServerVersion,
+      queueOnFailure: false,
+    );
   }
 
   Future<ServerFirstWriteResult> deleteLocalEvent({
@@ -387,54 +279,24 @@ class TaskEventServerFirstStore {
     );
     final serverId = _usableServerId(state);
     final version = baseServerVersion ?? state?.serverVersion;
-    if (serverId != null) {
-      try {
-        final result = await _repository.deleteEvent(
-          id: serverId,
-          baseServerVersion: version,
-          queueOnFailure: false,
-        );
-        await _eventRepository.delete(localId, audit: false);
-        await _markSyncedFromResult(
-          objectType: SyncObjectType.calendarEvent.key,
-          localId: localId.toString(),
-          fallbackUid: state?.uid,
-          fallbackServerId: serverId,
-          result: result,
-        );
-        return result;
-      } catch (error) {
-        await _eventRepository.delete(localId, audit: false);
-        final queued = await queueLegacyCacheMutation(
-          objectType: SyncObjectType.calendarEvent.key,
-          localId: localId.toString(),
-          serverId: serverId,
-          action: OfflineMutationAction.delete,
-          payload: <String, Object?>{
-            'id': localId.toString(),
-            'uid': state?.uid
-          },
-          baseServerVersion: version,
-        );
-        return ServerFirstWriteResult.pending(
-          queuedMutation: queued,
-          error: error,
-        );
-      }
+    if (serverId == null) {
+      throw StateError('Event has no server id yet.');
     }
 
+    final result = await _repository.deleteEvent(
+      id: serverId,
+      baseServerVersion: version,
+      queueOnFailure: false,
+    );
     await _eventRepository.delete(localId, audit: false);
-    final queued = await queueLegacyCacheMutation(
+    await _markSyncedFromResult(
       objectType: SyncObjectType.calendarEvent.key,
       localId: localId.toString(),
-      action: OfflineMutationAction.delete,
-      payload: <String, Object?>{'id': localId.toString(), 'uid': state?.uid},
-      baseServerVersion: version,
+      fallbackUid: state?.uid,
+      fallbackServerId: serverId,
+      result: result,
     );
-    return ServerFirstWriteResult.pending(
-      queuedMutation: queued,
-      error: StateError('Event has no server id yet. Queued locally.'),
-    );
+    return result;
   }
 
   Future<QueuedMutationResult> queueLegacyCacheMutation({
@@ -446,6 +308,8 @@ class TaskEventServerFirstStore {
     int? baseServerVersion,
     List<String>? changedFields,
   }) async {
+    // Explicit legacy migration hook only; online-primary task/event write
+    // paths must not call this for ordinary write failures.
     final queued = await _mutationCoordinator.enqueueBusinessMutation(
       objectType: objectType,
       localId: localId,

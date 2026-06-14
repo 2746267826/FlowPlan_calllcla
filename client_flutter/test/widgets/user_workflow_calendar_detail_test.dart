@@ -10,6 +10,8 @@ import 'package:go_router/go_router.dart';
 
 import '../test_support/fixtures.dart';
 import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
 
@@ -111,6 +113,9 @@ Future<void> _pumpEventDetail(
     size: const Size(800, 1000),
     overrides: [
       allEventCalendarsProvider.overrideWith((ref) => Stream.value(calendars)),
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
+      ),
       taskEventServerFirstStoreProvider.overrideWith(
         (ref) async => fakeStore,
       ),

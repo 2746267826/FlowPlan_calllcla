@@ -28,6 +28,13 @@ class ServerSyncEngine {
     return pushed;
   }
 
+  Future<Map<String, dynamic>> refreshCacheFromServer({
+    int limit = 200,
+    void Function(int pulledChanges, int pageCount)? onProgress,
+  }) {
+    return pullChanges(limit: limit, onProgress: onProgress);
+  }
+
   Future<Map<String, dynamic>> pullChanges({
     int limit = 200,
     void Function(int pulledChanges, int pageCount)? onProgress,
@@ -89,7 +96,9 @@ class ServerSyncEngine {
         await _cursorStore.savePullCursor(nextCursor);
       }
 
-      if (changes.length < limit || nextCursor == null || nextCursor == cursor) {
+      if (changes.length < limit ||
+          nextCursor == null ||
+          nextCursor == cursor) {
         break;
       }
       cursor = nextCursor;

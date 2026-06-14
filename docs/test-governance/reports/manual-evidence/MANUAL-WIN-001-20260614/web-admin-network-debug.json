@@ -1,0 +1,26 @@
+{
+  "marker": "manual-win-001-supplement-20260614-085222",
+  "storage": {
+    "flowplanv2.admin.refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNmQwN2Q3My01YjUxLTQ3YmEtYmZmMi1iZTE2YWQzNmQ2ODciLCJkaXNwbGF5TmFtZSI6IkZsb3dQbGFuVjIgQWRtaW4iLCJpYXQiOjE3ODEzOTg0NjksImV4cCI6MTc4MjAwMzI2OX0.4I9Wo3DGebWumVWbciBSuBehVktQhzDqFDA6U8q4a2A",
+    "flowplanv2.admin.accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNmQwN2Q3My01YjUxLTQ3YmEtYmZmMi1iZTE2YWQzNmQ2ODciLCJkaXNwbGF5TmFtZSI6IkZsb3dQbGFuVjIgQWRtaW4iLCJpYXQiOjE3ODEzOTg0NjksImV4cCI6MTc4MTQ4NDg2OX0._Yf99JXSU3dKx-0HGApFihQVQ7b2-p2owkn94mNIb7g",
+    "flowplanv2.admin.deviceId": "f40cac39-87a5-4e5b-a7e9-fcb01b1fc7e0"
+  },
+  "responses": [
+    {
+      "url": "http://localhost:3202/api/auth/login",
+      "status": 201,
+      "text": "{\"accessToken\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNmQwN2Q3My01YjUxLTQ3YmEtYmZmMi1iZTE2YWQzNmQ2ODciLCJkaXNwbGF5TmFtZSI6IkZsb3dQbGFuVjIgQWRtaW4iLCJpYXQiOjE3ODEzOTg0NjksImV4cCI6MTc4MTQ4NDg2OX0._Yf99JXSU3dKx-0HGApFihQVQ7b2-p2owkn94mNIb7g\",\"refreshToken\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNmQwN2Q3My01YjUxLTQ3YmEtYmZmMi1iZTE2YWQzNmQ2ODciLCJkaXNwbGF5TmFtZSI6IkZsb3dQbGFuVjIgQWRtaW4iLCJpYXQiOjE3ODEzOTg0NjksImV4cCI6MTc4MjAwMzI2OX0.4I9Wo3DGebWumVWbciBSuBehVktQhzDqFDA6U8q4a2A\",\"user\":{\"id\":\"c6d07d73-5b51-47ba-bff2-be16ad36d687\",\"displayName\":\"FlowPlanV2 Admin\"}}"
+    },
+    {
+      "url": "http://localhost:3202/api/admin/dashboard",
+      "status": 200,
+      "text": "{\"generatedAt\":\"2026-06-14T00:54:29.757Z\",\"overview\":{\"phase\":\"p11\",\"generatedAt\":\"2026-06-14T00:54:29.757Z\",\"objectCounts\":{},\"deviceCounts\":{},\"conflictCounts\":{},\"auditCounts\":{},\"reportCounts\":{},\"pushCounts\":{},\"fileCounts\":{\"folders\":0,\"files\":0,\"links\":0,\"versions\":0,\"roots\":0,\"nodes\":0,\"transfers\":0},\"outlookCounts\":{},\"jobCounts\":{},\"configCount\":0,\"draftCounts\":{},\"latestChangeId\":\"0\"},\"syncHealth\":{\"devices\":[],\"recentMutationResults\":{},\"conflictStatus\":{}},\"recentAuditLogs\":[],\"failedJobs\":[],\"pending\":{\"conflicts\":0,\"aiDrafts\":0,\"failedPushes\":0,\"failedJobs\":0}}"
+    },
+    {
+      "url": "http://localhost:3202/api/admin/data/audit-logs?limit=200",
+      "status": 200,
+      "text": "{\"limit\":200,\"offset\":0,\"hasMore\":false,\"items\":[]}"
+    }
+  ],
+  "bodyExcerpt": "FlowPlanV2\nflowplanv2-server / A-startup-connection\nhttp://localhost:3202，2026-06-14 08:54:29，新信息 2\n总览\n全部任务与日程\n实际记录\n文件资料\n报告推送\n同步与设备\nOutlook 集成\n数据操作审计\n系统设置\n运维操作\n系统日志\n定时任务\n智能排程\n异常告警\n运行环境\n数据操作审计\n默认展示摘要、操作者、动作和对象；变更前后与原始记录在展开区保留。\n动作筛选\n刷新\n\t时间\t摘要\t操作者\t动作\t对象类型\t对象 ID\t详情\n\n \n\t\n时间\n\t\n摘要\n\t\n操作者\n\t\n动作\n\t\n对象类型\n\t\n对象 ID\n\t\n详情\n\n\n暂无数据\n审计原始响应"
+}

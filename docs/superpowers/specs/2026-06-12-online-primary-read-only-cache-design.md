@@ -488,3 +488,8 @@ Implementation planning should decide:
 These are implementation choices, not unresolved product rules. The product
 rule is fixed: online-primary, read-only cache, tracking spool, server-hosted
 files.
+
+## 18. Implementation Plan
+
+Implementation tasks are tracked in
+`docs/superpowers/plans/2026-06-12-online-primary-read-only-cache-implementation.md`.

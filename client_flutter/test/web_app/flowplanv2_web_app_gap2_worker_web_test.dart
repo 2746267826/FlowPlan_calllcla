@@ -70,6 +70,37 @@ void main() {
         contains('/files/upload-sessions/upload-fallback/complete'));
   });
 
+  testWidgets('drive upload blocks picker when bootstrap reports offline',
+      (tester) async {
+    final picker = _FakeFilePicker(
+      FilePickerResult([
+        PlatformFile(
+          name: 'offline-upload.bin',
+          size: 3,
+          bytes: Uint8List.fromList(<int>[1, 2, 3]),
+        ),
+      ]),
+    );
+    final harness = await _pumpWebApp(
+      tester,
+      filePicker: picker,
+      configureApi: (api) => api.bootstrapOk = false,
+    );
+    await _openShellDestination(tester, AppKeys.webShellDrive);
+
+    await _tapIcon(tester, Icons.upload_file);
+
+    expect(picker.pickCount, 0);
+    expect(
+      harness.api.getPaths.where((path) => path == '/client/bootstrap'),
+      isNotEmpty,
+    );
+    expect(find.text('Server connection is required before upload.'),
+        findsOneWidget);
+    expect(harness.api.postPaths, isNot(contains('/files/upload-sessions')));
+    expect(harness.api.putPaths, isEmpty);
+  });
+
   testWidgets(
       'drive preview handles empty files and binary nodes fall back to download',
       (tester) async {
@@ -271,6 +302,7 @@ enum _RootsMode { normal, emptyInitially }
 class _Gap2WebApiClient extends WebApiClient {
   _Gap2WebApiClient(super.store);
 
+  bool bootstrapOk = true;
   final getPaths = <String>[];
   final getQueries = <String, List<Map<String, String?>>>{};
   final postPaths = <String>[];
@@ -310,6 +342,9 @@ class _Gap2WebApiClient extends WebApiClient {
     getQueries.putIfAbsent(path, () => []).add(query);
     switch (path) {
       case '/client/bootstrap':
+        if (!bootstrapOk) {
+          return {'ok': false, 'reason': 'offline'};
+        }
         return {
           'serverTime': '2026-06-10T04:00:00.000Z',
           'device': {'clientDeviceId': store.deviceId},
@@ -586,7 +621,8 @@ class _Gap2WebApiClient extends WebApiClient {
   }
 
   List<Map<String, dynamic>> _eventItems() {
-    final denseDay = today.add(const Duration(days: 1));
+    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+    final denseDay = weekStart.add(const Duration(days: 1));
     return [
       for (var i = 0; i < 8; i += 1)
         {

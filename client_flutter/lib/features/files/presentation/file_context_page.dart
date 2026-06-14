@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
+import '../../../core/online/online_primary_policy.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
@@ -1205,6 +1206,9 @@ class _ServerStorageAndVersionPaneState
 
   Future<void> _registerStorageObject() async {
     await _runBusy(() async {
+      ref
+          .read(onlinePrimaryPolicyProvider)
+          .requireOnlineFileUploadStart('file_context_register_storage_object');
       final api = await ref.read(fileCloudApiProvider.future);
       final result = await api.registerStorageObject(
         localPath: widget.node.localPath,
@@ -1298,6 +1302,8 @@ class _ServerStorageAndVersionPaneState
     setState(() => _busy = true);
     try {
       await action();
+    } on OnlinePrimaryWriteRejected catch (error) {
+      _snack(error.reason);
     } catch (error) {
       _snack(error.toString());
     } finally {

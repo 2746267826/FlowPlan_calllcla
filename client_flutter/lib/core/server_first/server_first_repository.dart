@@ -64,7 +64,7 @@ class ServerFirstRepository {
 
   Future<ServerFirstWriteResult> createTask(
     Map<String, Object?> payload, {
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'task_item',
@@ -80,7 +80,7 @@ class ServerFirstRepository {
     required Map<String, Object?> patch,
     int? baseServerVersion,
     List<String>? changedFields,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'task_item',
@@ -102,7 +102,7 @@ class ServerFirstRepository {
     required String id,
     Map<String, Object?> body = const <String, Object?>{},
     int? baseServerVersion,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'task_item',
@@ -127,7 +127,7 @@ class ServerFirstRepository {
   Future<ServerFirstWriteResult> deleteTask({
     required String id,
     int? baseServerVersion,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'task_item',
@@ -152,7 +152,7 @@ class ServerFirstRepository {
 
   Future<ServerFirstWriteResult> createEvent(
     Map<String, Object?> payload, {
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'calendar_event',
@@ -168,7 +168,7 @@ class ServerFirstRepository {
     required Map<String, Object?> patch,
     int? baseServerVersion,
     List<String>? changedFields,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'calendar_event',
@@ -189,7 +189,7 @@ class ServerFirstRepository {
   Future<ServerFirstWriteResult> deleteEvent({
     required String id,
     int? baseServerVersion,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) {
     return _write(
       objectType: 'calendar_event',
@@ -224,7 +224,7 @@ class ServerFirstRepository {
     String? serverId,
     int? baseServerVersion,
     List<String>? changedFields,
-    bool queueOnFailure = true,
+    bool queueOnFailure = false,
   }) async {
     try {
       final response = await remoteWrite();

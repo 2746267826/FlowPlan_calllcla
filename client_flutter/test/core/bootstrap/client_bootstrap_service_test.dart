@@ -39,12 +39,6 @@ void main() {
       ],
       'policy': <String, Object?>{'allowClientOverrides': true},
     };
-    harness.engine.pushResult = const ServerSyncResult(
-      acceptedCount: 2,
-      conflictCount: 1,
-      rejectedCount: 0,
-      pendingCount: 3,
-    );
     harness.engine.pullResult = <String, dynamic>{
       'changes': <Object?>[
         <String, Object?>{'changeId': 'change-1'},
@@ -80,23 +74,30 @@ void main() {
       ),
       containsPair('syncCursor', 'cursor-bootstrap'),
     );
-    expect(harness.engine.pushSources, hasLength(1));
-    expect(harness.engine.pullSources, hasLength(1));
+    expect(harness.engine.pushSources, isEmpty);
+    expect(harness.engine.refreshSources, <String>['refresh']);
     expect(
       progress.map((item) => item.phase),
       <String>[
         'preparing',
-        'pushing',
-        'tracking_upload',
         'pulling',
         'applying',
+        'tracking_upload',
         'completed',
       ],
     );
-    expect(progress[4].current, 6);
+    expect(progress[2].current, 6);
     expect(progress.last.current, 6);
-    expect(progress.last.summary['accepted'], 2);
-    expect(progress.last.summary['conflicts'], 1);
+    _expectNoLegacyPushSummary(progress.last.summary);
+    expect(progress.last.summary['pulledChanges'], 6);
+    expect(progress.last.summary['appliedChanges'], 4);
+    expect(progress.last.summary['skippedChanges'], 1);
+    expect(progress.last.summary['failedChanges'], 0);
+    expect(progress.last.summary['legacyQueue'], <String, Object?>{
+      'pendingCount': 0,
+      'failedCount': 0,
+      'conflictCount': 0,
+    });
     expect(progress.last.summary['trackingUpload'], <String, Object?>{
       'enabled': true,
       'ok': true,
@@ -108,8 +109,12 @@ void main() {
     final syncLog = logs.singleWhere(
       (log) => log.action == 'client_bootstrap_sync',
     );
+    final metadata =
+        jsonDecode(syncLog.metadataJson ?? '{}') as Map<String, dynamic>;
     expect(syncLog.metadataJson, contains('"settingsVersion":42'));
-    expect(syncLog.metadataJson, contains('"accepted":2'));
+    _expectNoLegacyPushSummary(metadata);
+    expect(syncLog.metadataJson, contains('"pulledChanges":6'));
+    expect(syncLog.metadataJson, contains('"legacyQueue"'));
     expect(syncLog.metadataJson, contains('"uploaded":3'));
   });
 
@@ -118,12 +123,6 @@ void main() {
       () async {
     final harness = _BootstrapHarness();
     addTearDown(harness.dispose);
-    harness.engine.pushResult = const ServerSyncResult(
-      acceptedCount: 1,
-      conflictCount: 0,
-      rejectedCount: 0,
-      pendingCount: 1,
-    );
     harness.engine.pullResult = <String, dynamic>{
       'changes': <Object?>[],
       'pulledChanges': 0,
@@ -146,6 +145,9 @@ void main() {
       'Bad state: tracking offline',
     );
     expect(progress.last.phase, 'completed');
+    expect(harness.engine.pushSources, isEmpty);
+    expect(harness.engine.refreshSources, <String>['refresh']);
+    _expectNoLegacyPushSummary(progress.last.summary);
     expect(progress.last.summary['trackingUpload'], <String, Object?>{
       'enabled': true,
       'ok': false,
@@ -157,8 +159,98 @@ void main() {
       containsAll(<String>['tracking_upload_failed', 'client_sync_now']),
     );
     final syncLog = logs.singleWhere((log) => log.action == 'client_sync_now');
+    final metadata =
+        jsonDecode(syncLog.metadataJson ?? '{}') as Map<String, dynamic>;
     expect(syncLog.actor, 'system');
+    _expectNoLegacyPushSummary(metadata);
     expect(syncLog.metadataJson, contains('"ok":false'));
+  });
+
+  test(
+      'syncNow summarizes list-only pulls and preserves server legacy queue values',
+      () async {
+    final harness = _BootstrapHarness();
+    addTearDown(harness.dispose);
+    harness.engine.pullResult = <String, dynamic>{
+      'changes': <Object?>[
+        <String, Object?>{'changeId': 'change-list-1'},
+        <String, Object?>{'changeId': 'change-list-2'},
+      ],
+      'appliedChanges': 2,
+      'legacyQueue': <String, Object?>{
+        'pendingCount': 3.5,
+        'failedCount': '4',
+        'conflictCount': 1,
+      },
+    };
+    final progress = <ClientSyncProgress>[];
+    harness.service.onProgress = progress.add;
+
+    final state = await harness.service.syncNow(source: 'manual');
+
+    expect(state.mode, 'server_first');
+    expect(progress.last.phase, 'completed');
+    expect(progress.last.current, 2);
+    expect(progress.last.summary['pulledChanges'], 2);
+    expect(progress.last.summary['appliedChanges'], 2);
+    expect(progress.last.summary['skippedChanges'], 0);
+    expect(progress.last.summary['failedChanges'], 0);
+    expect(progress.last.summary['legacyQueue'], <String, Object?>{
+      'pendingCount': 3.5,
+      'failedCount': '4',
+      'conflictCount': 1,
+    });
+
+    final logs = await DataOperationLogRepository(harness.db).listRecent();
+    final syncLog = logs.singleWhere((log) => log.action == 'client_sync_now');
+    final metadata =
+        jsonDecode(syncLog.metadataJson ?? '{}') as Map<String, dynamic>;
+    expect(metadata['pulledChanges'], 2);
+    expect(metadata['legacyQueue'], <String, Object?>{
+      'pendingCount': 3.5,
+      'failedCount': '4',
+      'conflictCount': 1,
+    });
+  });
+
+  test('syncNow summarizes local legacy queue counts when pull omits them',
+      () async {
+    final harness = _BootstrapHarness();
+    addTearDown(harness.dispose);
+    await _insertOfflineMutation(harness.db, uid: 'pending-summary');
+    await _insertOfflineMutation(
+      harness.db,
+      uid: 'failed-summary',
+      status: 'failed',
+    );
+    await _insertOfflineMutation(
+      harness.db,
+      uid: 'conflict-summary',
+      status: 'conflict',
+    );
+    harness.engine.pullResult = const <String, dynamic>{
+      'changes': <Object?>[],
+    };
+    final progress = <ClientSyncProgress>[];
+    harness.service.onProgress = progress.add;
+
+    await harness.service.syncNow(source: 'manual');
+
+    expect(progress.last.summary['pulledChanges'], 0);
+    expect(progress.last.summary['legacyQueue'], <String, Object?>{
+      'pendingCount': 1,
+      'failedCount': 1,
+      'conflictCount': 1,
+    });
+  });
+
+  test('readSummaryInt converts numeric and string summary values', () async {
+    final harness = _BootstrapHarness();
+    addTearDown(harness.dispose);
+
+    expect(harness.service.readSummaryIntForTesting(2.9), 2);
+    expect(harness.service.readSummaryIntForTesting('7'), 7);
+    expect(harness.service.readSummaryIntForTesting('not-a-count'), isNull);
   });
 
   test('start triggers periodic timer sync with the timer source', () async {
@@ -206,7 +298,7 @@ void main() {
     );
     expect(progress.map((item) => item.phase), <String>['preparing', 'failed']);
     expect(harness.engine.pushSources, isEmpty);
-    expect(harness.engine.pullSources, isEmpty);
+    expect(harness.engine.refreshSources, isEmpty);
     final logs = await DataOperationLogRepository(harness.db).listRecent();
     final failureLog = logs.singleWhere(
       (log) => log.action == 'client_bootstrap_sync_failed',
@@ -244,7 +336,7 @@ void main() {
       () async {
     final harness = _BootstrapHarness();
     addTearDown(harness.dispose);
-    harness.engine.pushError = StateError('push offline');
+    harness.engine.pullError = StateError('pull offline');
     final progress = <ClientSyncProgress>[];
     harness.service.onProgress = progress.add;
 
@@ -253,18 +345,20 @@ void main() {
     expect(state.mode, 'local_cache');
     expect(state.syncing, isFalse);
     expect(state.serverReachable, isFalse);
-    expect(state.lastError, 'Bad state: push offline');
+    expect(state.lastError, 'Bad state: pull offline');
     expect(
       await harness.db.getSetting(ClientBootstrapService.lastErrorKey),
-      'Bad state: push offline',
+      'Bad state: pull offline',
     );
     expect(
       progress.map((item) => item.phase),
-      <String>['preparing', 'pushing', 'failed'],
+      <String>['preparing', 'pulling', 'failed'],
     );
+    expect(harness.engine.pushSources, isEmpty);
+    expect(harness.engine.refreshSources, <String>['refresh']);
     expect(progress.last.summary, <String, Object?>{
       'source': 'manual',
-      'error': 'Bad state: push offline',
+      'error': 'Bad state: pull offline',
     });
   });
 
@@ -359,8 +453,8 @@ void main() {
     expect(harness.service.state.settingsVersion, 13);
     expect(harness.service.state.syncCursor, '99');
     expect(harness.service.state.pendingActions, isEmpty);
-    expect(harness.engine.pushSources, <String>['push']);
-    expect(harness.engine.pullSources, <String>['pull']);
+    expect(harness.engine.pushSources, isEmpty);
+    expect(harness.engine.refreshSources, <String>['refresh']);
     final logs = await DataOperationLogRepository(harness.db).listRecent();
     final confirmLog = logs.singleWhere(
       (log) => log.action == 'client_import_confirm',
@@ -368,6 +462,42 @@ void main() {
     expect(confirmLog.entityId, 'import-456');
     expect(confirmLog.metadataJson, contains('confirmed'));
   });
+}
+
+void _expectNoLegacyPushSummary(Map<String, Object?> summary) {
+  expect(summary, isNot(containsPair('accepted', anything)));
+  expect(summary, isNot(containsPair('conflicts', anything)));
+  expect(summary, isNot(containsPair('rejected', anything)));
+  expect(summary, isNot(containsPair('pushed', anything)));
+}
+
+Future<void> _insertOfflineMutation(
+  AppDatabase db, {
+  required String uid,
+  String status = 'pending',
+}) {
+  return db.customStatement(
+    '''
+    INSERT INTO offline_mutations (
+      mutation_uid,
+      object_type,
+      local_id,
+      action,
+      payload_json,
+      created_at,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''',
+    <Object?>[
+      uid,
+      'task_item',
+      uid,
+      'update',
+      '{}',
+      DateTime.utc(2026, 6, 10).toIso8601String(),
+      status,
+    ],
+  );
 }
 
 class _BootstrapHarness {
@@ -496,25 +626,25 @@ class _FakeServerSyncEngine extends ServerSyncEngine {
 
   final pushSources = <String>[];
   final pullSources = <String>[];
-  ServerSyncResult pushResult = const ServerSyncResult(
-    acceptedCount: 0,
-    conflictCount: 0,
-    rejectedCount: 0,
-  );
+  final refreshSources = <String>[];
   Map<String, dynamic> pullResult = const <String, dynamic>{
     'changes': <Object?>[],
   };
-  Object? pushError;
   Object? pullError;
 
   @override
   Future<ServerSyncResult> pushPending() async {
     pushSources.add('push');
-    final error = pushError;
-    if (error != null) {
-      throw error;
-    }
-    return pushResult;
+    throw StateError('pushPending must not run during cache refresh');
+  }
+
+  @override
+  Future<Map<String, dynamic>> refreshCacheFromServer({
+    int limit = 200,
+    void Function(int pulledChanges, int pageCount)? onProgress,
+  }) async {
+    refreshSources.add('refresh');
+    return pullChanges(limit: limit, onProgress: onProgress);
   }
 
   @override

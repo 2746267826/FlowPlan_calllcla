@@ -336,6 +336,34 @@ describe('ActivityUnderstandingService', () => {
     );
   });
 
+  it('casts raw activity range bounds before applying interval padding', async () => {
+    const { service, query } = createHarness({
+      rawRows: [],
+      taskRows: [],
+    });
+
+    await service.buildSegments(
+      {
+        start: '2026-06-08T08:00:00.000Z',
+        end: '2026-06-08T12:00:00.000Z',
+      },
+      context,
+    );
+
+    const rawQuery = callsContaining(query, 'LIMIT 5000')[0];
+    const rawSql = normalizeSql(String(rawQuery?.[0]));
+    expect(rawSql).toContain("updated_at >= $3::timestamptz - interval '1 day'");
+    expect(rawSql).toContain("updated_at < $4::timestamptz + interval '1 day'");
+    expect(rawQuery?.[1]).toEqual(
+      expect.arrayContaining([
+        context.userId,
+        expect.any(Array),
+        new Date('2026-06-08T08:00:00.000Z'),
+        new Date('2026-06-08T12:00:00.000Z'),
+      ]),
+    );
+  });
+
   it('chooses the dominant app and file path when merged raw activities disagree', async () => {
     const { service, query } = createHarness({
       rawRows: [

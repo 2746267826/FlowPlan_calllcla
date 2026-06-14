@@ -1,0 +1,91 @@
+{
+  "acceptanceId": "MANUAL-FILE-001",
+  "date": "2026-06-14",
+  "baseUrl": "http://127.0.0.1:3202/api",
+  "sourcePath": "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-FILE-001-20260614\\artifacts\\manual-file-001-20260613195545.bin",
+  "downloadedPath": "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-FILE-001-20260614\\artifacts\\manual-file-001-20260613195545.downloaded.bin",
+  "sourceHash": "5200dd6d4f2ad3817c6680629cf8dd07f5b7b034835e79dd7c80163604581e43",
+  "downloadedHash": "5200dd6d4f2ad3817c6680629cf8dd07f5b7b034835e79dd7c80163604581e43",
+  "totalBytes": 10485760,
+  "chunkSize": 4194304,
+  "expectedChunks": 3,
+  "uploadSessionId": "c53b713c-cc25-4d75-9570-49fa9cd40a11",
+  "storageObjectId": "40d273a6-78eb-45a7-b729-95bcf1b686a5",
+  "downloadSessionId": "9a951133-91ab-4478-bf9f-5e74aec49ac1",
+  "storageRoot": "C:\\Users\\a2746\\Desktop\\calll260426\\server\\server_storage",
+  "timeline": [
+    {
+      "step": "health",
+      "ok": true,
+      "generatedAt": "2026-06-13T19:55:46.029Z"
+    },
+    {
+      "step": "storage-status-before",
+      "rootPath": "C:\\Users\\a2746\\Desktop\\calll260426\\server\\server_storage"
+    },
+    {
+      "step": "create-upload-session",
+      "uploadSessionId": "c53b713c-cc25-4d75-9570-49fa9cd40a11",
+      "expectedChunks": 3
+    },
+    {
+      "step": "upload-chunk-0",
+      "sizeBytes": 4194304
+    },
+    {
+      "step": "upload-chunk-2",
+      "sizeBytes": 2097152
+    },
+    {
+      "step": "missing-before-resume",
+      "missingChunks": [
+        1
+      ]
+    },
+    {
+      "step": "resume-upload-chunk-1",
+      "sizeBytes": 4194304
+    },
+    {
+      "step": "missing-after-resume",
+      "missingChunks": []
+    },
+    {
+      "step": "complete-upload",
+      "ok": true,
+      "storageObjectId": "40d273a6-78eb-45a7-b729-95bcf1b686a5",
+      "checksum": "5200dd6d4f2ad3817c6680629cf8dd07f5b7b034835e79dd7c80163604581e43"
+    },
+    {
+      "step": "storage-object-visible",
+      "found": true,
+      "storageObjectId": "40d273a6-78eb-45a7-b729-95bcf1b686a5"
+    },
+    {
+      "step": "create-download-session",
+      "downloadSessionId": "9a951133-91ab-4478-bf9f-5e74aec49ac1",
+      "storageObjectId": "40d273a6-78eb-45a7-b729-95bcf1b686a5"
+    },
+    {
+      "step": "download-range-0",
+      "start": 0,
+      "end": 4194303,
+      "sizeBytes": 4194304,
+      "checksum": "c0fe3fc5d372e89907c96e4d7320d53f13673cc06bd6edca9dae8e9d010db96c"
+    },
+    {
+      "step": "download-range-1",
+      "start": 4194304,
+      "end": 8388607,
+      "sizeBytes": 4194304,
+      "checksum": "8a11001cbaedd21b1b68644643c3af988c67edb45c1f1c7b543ecb735c01bc27"
+    },
+    {
+      "step": "download-range-2",
+      "start": 8388608,
+      "end": 10485759,
+      "sizeBytes": 2097152,
+      "checksum": "e63ea70f8c49fdb3f96145f432d38c0f0abae2248629540baea4f885fde07eb8"
+    }
+  ]
+}

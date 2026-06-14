@@ -75,7 +75,6 @@ final inputActivityEventServiceProvider =
 final activityLogRefreshTickProvider = StateProvider<int>((ref) => 0);
 
 final inputEventProcessOptionsProvider = FutureProvider<List<String>>((ref) {
-  ref.watch(activityLogRefreshTickProvider);
   return _loadServerInputProcessOptions(ref);
 });
 
@@ -207,7 +206,6 @@ int _localActivityRecordMinutes({
 final inputHeatmapSummaryProvider =
     FutureProvider.family<InputHeatmapSummary, InputEventQuery>(
         (ref, query) async {
-  ref.watch(activityLogRefreshTickProvider);
   final store = await ref.watch(trackingServerFirstStoreProvider.future);
   final response = await store.inputHeatmap(
     start: query.start,
@@ -220,7 +218,6 @@ final inputHeatmapSummaryProvider =
 
 final selectedDateInputBehaviorSummaryProvider =
     FutureProvider<InputHeatmapSummary>((ref) async {
-  ref.watch(activityLogRefreshTickProvider);
   final selectedDate = ref.watch(selectedDateProvider);
   final start = DateTime(
     selectedDate.year,
@@ -1364,5 +1361,37 @@ final serverInputEventsPageProvider =
 final trackingUploadDiagnosticsProvider =
     FutureProvider<Map<String, Object?>>((ref) async {
   final service = await ref.watch(trackingUploadServiceProvider.future);
-  return service.buildUploadDiagnostics();
+  final diagnostics = await service.buildUploadDiagnostics();
+  return _trackingUploadDiagnosticsMap(diagnostics);
 });
+
+@visibleForTesting
+Map<String, Object?> trackerProvidersDebugTrackingUploadDiagnosticsMap(
+  Object? diagnostics,
+) {
+  return _trackingUploadDiagnosticsMap(diagnostics);
+}
+
+Map<String, Object?> _trackingUploadDiagnosticsMap(Object? diagnostics) {
+  if (diagnostics is Map<String, Object?>) {
+    return Map<String, Object?>.from(diagnostics);
+  }
+  if (diagnostics is Map) {
+    return <String, Object?>{
+      for (final entry in diagnostics.entries)
+        entry.key.toString(): entry.value,
+    };
+  }
+  try {
+    final json = (diagnostics as dynamic).toJson();
+    if (json is Map) {
+      return <String, Object?>{
+        for (final entry in json.entries) entry.key.toString(): entry.value,
+      };
+    }
+  } catch (_) {
+    // Older upload diagnostics are map-backed; model-backed diagnostics are
+    // accepted when available.
+  }
+  return <String, Object?>{};
+}

@@ -495,11 +495,11 @@ void main() {
       );
       expect(
         diagnostics['lastError'],
-        contains('partial success'),
+        contains('lacked known local ids'),
       );
       expect(
         (await db.getSetting(TrackingUploadService.lastErrorKey))!,
-        contains('partial success'),
+        contains('lacked known local ids'),
       );
     });
 

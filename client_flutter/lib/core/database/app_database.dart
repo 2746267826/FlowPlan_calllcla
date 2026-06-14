@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -53,6 +53,7 @@ class AppDatabase extends _$AppDatabase {
           await _ensureActualAndFusionTables();
           await _ensureReportsAndPushTables();
           await _ensureFileManagementTables();
+          await _ensureTrackingUploadQuarantineTable();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -163,6 +164,10 @@ class AppDatabase extends _$AppDatabase {
           if (from < 19) {
             await _ensureActivityRecordDeviceColumns();
           }
+
+          if (from < 20) {
+            await _ensureTrackingUploadQuarantineTable();
+          }
         },
       );
 
@@ -174,6 +179,30 @@ class AppDatabase extends _$AppDatabase {
     }
     await customStatement(
       'ALTER TABLE task_items ADD COLUMN location TEXT',
+    );
+  }
+
+  Future<void> _ensureTrackingUploadQuarantineTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS tracking_upload_quarantine (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data_kind TEXT NOT NULL,
+        local_id TEXT NOT NULL,
+        reason TEXT,
+        batch_id TEXT,
+        server_payload_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(data_kind, local_id)
+      )
+    ''');
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS tracking_upload_quarantine_kind_idx '
+      'ON tracking_upload_quarantine(data_kind, local_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS tracking_upload_quarantine_created_idx '
+      'ON tracking_upload_quarantine(created_at)',
     );
   }
 
@@ -346,10 +375,12 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('ALTER TABLE file_nodes ADD COLUMN remote_id TEXT');
     }
     if (!names.contains('hash_sha256')) {
-      await customStatement('ALTER TABLE file_nodes ADD COLUMN hash_sha256 TEXT');
+      await customStatement(
+          'ALTER TABLE file_nodes ADD COLUMN hash_sha256 TEXT');
     }
     if (!names.contains('storage_object_id')) {
-      await customStatement('ALTER TABLE file_nodes ADD COLUMN storage_object_id TEXT');
+      await customStatement(
+          'ALTER TABLE file_nodes ADD COLUMN storage_object_id TEXT');
     }
     await customStatement(
       'CREATE INDEX IF NOT EXISTS file_nodes_remote_idx '
@@ -788,9 +819,7 @@ class AppDatabase extends _$AppDatabase {
     final columns = await customSelect(
       'PRAGMA table_info(activity_records)',
     ).get();
-    final names = columns
-        .map((row) => row.read<String>('name'))
-        .toSet();
+    final names = columns.map((row) => row.read<String>('name')).toSet();
 
     if (!names.contains('device_id')) {
       await customStatement(

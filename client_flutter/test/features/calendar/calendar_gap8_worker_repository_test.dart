@@ -15,7 +15,7 @@ void main() {
     addTearDown(db.close);
     final events = EventRepository(db);
 
-    const eventDefaults = EventCalendarDefaults.fallback();
+    final eventDefaults = EventCalendarDefaults.fallback();
     expect(eventDefaults.defaultIsBlock, isFalse);
 
     await expectLater(

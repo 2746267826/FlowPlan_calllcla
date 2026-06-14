@@ -20,6 +20,8 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../test_support/fixtures.dart';
 import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
 
@@ -754,6 +756,9 @@ List<Override> _eventDetailOverrides({
   return [
     allEventCalendarsProvider.overrideWith(
       (ref) => Stream<List<EventCalendar>>.value(calendars),
+    ),
+    onlinePrimaryPolicyProvider.overrideWith(
+      (ref) => writableOnlinePrimaryPolicy,
     ),
     taskEventServerFirstStoreProvider.overrideWith((ref) async => fakeStore),
   ];

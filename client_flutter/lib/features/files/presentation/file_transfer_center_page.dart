@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/online/online_primary_policy.dart';
 import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../services/file_transfer_service.dart';
@@ -30,8 +31,9 @@ class FileTransferCenterPage extends ConsumerWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            onPressed:
-                service.refreshingServer ? null : service.refreshServerTransfers,
+            onPressed: service.refreshingServer
+                ? null
+                : service.refreshServerTransfers,
           ),
         ],
       ),
@@ -44,7 +46,7 @@ class FileTransferCenterPage extends ConsumerWidget {
             children: [
               FilledButton.icon(
                 key: AppKeys.fileTransferStartButton,
-                onPressed: () => _pickAndUpload(context, service),
+                onPressed: () => _pickAndUpload(context, ref, service),
                 icon: const Icon(Icons.upload_file),
                 label: const Text('上传本地文件'),
               ),
@@ -106,18 +108,27 @@ class FileTransferCenterPage extends ConsumerWidget {
 
   Future<void> _pickAndUpload(
     BuildContext context,
+    WidgetRef ref,
     FileTransferService service,
   ) async {
-    final result = await FilePicker.platform.pickFiles(withData: false);
-    final path = result?.files.single.path;
-    if (path == null || path.trim().isEmpty) {
-      return;
-    }
     try {
+      ref
+          .read(onlinePrimaryPolicyProvider)
+          .requireOnlineFileUploadStart('file_transfer_upload_start');
+      final result = await FilePicker.platform.pickFiles(withData: false);
+      final path = result?.files.single.path;
+      if (path == null || path.trim().isEmpty) {
+        return;
+      }
       await service.uploadFile(path);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('上传完成并已校验 hash')),
+      );
+    } on OnlinePrimaryWriteRejected catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.reason)),
       );
     } catch (error) {
       if (!context.mounted) return;

@@ -11,6 +11,9 @@ import 'package:flowplanv2/core/server_api/remote_settings_repository.dart';
 import 'package:flowplanv2/core/server_api/server_config_store.dart';
 import 'package:flowplanv2/core/sync/sync_write_recorder.dart';
 import 'package:flowplanv2/features/audit/data_operation_log_repository.dart';
+import 'package:drift/drift.dart'
+    show QueryRow, ResultSetImplementation, Selectable, Variable;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -26,8 +29,13 @@ void main() {
     SyncWriteRecorder.onMutationRecorded = null;
   });
 
-  test('start initializes once and dispose clears global hooks', () async {
+  test(
+      'start initializes once and dispose leaves external mutation hook intact',
+      () async {
     final harness = await _createHarness();
+    Future<void> externalHook() async {}
+
+    SyncWriteRecorder.onMutationRecorded = externalHook;
     final timers = await _recordTimers((timers) async {
       harness.service.start();
       harness.service.start();
@@ -47,18 +55,35 @@ void main() {
     expect(harness.service.state.serverUrl, 'http://localhost:3202/api');
     expect(harness.service.state.deviceId, 'test-device');
     expect(harness.service.state.platform, 'test-platform');
-    expect(SyncWriteRecorder.onMutationRecorded, isNotNull);
+    expect(SyncWriteRecorder.onMutationRecorded, same(externalHook));
     expect(harness.bootstrap.onProgress, isNotNull);
     expect(timers.periodicDelays, contains(const Duration(minutes: 5)));
     expect(timers.timers, everyElement(isA<_RecordedTimer>()));
 
     await harness.dispose();
 
-    expect(SyncWriteRecorder.onMutationRecorded, isNull);
+    expect(SyncWriteRecorder.onMutationRecorded, same(externalHook));
     expect(harness.bootstrap.onProgress, isNull);
     expect(timers.timers, everyElement(predicate<Timer>((timer) {
       return !timer.isActive;
     })));
+    SyncWriteRecorder.onMutationRecorded = null;
+  });
+
+  test('start does not install an automatic mutation push hook', () async {
+    final harness = await _createHarness();
+
+    await _recordTimers((timers) async {
+      harness.service.start();
+
+      await _pumpUntil(
+        () =>
+            harness.bootstrap.bootstrapSources.length == 1 &&
+            timers.periodicDelays.contains(const Duration(minutes: 5)),
+      );
+    });
+
+    expect(SyncWriteRecorder.onMutationRecorded, isNull);
   });
 
   test('requestSync queues a second sync while the service is busy', () async {
@@ -170,6 +195,36 @@ void main() {
     expect(harness.service.state.lastSyncAt, failedAt);
     expect(harness.service.state.lastError, 'pull failed');
     expect(harness.api.heartbeatCalls, isEmpty);
+    expect(timers.nonZeroSingleDelays, <Duration>[
+      const Duration(seconds: 30),
+    ]);
+  });
+
+  test('sync tolerates locked local summary queries', () async {
+    final db = _LockedSummaryDatabase();
+    final harness = await _createHarness(db: db);
+    final syncedAt = DateTime.utc(2026, 6, 10, 4, 30);
+    harness.bootstrap.syncNowHandlers.add((source) async {
+      return _runtime(lastSyncAt: syncedAt);
+    });
+
+    final timers = await _recordTimers((_) {
+      return harness.service.syncNow(
+        source: 'manual',
+        reason: 'button_press',
+      );
+    });
+
+    expect(harness.bootstrap.syncSources, <String>['manual']);
+    expect(harness.api.heartbeatEventSources, <String>['sync_success']);
+    expect(harness.service.state.level, ServerConnectionLevel.online);
+    expect(harness.service.state.syncing, isFalse);
+    expect(harness.service.state.syncPhase, 'completed');
+    expect(harness.service.state.lastSyncAt, syncedAt);
+    expect(harness.service.state.lastError, isNull);
+    expect(harness.service.state.pendingCount, 0);
+    expect(harness.service.state.failedCount, 0);
+    expect(harness.service.state.conflictCount, 0);
     expect(timers.nonZeroSingleDelays, <Duration>[
       const Duration(seconds: 30),
     ]);
@@ -329,8 +384,8 @@ void main() {
   });
 }
 
-Future<_ConnectionHarness> _createHarness() async {
-  final db = createTestDatabase();
+Future<_ConnectionHarness> _createHarness({AppDatabase? db}) async {
+  db ??= createTestDatabase();
   final api = _FakeClientApi(db);
   final bootstrap = _FakeBootstrapService(db, api);
   final service = ServerConnectionService(
@@ -456,7 +511,6 @@ class _ConnectionHarness {
       service.dispose();
       _disposed = true;
     }
-    SyncWriteRecorder.onMutationRecorded = null;
     if (!_dbClosed) {
       await db.close();
       _dbClosed = true;
@@ -577,6 +631,41 @@ class _RecordedTimer implements Timer {
   void cancel() {
     _active = false;
   }
+}
+
+class _LockedSummaryDatabase extends AppDatabase {
+  _LockedSummaryDatabase() : super(NativeDatabase.memory());
+
+  @override
+  Selectable<QueryRow> customSelect(
+    String query, {
+    List<Variable> variables = const [],
+    Set<ResultSetImplementation> readsFrom = const {},
+  }) {
+    if (query.contains('FROM offline_mutations') ||
+        query.contains('FROM sync_conflicts')) {
+      return _ThrowingRows(StateError('database is locked'));
+    }
+    return super.customSelect(
+      query,
+      variables: variables,
+      readsFrom: readsFrom,
+    );
+  }
+}
+
+class _ThrowingRows with Selectable<QueryRow> {
+  const _ThrowingRows(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<QueryRow>> get() async {
+    throw error;
+  }
+
+  @override
+  Stream<List<QueryRow>> watch() => Stream<List<QueryRow>>.error(error);
 }
 
 ApiClient _unusedApiClient(AppDatabase db) {

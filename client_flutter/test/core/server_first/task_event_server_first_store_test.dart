@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flowplanv2/core/offline_queue/offline_mutation.dart';
 import 'package:flowplanv2/core/offline_queue/offline_mutation_store.dart';
 import 'package:flowplanv2/core/server_api/api_client.dart';
 import 'package:flowplanv2/core/server_api/auth_token_store.dart';
@@ -69,32 +68,23 @@ void main() {
     expect(await harness.mutationStore.listPending(), isEmpty);
   });
 
-  test('createTask queues pending mutation when server write fails', () async {
+  test('createTask rethrows server failure without changing local cache',
+      () async {
     final harness = _Harness((_) async => http.Response('server down', 503));
     await harness.setUp();
     addTearDown(harness.dispose);
 
-    final result = await harness.store.createTask(<String, Object?>{
-      'uid': 'task-uid-2',
-      'summary': 'Offline draft',
-      'taskListId': harness.taskListId,
-    });
-
-    final tasks = await harness.db.select(harness.db.taskItems).get();
-    final mutations = await harness.mutationStore.listPending();
-    final state = await harness.stateStore.getState(
-      objectType: SyncObjectType.taskItem.key,
-      localId: tasks.single.id.toString(),
+    await expectLater(
+      harness.store.createTask(<String, Object?>{
+        'uid': 'task-uid-2',
+        'summary': 'Offline draft',
+        'taskListId': harness.taskListId,
+      }),
+      throwsA(isA<Object>()),
     );
 
-    expect(result.isPending, isTrue);
-    expect(tasks.single.summary, 'Offline draft');
-    expect(mutations.single.objectType, SyncObjectType.taskItem.key);
-    expect(mutations.single.localId, tasks.single.id.toString());
-    expect(mutations.single.action, OfflineMutationAction.create);
-    expect(mutations.single.payloadJson, contains('Offline draft'));
-    expect(state?.syncState, SyncState.pendingCreate);
-    expect(state?.uid, 'task-uid-2');
+    expect(await harness.db.select(harness.db.taskItems).get(), isEmpty);
+    expect(await harness.mutationStore.listPending(), isEmpty);
   });
 
   test(
@@ -158,8 +148,7 @@ void main() {
     expect(await harness.mutationStore.listPending(), isEmpty);
   });
 
-  test(
-      'updateLocalEvent queues locally without a remote call when server id is missing',
+  test('updateLocalEvent without server id throws without local cache changes',
       () async {
     final requests = <http.Request>[];
     final harness = _Harness((request) async {
@@ -175,43 +164,38 @@ void main() {
             calendarId: harness.calendarId,
           ),
         );
-
-    final result = await harness.store.updateLocalEvent(
-      localId: localId,
-      patch: <String, Object?>{
-        'summary': 'Queued event edit',
-        'status': 'cancelled',
-      },
-      changedFields: const <String>['summary', 'status'],
-    );
-
-    final updatedEvent = await (harness.db.select(harness.db.calendarEvents)
+    final eventBefore = await (harness.db.select(harness.db.calendarEvents)
           ..where((row) => row.id.equals(localId)))
         .getSingle();
-    final mutations = await harness.mutationStore.listPending();
+
+    await expectLater(
+      harness.store.updateLocalEvent(
+        localId: localId,
+        patch: <String, Object?>{
+          'summary': 'Queued event edit',
+          'status': 'cancelled',
+        },
+        changedFields: const <String>['summary', 'status'],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final eventAfter = await (harness.db.select(harness.db.calendarEvents)
+          ..where((row) => row.id.equals(localId)))
+        .getSingle();
     final state = await harness.stateStore.getState(
       objectType: SyncObjectType.calendarEvent.key,
       localId: localId.toString(),
     );
 
     expect(requests, isEmpty);
-    expect(result.isPending, isTrue);
-    expect(updatedEvent.summary, 'Queued event edit');
-    expect(updatedEvent.status, 'cancelled');
-    expect(mutations.single.objectType, SyncObjectType.calendarEvent.key);
-    expect(mutations.single.localId, localId.toString());
-    expect(mutations.single.serverId, isNull);
-    expect(mutations.single.action, OfflineMutationAction.update);
-    expect(
-      jsonDecode(mutations.single.changedFieldsJson!),
-      <String>['summary', 'status'],
-    );
-    expect(mutations.single.payloadJson, contains('Queued event edit'));
-    expect(state?.syncState, SyncState.pendingUpdate);
-    expect(state?.serverId, isNull);
+    expect(eventAfter.summary, eventBefore.summary);
+    expect(eventAfter.status, eventBefore.status);
+    expect(await harness.mutationStore.listPending(), isEmpty);
+    expect(state, isNull);
   });
 
-  test('updateLocalTask queues pending mutation after server write fails',
+  test('updateLocalTask rethrows server failure without changing local cache',
       () async {
     final requests = <http.Request>[];
     final harness = _Harness((request) async {
@@ -234,20 +218,25 @@ void main() {
       serverVersion: 11,
       uid: 'task-uid-3',
     );
-
-    final result = await harness.store.updateLocalTask(
-      localId: localId,
-      patch: <String, Object?>{
-        'summary': 'Queued local edit',
-        'status': 'done',
-      },
-      changedFields: const <String>['summary', 'status'],
-    );
-
-    final updatedTask = await (harness.db.select(harness.db.taskItems)
+    final taskBefore = await (harness.db.select(harness.db.taskItems)
           ..where((row) => row.id.equals(localId)))
         .getSingle();
-    final mutations = await harness.mutationStore.listPending();
+
+    await expectLater(
+      harness.store.updateLocalTask(
+        localId: localId,
+        patch: <String, Object?>{
+          'summary': 'Queued local edit',
+          'status': 'done',
+        },
+        changedFields: const <String>['summary', 'status'],
+      ),
+      throwsA(isA<Object>()),
+    );
+
+    final taskAfter = await (harness.db.select(harness.db.taskItems)
+          ..where((row) => row.id.equals(localId)))
+        .getSingle();
     final state = await harness.stateStore.getState(
       objectType: SyncObjectType.taskItem.key,
       localId: localId.toString(),
@@ -258,26 +247,81 @@ void main() {
     expect(requests.single.url.path, '/api/client/tasks/server-task-3');
     expect(jsonDecode(requests.single.body),
         containsPair('baseServerVersion', 11));
-    expect(result.isPending, isTrue);
-    expect(updatedTask.summary, 'Queued local edit');
-    expect(updatedTask.status, 'COMPLETED');
-    expect(updatedTask.percentComplete, 100);
-    expect(mutations.single.objectType, SyncObjectType.taskItem.key);
-    expect(mutations.single.localId, localId.toString());
-    expect(mutations.single.serverId, 'server-task-3');
-    expect(mutations.single.action, OfflineMutationAction.update);
-    expect(mutations.single.baseServerVersion, 11);
-    expect(
-      jsonDecode(mutations.single.changedFieldsJson!),
-      <String>['summary', 'status'],
-    );
-    expect(mutations.single.payloadJson, contains('Queued local edit'));
-    expect(state?.syncState, SyncState.pendingUpdate);
+    expect(taskAfter.summary, taskBefore.summary);
+    expect(taskAfter.status, taskBefore.status);
+    expect(taskAfter.percentComplete, taskBefore.percentComplete);
+    expect(await harness.mutationStore.listPending(), isEmpty);
+    expect(state?.syncState, SyncState.synced);
     expect(state?.serverId, 'server-task-3');
     expect(state?.uid, 'task-uid-3');
   });
 
-  test('deleteLocalTask queues pending mutation after server delete fails',
+  test('updateLocalTask writes completedAt from canonical payload', () async {
+    final harness = _Harness((request) async {
+      expect(request.method, 'PATCH');
+      expect(request.url.path, '/api/client/tasks/server-task-complete');
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['completedAt'], '2026-06-10T12:00:00Z');
+      return http.Response(
+        jsonEncode(<String, Object?>{
+          'serverVersion': 12,
+          'item': <String, Object?>{
+            'id': 'server-task-complete',
+            'uid': 'task-uid-complete',
+            'payload': <String, Object?>{
+              'summary': 'Completed canonical task',
+              'completedAt': '2026-06-10T12:00:00Z',
+              'status': 'done',
+            },
+          },
+        }),
+        200,
+      );
+    });
+    await harness.setUp();
+    addTearDown(harness.dispose);
+    final localId = await harness.db.into(harness.db.taskItems).insert(
+          fixtureTask(
+            uid: 'task-uid-complete',
+            summary: 'Before completion',
+            taskListId: harness.taskListId,
+          ),
+        );
+    await harness.stateStore.markSynced(
+      objectType: SyncObjectType.taskItem.key,
+      localId: localId.toString(),
+      serverId: 'server-task-complete',
+      serverVersion: 11,
+      uid: 'task-uid-complete',
+    );
+
+    final result = await harness.store.updateLocalTask(
+      localId: localId,
+      patch: <String, Object?>{
+        'completedAt': '2026-06-10T12:00:00Z',
+      },
+      changedFields: const <String>['completedAt'],
+    );
+
+    final taskAfter = await (harness.db.select(harness.db.taskItems)
+          ..where((row) => row.id.equals(localId)))
+        .getSingle();
+    final state = await harness.stateStore.getState(
+      objectType: SyncObjectType.taskItem.key,
+      localId: localId.toString(),
+    );
+
+    expect(result.isCanonical, isTrue);
+    expect(taskAfter.summary, 'Completed canonical task');
+    expect(
+      taskAfter.completed?.toUtc(),
+      DateTime.parse('2026-06-10T12:00:00Z'),
+    );
+    expect(taskAfter.status, 'COMPLETED');
+    expect(state?.serverVersion, 12);
+  });
+
+  test('deleteLocalTask rethrows server failure without deleting local cache',
       () async {
     final requests = <http.Request>[];
     final harness = _Harness((request) async {
@@ -301,10 +345,12 @@ void main() {
       uid: 'task-uid-4',
     );
 
-    final result = await harness.store.deleteLocalTask(localId: localId);
+    await expectLater(
+      harness.store.deleteLocalTask(localId: localId),
+      throwsA(isA<Object>()),
+    );
 
     final remainingTasks = await harness.db.select(harness.db.taskItems).get();
-    final mutations = await harness.mutationStore.listPending();
     final state = await harness.stateStore.getState(
       objectType: SyncObjectType.taskItem.key,
       localId: localId.toString(),
@@ -313,15 +359,9 @@ void main() {
     expect(requests, hasLength(1));
     expect(requests.single.method, 'DELETE');
     expect(requests.single.url.path, '/api/client/tasks/server-task-4');
-    expect(result.isPending, isTrue);
-    expect(remainingTasks.where((task) => task.id == localId), isEmpty);
-    expect(mutations.single.objectType, SyncObjectType.taskItem.key);
-    expect(mutations.single.localId, localId.toString());
-    expect(mutations.single.serverId, 'server-task-4');
-    expect(mutations.single.action, OfflineMutationAction.delete);
-    expect(mutations.single.baseServerVersion, 13);
-    expect(mutations.single.payloadJson, contains('task-uid-4'));
-    expect(state?.syncState, SyncState.pendingDelete);
+    expect(remainingTasks.where((task) => task.id == localId), hasLength(1));
+    expect(await harness.mutationStore.listPending(), isEmpty);
+    expect(state?.syncState, SyncState.synced);
     expect(state?.serverId, 'server-task-4');
     expect(state?.uid, 'task-uid-4');
   });

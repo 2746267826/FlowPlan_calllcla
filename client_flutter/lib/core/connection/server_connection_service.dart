@@ -8,7 +8,6 @@ import '../bootstrap/client_bootstrap_service.dart';
 import '../database/app_database.dart';
 import '../server_api/client_api.dart';
 import '../server_api/server_config_store.dart';
-import '../sync/sync_write_recorder.dart';
 import 'server_connection_state.dart';
 
 class ServerConnectionService extends ChangeNotifier {
@@ -61,9 +60,6 @@ class ServerConnectionService extends ChangeNotifier {
       return;
     }
     _started = true;
-    SyncWriteRecorder.onMutationRecorded = () async {
-      requestSync(source: 'write', reason: 'local_write');
-    };
     unawaited(_initialize());
     _fullSyncTimer?.cancel();
     _fullSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
@@ -76,9 +72,6 @@ class ServerConnectionService extends ChangeNotifier {
     _heartbeatTimer?.cancel();
     _fullSyncTimer?.cancel();
     _syncDebounceTimer?.cancel();
-    if (SyncWriteRecorder.onMutationRecorded != null) {
-      SyncWriteRecorder.onMutationRecorded = null;
-    }
     if (identical(_bootstrapService.onProgress, _bootstrapProgressHandler)) {
       _bootstrapService.onProgress = null;
     }
@@ -104,7 +97,8 @@ class ServerConnectionService extends ChangeNotifier {
     _syncDebounceTimer?.cancel();
     final delay = immediate ? Duration.zero : const Duration(seconds: 2);
     _syncDebounceTimer = Timer(delay, () {
-      unawaited(syncNow(source: _queuedSource ?? source, reason: _queuedReason));
+      unawaited(
+          syncNow(source: _queuedSource ?? source, reason: _queuedReason));
     });
   }
 
@@ -231,7 +225,8 @@ class ServerConnectionService extends ChangeNotifier {
         clearError: true,
       ));
       _scheduleHeartbeat(Duration(seconds: nextSeconds));
-      if (response['hasServerChanges'] == true && eventSource != 'sync_success') {
+      if (response['hasServerChanges'] == true &&
+          eventSource != 'sync_success') {
         requestSync(
           source: 'heartbeat_remote_change',
           reason: 'server_changes_available',
@@ -284,30 +279,36 @@ class ServerConnectionService extends ChangeNotifier {
   }
 
   Future<void> _refreshLocalSummary() async {
-    final row = await _database.customSelect(
-      '''
-      SELECT
-        COALESCE(SUM(CASE WHEN status IN ('pending', 'sending') THEN 1 ELSE 0 END), 0) AS pending_count,
-        COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
-        COALESCE(SUM(CASE WHEN status = 'conflict' THEN 1 ELSE 0 END), 0) AS conflict_count
-      FROM offline_mutations
-      ''',
-    ).getSingle();
-    final localConflicts = await _database.customSelect(
-      '''
-      SELECT COUNT(*) AS count
-      FROM sync_conflicts
-      WHERE status IN ('open', 'pending')
-      ''',
-    ).getSingleOrNull();
-    final mutationConflict = _readInt(row.data['conflict_count']) ?? 0;
-    final conflictCount =
-        mutationConflict + (_readInt(localConflicts?.data['count']) ?? 0);
-    _setState(_state.copyWith(
-      pendingCount: _readInt(row.data['pending_count']) ?? 0,
-      failedCount: _readInt(row.data['failed_count']) ?? 0,
-      conflictCount: conflictCount,
-    ));
+    try {
+      final row = await _database.customSelect(
+        '''
+        SELECT
+          COALESCE(SUM(CASE WHEN status IN ('pending', 'sending') THEN 1 ELSE 0 END), 0) AS pending_count,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+          COALESCE(SUM(CASE WHEN status = 'conflict' THEN 1 ELSE 0 END), 0) AS conflict_count
+        FROM offline_mutations
+        ''',
+      ).getSingle();
+      final localConflicts = await _database.customSelect(
+        '''
+        SELECT COUNT(*) AS count
+        FROM sync_conflicts
+        WHERE status IN ('open', 'pending')
+        ''',
+      ).getSingleOrNull();
+      final mutationConflict = _readInt(row.data['conflict_count']) ?? 0;
+      final conflictCount =
+          mutationConflict + (_readInt(localConflicts?.data['count']) ?? 0);
+      _setState(_state.copyWith(
+        pendingCount: _readInt(row.data['pending_count']) ?? 0,
+        failedCount: _readInt(row.data['failed_count']) ?? 0,
+        conflictCount: conflictCount,
+      ));
+    } catch (error) {
+      debugPrint(
+        'ServerConnectionService local summary refresh failed: $error',
+      );
+    }
   }
 
   Duration get _backoff {
@@ -338,8 +339,9 @@ class ServerConnectionService extends ChangeNotifier {
       syncReason: progress.source,
       progressCurrent: progress.current,
       progressTotal: progress.total,
-      lastSyncSummary:
-          progress.summary.isEmpty ? null : Map<String, Object?>.from(progress.summary),
+      lastSyncSummary: progress.summary.isEmpty
+          ? null
+          : Map<String, Object?>.from(progress.summary),
     ));
   }
 

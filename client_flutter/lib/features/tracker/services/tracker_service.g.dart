@@ -7,7 +7,7 @@ part of 'tracker_service.dart';
 // **************************************************************************
 
 String _$trackerServiceNotifierHash() =>
-    r'15f3579de4addf1731e3f51b6fe1543ca2e53bec';
+    r'f2995dbcaad7cc8876fb8eea9c85533aacd8b808';
 
 /// See also [TrackerServiceNotifier].
 @ProviderFor(TrackerServiceNotifier)

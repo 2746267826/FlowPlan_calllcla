@@ -13,6 +13,9 @@ This matrix records representative flows that cross the server, web admin, and F
 | Report generation audit evidence | CE-REPORT-001 | Web mocked report workflow and audit visibility | Real AI-backed report generation and audit row verification |
 | Admin operations evidence | WEB-E2E-001, WEB-DASHBOARD-001, WEB-TASKS-001 | Web Playwright mocked dashboard, alerts, logs, jobs, settings, env, operations | Operator runs one safe operation, job trigger, and settings save |
 | Outlook external services | CE-EXT-001 | Web mocked Outlook auth, sync, reset, and diagnostics flows | Real Microsoft OAuth and read-only sync |
+| Online-primary offline cache | CLIENT-ONLINE-PRIMARY-001, CLIENT-ONLINE-PRIMARY-002, CLIENT-ONLINE-PRIMARY-003, CE-ONLINE-PRIMARY-001 | Flutter policy, server-first store, bootstrap, sync engine, and legacy queue tests with deterministic fake connection states | Real Windows disconnected cache read-only workflow, reconnect pull refresh, and no ordinary offline mutation |
+| Tracking minute batch cleanup | CLIENT-TRACK-ONLINE-001, SERVER-ONLINE-PRIMARY-001 | Flutter tracking upload service tests and server tracking completeBatch unit tests | Real 5-minute tracking run with one failed upload interval, reconnect, confirmed local deletion, and rejected-row quarantine evidence |
+| Server-hosted file upload boundary | CLIENT-FILE-ONLINE-001, SERVER-ONLINE-PRIMARY-001, CE-FILE-001 | Flutter file transfer service/widget tests and server file completion unit tests | Real offline-before-picker block, interrupted post-session upload, resume, download, and hash verification |
 
 ## Coverage Notes
 

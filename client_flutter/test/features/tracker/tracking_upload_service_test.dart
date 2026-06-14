@@ -163,6 +163,15 @@ void main() {
     return row.read<int>('id');
   }
 
+  Future<int> countRows(AppDatabase db, String tableName) async {
+    final row = await db
+        .customSelect(
+          'SELECT COUNT(*) AS count FROM $tableName',
+        )
+        .getSingle();
+    return row.read<int>('count');
+  }
+
   TrackingUploadService serviceFor(
     AppDatabase db,
     FakeTrackingIngestApi api,
@@ -174,7 +183,8 @@ void main() {
     );
   }
 
-  test('uploads each tracking kind in chunks and advances cursors', () async {
+  test('uploads each tracking kind in chunks and deletes accepted source rows',
+      () async {
     final db = createTestDatabase();
     addTearDown(db.close);
     final api = FakeTrackingIngestApi();
@@ -237,11 +247,16 @@ void main() {
     expect(diagnostics['pendingActivityRecords'], 0);
     expect(diagnostics['pendingInputEvents'], 0);
     expect(diagnostics['pendingRawLogs'], 0);
+    expect(diagnostics['quarantinedTrackingUploads'], 0);
     expect(diagnostics['lastCompletedAt'], isNotNull);
     expect(diagnostics['lastError'], isNull);
+    expect(await countRows(db, 'activity_records'), 0);
+    expect(await countRows(db, 'tracked_input_events'), 0);
+    expect(await countRows(db, 'raw_activity_logs'), 0);
   });
 
-  test('preserves cursor and records last error when upload fails', () async {
+  test('keeps source rows retryable and records last error when upload fails',
+      () async {
     final db = createTestDatabase();
     addTearDown(db.close);
     final api = FakeTrackingIngestApi(
@@ -265,6 +280,7 @@ void main() {
     final diagnostics = await service.buildUploadDiagnostics();
     expect(diagnostics['lastActivityRecordId'], 0);
     expect(diagnostics['pendingActivityRecords'], 1);
+    expect(await countRows(db, 'activity_records'), 1);
     expect(
       diagnostics['lastError'].toString(),
       contains('server rejected batch'),
@@ -301,11 +317,16 @@ void main() {
     final diagnostics = await service.buildUploadDiagnostics();
     expect(diagnostics['lastCompletedAt'], isNull);
     expect(diagnostics['lastError'], isNull);
-    final logs = await db.customSelect('SELECT * FROM data_operation_logs').get();
+    expect(diagnostics['pendingActivityRecords'], 0);
+    expect(diagnostics['pendingInputEvents'], 0);
+    expect(diagnostics['pendingRawLogs'], 0);
+    expect(diagnostics['quarantinedTrackingUploads'], 0);
+    final logs =
+        await db.customSelect('SELECT * FROM data_operation_logs').get();
     expect(logs, isEmpty);
   });
 
-  test('preserves cursor and records failure when a chunk upload fails',
+  test('keeps unconfirmed source rows retryable when a chunk upload fails',
       () async {
     final db = createTestDatabase();
     addTearDown(db.close);
@@ -332,6 +353,8 @@ void main() {
     expect(diagnostics['lastInputEventId'], 0);
     expect(diagnostics['pendingActivityRecords'], 0);
     expect(diagnostics['pendingInputEvents'], 1);
+    expect(await countRows(db, 'activity_records'), 0);
+    expect(await countRows(db, 'tracked_input_events'), 1);
     expect(
       diagnostics['lastError'].toString(),
       contains('chunk upload failed'),
@@ -383,6 +406,137 @@ void main() {
     expect(results.first.uploadedRecords, 2);
     expect(api.createdBatches, hasLength(1));
     expect(api.chunkCalls.map((call) => call.records.length), <int>[1, 1]);
+  });
+
+  test('excludes quarantined rows from uploads and diagnostics pending counts',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final api = FakeTrackingIngestApi();
+    final service = serviceFor(db, api);
+    final base = DateTime(2026, 6, 15, 13);
+
+    final quarantinedId = await insertActivityRecord(db, start: base);
+    final retryableId = await insertActivityRecord(
+      db,
+      start: base.add(const Duration(minutes: 10)),
+    );
+    await db.customStatement(
+      '''
+      INSERT INTO tracking_upload_quarantine (
+        data_kind,
+        local_id,
+        reason,
+        batch_id,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ''',
+      <Object?>[
+        'activity_record',
+        quarantinedId,
+        'known bad test row',
+        'previous-batch',
+        DateTime.now().toIso8601String(),
+        DateTime.now().toIso8601String(),
+      ],
+    );
+
+    final result = await service.uploadPending(limitPerKind: 10, chunkSize: 10);
+
+    expect(result.uploadedBatches, 1);
+    expect(result.uploadedRecords, 1);
+    expect(api.chunkCalls.single.records.single['localId'], '$retryableId');
+    expect(await countRows(db, 'activity_records'), 1);
+    final remaining = await db
+        .customSelect(
+          'SELECT id FROM activity_records ORDER BY id ASC',
+        )
+        .get();
+    expect(remaining.single.read<int>('id'), quarantinedId);
+    final diagnostics = await service.buildUploadDiagnostics();
+    expect(diagnostics['pendingActivityRecords'], 0);
+    expect(diagnostics['quarantinedTrackingUploads'], 1);
+  });
+
+  test(
+      'partial rejection deletes accepted rows and quarantines known local ids',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final base = DateTime(2026, 6, 15, 14);
+
+    final ids = <int>[
+      await insertActivityRecord(db, start: base),
+      await insertActivityRecord(
+        db,
+        start: base.add(const Duration(minutes: 10)),
+      ),
+      await insertActivityRecord(
+        db,
+        start: base.add(const Duration(minutes: 20)),
+      ),
+    ];
+    final api = FakeTrackingIngestApi(
+      completeResponses: <String, Map<String, dynamic>>{
+        'activity_record': <String, dynamic>{
+          'ok': true,
+          'accepted': 1,
+          'rejected': 2,
+          'rejectedSamples': <Map<String, Object?>>[
+            <String, Object?>{
+              'localId': '${ids[1]}',
+              'reason': 'invalid time range',
+            },
+            <String, Object?>{
+              'localId': '${ids[2]}',
+            },
+          ],
+        },
+      },
+    );
+    final service = serviceFor(db, api);
+
+    final result = await service.uploadPending(limitPerKind: 10, chunkSize: 10);
+
+    expect(result.uploadedBatches, 1);
+    expect(result.uploadedRecords, 3);
+    expect(
+      result.details,
+      contains(
+        isA<Map<String, Object?>>()
+            .having((detail) => detail['summary'], 'summary', 'rejectedRecords')
+            .having((detail) => detail['count'], 'count', 2),
+      ),
+    );
+    final remaining = await db
+        .customSelect(
+          'SELECT id FROM activity_records ORDER BY id ASC',
+        )
+        .get();
+    expect(remaining.map((row) => row.read<int>('id')), <int>[ids[1], ids[2]]);
+    final quarantine = await db.customSelect(
+      '''
+      SELECT data_kind, local_id, reason, batch_id
+      FROM tracking_upload_quarantine
+      ORDER BY id ASC
+      ''',
+    ).get();
+    expect(quarantine, hasLength(2));
+    expect(quarantine.first.read<String>('data_kind'), 'activity_record');
+    expect(quarantine.first.read<String>('local_id'), '${ids[1]}');
+    expect(
+        quarantine.first.read<String>('reason'), contains('invalid time range'));
+    expect(quarantine.last.read<String>('data_kind'), 'activity_record');
+    expect(quarantine.last.read<String>('local_id'), '${ids[2]}');
+    expect(quarantine.last.read<String>('reason'), 'server_rejected_record');
+    expect(
+        quarantine.first.read<String>('batch_id'), 'batch-activity_record-1');
+    expect(quarantine.last.read<String>('batch_id'), 'batch-activity_record-1');
+    final diagnostics = await service.buildUploadDiagnostics();
+    expect(diagnostics['pendingActivityRecords'], 0);
+    expect(diagnostics['quarantinedTrackingUploads'], 2);
+    expect(diagnostics['lastError'], contains('partial success'));
   });
 }
 

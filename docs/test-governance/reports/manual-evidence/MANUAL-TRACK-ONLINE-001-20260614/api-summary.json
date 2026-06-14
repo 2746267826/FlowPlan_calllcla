@@ -1,0 +1,25 @@
+{
+  "date": "2026-06-14",
+  "server": "http://127.0.0.1:3202/api",
+  "marker": "manual-track-online-supplement-20260614-062130",
+  "userId": "00000000-0000-4000-8000-000000000001",
+  "deviceId": "22222222-2222-4222-8222-222222222222",
+  "batchId": "ab53c16a-07ad-4c3f-89be-c9aeefeb5ea4",
+  "createStatus": "open",
+  "chunkStatus": "received",
+  "completeOk": true,
+  "rawEventCount": 2,
+  "accepted": 1,
+  "rejected": 1,
+  "deduplicated": 0,
+  "rejectedSamples": [
+    {
+      "uid": "manual-track-online-supplement-20260614-062130-invalid-1",
+      "reason": "intentional invalid objectType for rejection evidence",
+      "localId": "9002",
+      "objectType": "not_a_tracking_type"
+    }
+  ],
+  "summaryRecentErrorStatus": "completed_with_rejections",
+  "summaryRecentErrorBatchUid": "manual-track-online-supplement-20260614-062130"
+}

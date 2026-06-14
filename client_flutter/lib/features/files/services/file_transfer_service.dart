@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/connection/server_connection_state.dart';
+import '../../../core/online/online_primary_policy.dart';
 import '../../../core/server_api/file_cloud_api.dart';
 import '../../audit/data_operation_log_repository.dart';
 
@@ -192,13 +194,21 @@ class FileTransferJob {
 class FileTransferService extends ChangeNotifier {
   FileTransferService({
     required Future<FileCloudApi> Function() apiLoader,
+    Future<OnlinePrimaryPolicy> Function()? policyLoader,
     required DataOperationLogRepository operationLogs,
   })  : _apiLoader = apiLoader,
+        _policyLoader = policyLoader ??
+            (() async => const OnlinePrimaryPolicy(
+                  serverReachable: true,
+                  authenticated: true,
+                  level: ServerConnectionLevel.online,
+                )),
         _operationLogs = operationLogs;
 
   static const _storageKey = 'flowplanv2.file_transfer.jobs.v1';
 
   final Future<FileCloudApi> Function() _apiLoader;
+  final Future<OnlinePrimaryPolicy> Function() _policyLoader;
   final DataOperationLogRepository _operationLogs;
   final Uuid _uuid = const Uuid();
 
@@ -269,6 +279,9 @@ class FileTransferService extends ChangeNotifier {
 
   Future<void> uploadFile(String path) async {
     await load();
+    final policy = await _policyLoader();
+    policy.requireOnlineFileUploadStart('upload file');
+
     final file = File(path);
     if (!file.existsSync()) {
       throw StateError('文件不存在：$path');
@@ -278,6 +291,25 @@ class FileTransferService extends ChangeNotifier {
     final chunkSize = _chunkSizeFor(totalBytes);
     final expectedChunks =
         totalBytes <= 0 ? 0 : (totalBytes / chunkSize).ceil();
+    final checksum = await _sha256File(path);
+    final api = await _apiLoader();
+    final sessionResult = await api.createUploadSession(
+      fileName: _basename(path),
+      totalBytes: totalBytes,
+      chunkSize: chunkSize,
+      checksum: checksum,
+      localPath: path,
+      metadata: <String, Object?>{
+        'small_file_threshold_bytes':
+            FileTransferConstants.smallFileThresholdBytes,
+      },
+    );
+    final session = _asMap(sessionResult['uploadSession']);
+    final sessionId = _readString(session['sessionId']);
+    if (sessionId == null || sessionId.isEmpty) {
+      throw StateError('Server did not return an upload session.');
+    }
+
     var job = FileTransferJob(
       id: _uuid.v4(),
       direction: FileTransferDirection.upload,
@@ -287,9 +319,11 @@ class FileTransferService extends ChangeNotifier {
       chunkSize: chunkSize,
       expectedChunks: expectedChunks,
       transferredBytes: 0,
-      status: FileTransferStatus.hashing,
+      status: FileTransferStatus.uploading,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      sessionId: sessionId,
+      checksum: checksum,
     );
     _jobs.insert(0, job);
     await _save();
@@ -297,29 +331,6 @@ class FileTransferService extends ChangeNotifier {
     await _record('file_transfer.upload.start', job, '开始上传文件');
 
     try {
-      final checksum = await _sha256File(path);
-      job = _replace(job.copyWith(checksum: checksum));
-      final api = await _apiLoader();
-      final sessionResult = await api.createUploadSession(
-        fileName: job.fileName,
-        totalBytes: job.totalBytes,
-        chunkSize: job.chunkSize,
-        checksum: checksum,
-        localPath: job.localPath,
-        metadata: <String, Object?>{
-          'flowplanv2_transfer_job_id': job.id,
-          'small_file_threshold_bytes':
-              FileTransferConstants.smallFileThresholdBytes,
-        },
-      );
-      final session = _asMap(sessionResult['uploadSession']);
-      job = _replace(
-        job.copyWith(
-          sessionId: _readString(session['sessionId']),
-          status: FileTransferStatus.uploading,
-          errorMessage: null,
-        ),
-      );
       await _uploadMissingChunks(job);
     } catch (error) {
       _replace(
@@ -360,6 +371,13 @@ class FileTransferService extends ChangeNotifier {
       await _record('file_transfer.upload.failed', resumed, '上传失败');
       rethrow;
     }
+  }
+
+  @visibleForTesting
+  Future<void> debugUploadMissingChunksUncheckedForCoverage(
+    FileTransferJob job,
+  ) {
+    return _uploadMissingChunks(job);
   }
 
   Future<FileTransferJob> downloadUploadedJob(

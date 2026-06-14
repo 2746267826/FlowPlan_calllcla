@@ -36,4 +36,4 @@ ENV HTTPS_PROXY=""
 
 EXPOSE 3200
 
-CMD ["sh", "-c", "pnpm run db:schema && node dist/main.js"]
+CMD ["sh", "-c", "pnpm run db:schema && node dist/src/main.js"]

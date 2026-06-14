@@ -22,6 +22,8 @@ import 'package:mocktail/mocktail.dart';
 import '../test_support/calendar_shell_quick_add_harness.dart';
 import '../test_support/fixtures.dart';
 import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
 
@@ -98,6 +100,12 @@ void main() {
       (tester) async {
     final db = createTestDatabase();
     addTearDown(db.close);
+    final futureDate = DateTime.now().add(const Duration(days: 7));
+    final selectedDate = DateTime(
+      futureDate.year,
+      futureDate.month,
+      futureDate.day,
+    );
     final scheduler = _MockSchedulerEngine();
     final result = _scheduleResult(scheduledTaskCount: 1);
     when(
@@ -113,7 +121,7 @@ void main() {
     await _pumpShell(
       tester,
       db: db,
-      selectedDate: DateTime(2026, 6, 14),
+      selectedDate: selectedDate,
       overrides: [
         schedulerEngineProvider.overrideWithValue(scheduler),
       ],
@@ -137,13 +145,13 @@ void main() {
 
     final captured = verify(
       () => scheduler.autoScheduleDetailed(
-        DateTime(2026, 6, 14),
+        selectedDate,
         from: captureAny(named: 'from'),
         until: captureAny(named: 'until'),
         trigger: 'manual_range_reschedule',
       ),
     ).captured;
-    expect(captured.first, DateTime(2026, 6, 14, 8));
+    expect(captured.first, selectedDate.add(const Duration(hours: 8)));
     verifyNever(() => scheduler.applyRunResult(any()));
 
     final logs = await _operationLogs(db);
@@ -555,6 +563,9 @@ Future<void> _pumpTimeline(
       ),
       taskEventServerFirstStoreProvider.overrideWith(
         (ref) async => FakeTaskEventServerFirstStore(),
+      ),
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
       ),
     ],
     child: MaterialApp(

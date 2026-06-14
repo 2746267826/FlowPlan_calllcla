@@ -591,6 +591,11 @@ describe('WebService', () => {
       service.updateTask('task-1', { title: 'Stale', baseServerVersion: '8' }, context),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(transactionClient.query).toHaveBeenCalledTimes(1);
+    expect(
+      transactionClient.query.mock.calls.some(([sql]) =>
+        String(sql).includes('server_version = server_version + 1'),
+      ),
+    ).toBe(false);
   });
 
   it('completes tasks using explicit completion time and merges payload overrides', async () => {

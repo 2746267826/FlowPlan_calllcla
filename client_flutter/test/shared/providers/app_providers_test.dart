@@ -4,12 +4,21 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flowplanv2/core/bootstrap/client_bootstrap_service.dart';
+import 'package:flowplanv2/core/connection/server_connection_service.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
-import 'package:flowplanv2/core/offline_queue/offline_mutation.dart';
+import 'package:flowplanv2/core/offline_queue/legacy_offline_mutation_cleanup_service.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/server_api/api_client.dart';
 import 'package:flowplanv2/core/server_api/auth_token_store.dart';
+import 'package:flowplanv2/core/server_api/file_cloud_api.dart';
+import 'package:flowplanv2/core/server_api/client_api.dart';
+import 'package:flowplanv2/core/server_api/remote_settings_repository.dart';
+import 'package:flowplanv2/core/server_api/server_config_store.dart';
 import 'package:flowplanv2/core/sync/sync_object_registry.dart';
 import 'package:flowplanv2/features/actual/data/actual_activity_log_repository.dart';
+import 'package:flowplanv2/features/audit/data_operation_log_repository.dart';
 import 'package:flowplanv2/features/files/services/file_transfer_service.dart';
 import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flowplanv2/shared/providers/database_provider.dart';
@@ -106,6 +115,57 @@ void main() {
     });
   });
 
+  group('connection providers', () {
+    test('serverConnectionStateProvider emits service listener updates',
+        () async {
+      final db = createTestDatabase();
+      addTearDown(db.close);
+      final clientApi = ClientApi(
+        ApiClient(
+          baseUri: Uri.parse('http://flowplan.test/api'),
+          tokenStore: AuthTokenStore(db),
+          httpClient: MockClient((_) async => http.Response('{}', 200)),
+        ),
+      );
+      final service = _NotifyingServerConnectionService(db, clientApi);
+      addTearDown(service.dispose);
+      final container = ProviderContainer(
+        overrides: <Override>[
+          databaseProvider.overrideWithValue(db),
+          serverConnectionServiceProvider.overrideWith((ref) async => service),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final states = <ServerConnectionState>[];
+      final subscription = container.listen<AsyncValue<ServerConnectionState>>(
+        serverConnectionStateProvider,
+        (previous, next) {
+          next.whenData(states.add);
+        },
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(serverConnectionStateProvider.future);
+      await Future<void>.delayed(Duration.zero);
+
+      service.emit(const ServerConnectionState(
+        level: ServerConnectionLevel.online,
+        syncPhase: 'completed',
+      ));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        states.map((state) => state.level),
+        containsAllInOrder(<ServerConnectionLevel>[
+          ServerConnectionLevel.unknown,
+          ServerConnectionLevel.online,
+        ]),
+      );
+      expect(states.last.syncPhase, 'completed');
+    });
+  });
+
   group('repository providers', () {
     test('wire actual logs through audit and sync dependencies', () async {
       final db = createTestDatabase();
@@ -141,19 +201,7 @@ void main() {
       expect(auditRows.single.entityType, 'actual_activity_log');
       expect(
         mutations.map((mutation) => mutation.objectType),
-        containsAll(<String>[
-          SyncObjectType.auditLog.key,
-          SyncObjectType.actualActivityLog.key,
-        ]),
-      );
-      expect(
-        mutations
-            .singleWhere(
-              (mutation) =>
-                  mutation.objectType == SyncObjectType.actualActivityLog.key,
-            )
-            .action,
-        OfflineMutationAction.create,
+        <String>[SyncObjectType.auditLog.key],
       );
     });
 
@@ -260,6 +308,53 @@ void main() {
         throwsA(isA<FlutterError>()),
       );
     });
+
+    test('uses the current online-primary policy when uploads start', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final db = createTestDatabase();
+      addTearDown(db.close);
+      final container = ProviderContainer(
+        overrides: <Override>[
+          databaseProvider.overrideWithValue(db),
+          fileCloudApiProvider
+              .overrideWith((ref) async => _UnusedFileCloudApi()),
+          onlinePrimaryPolicyProvider.overrideWith(
+            (ref) => const OnlinePrimaryPolicy(
+              serverReachable: false,
+              authenticated: true,
+              level: ServerConnectionLevel.offline,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final service = container.read(fileTransferServiceProvider);
+      await expectLater(
+        service.uploadFile(r'C:\tmp\offline-provider.txt'),
+        throwsA(isA<OnlinePrimaryWriteRejected>()),
+      );
+    });
+  });
+
+  group('cleanup providers', () {
+    test('legacyOfflineMutationCleanupServiceProvider uses the app database',
+        () async {
+      final db = createTestDatabase();
+      addTearDown(db.close);
+      final container = ProviderContainer(
+        overrides: <Override>[
+          databaseProvider.overrideWithValue(db),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final service =
+          container.read(legacyOfflineMutationCleanupServiceProvider);
+
+      expect(service, isA<LegacyOfflineMutationCleanupService>());
+      expect((await service.summary()).totalCount, 0);
+    });
   });
 
   group('serverSyncEngineProvider', () {
@@ -335,4 +430,48 @@ class FileTransferServiceStorage {
   const FileTransferServiceStorage._();
 
   static const key = 'flowplanv2.file_transfer.jobs.v1';
+}
+
+class _UnusedFileCloudApi implements FileCloudApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NotifyingServerConnectionService extends ServerConnectionService {
+  _NotifyingServerConnectionService(AppDatabase db, ClientApi clientApi)
+      : super(
+          database: db,
+          clientApi: clientApi,
+          bootstrapService: _FakeBootstrapService(db, clientApi),
+          serverConfigStore: ServerConfigStore(db),
+          operationLogs: DataOperationLogRepository(db),
+          deviceId: 'provider-test-device',
+          platform: 'test',
+        );
+
+  ServerConnectionState _fakeState = const ServerConnectionState();
+
+  @override
+  ServerConnectionState get state => _fakeState;
+
+  void emit(ServerConnectionState next) {
+    _fakeState = next;
+    notifyListeners();
+  }
+}
+
+class _FakeBootstrapService extends ClientBootstrapService {
+  _FakeBootstrapService(AppDatabase db, ClientApi clientApi)
+      : super(
+          database: db,
+          clientApi: clientApi,
+          remoteSettingsRepository: RemoteSettingsRepository(
+            database: db,
+            clientApi: clientApi,
+          ),
+          syncEngineLoader: () {
+            throw UnsupportedError('sync engine is not used by this fake');
+          },
+          operationLogs: DataOperationLogRepository(db),
+        );
 }

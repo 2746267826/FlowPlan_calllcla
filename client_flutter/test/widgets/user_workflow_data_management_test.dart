@@ -1,7 +1,9 @@
 import 'dart:async';
 
-import 'package:drift/drift.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
+import 'package:drift/drift.dart' hide isNotNull;
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/router/app_router.dart';
 import 'package:flowplanv2/core/server_first/server_first_repository.dart';
 import 'package:flowplanv2/features/data_management/presentation/data_management_page.dart';
@@ -14,6 +16,18 @@ import 'package:go_router/go_router.dart';
 import '../test_support/fixtures.dart';
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
+
+const _writablePolicy = OnlinePrimaryPolicy(
+  serverReachable: true,
+  authenticated: true,
+  level: ServerConnectionLevel.online,
+);
+
+const _readOnlyPolicy = OnlinePrimaryPolicy(
+  serverReachable: false,
+  authenticated: true,
+  level: ServerConnectionLevel.localCacheOnly,
+);
 
 void main() {
   testWidgets('data management filters and confirms multi-select delete',
@@ -228,6 +242,175 @@ void main() {
   });
 
   testWidgets(
+      'data management read-only cache disables complete and delete batches',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(
+      db,
+      name: 'Cached inbox',
+    );
+    await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-read-only-batch',
+            dtstamp: fixtureNow(),
+            summary: 'Cached batch task',
+            taskListId: Value(taskListId),
+            status: const Value('NEEDS-ACTION'),
+          ),
+        );
+
+    await pumpAppAt(
+      tester,
+      db: db,
+      initialLocation: AppRoutes.dataManagement,
+      size: const Size(800, 1000),
+      overrides: [
+        ...await _dataManagementSnapshotOverrides(
+          db,
+          readOnlyCache: true,
+        ),
+        taskEventServerFirstStoreProvider.overrideWith(
+          (ref) async => fakeStore,
+        ),
+      ],
+    );
+    await pumpUntilFound(tester, find.text('Cached batch task'));
+
+    await tester.tap(find.byIcon(Icons.select_all));
+    await tester.pump();
+
+    expect(find.text('Offline cache is read-only'), findsOneWidget);
+    expect(
+      _filledButtonByIcon(tester, Icons.check_circle_outline).onPressed,
+      null,
+    );
+    expect(
+      _filledButtonByIcon(tester, Icons.delete_outline).onPressed,
+      null,
+    );
+
+    await tester.tap(find.byIcon(Icons.check_circle_outline),
+        warnIfMissed: false);
+    await tester.tap(find.byIcon(Icons.delete_outline), warnIfMissed: false);
+    await tester.pump();
+
+    expect(fakeStore.completedTaskIds, isEmpty);
+    expect(fakeStore.deletedTaskIds, isEmpty);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('stale data management delete re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(db, name: 'Stale inbox');
+    await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-stale-read-only-delete',
+            dtstamp: fixtureNow(),
+            summary: 'Stale batch delete',
+            taskListId: Value(taskListId),
+            status: const Value('NEEDS-ACTION'),
+          ),
+        );
+    var policy = _writablePolicy;
+
+    await pumpAppAt(
+      tester,
+      db: db,
+      initialLocation: AppRoutes.dataManagement,
+      size: const Size(800, 1000),
+      overrides: [
+        ...await _dataManagementSnapshotOverrides(
+          db,
+          policyProvider: () => policy,
+        ),
+        taskEventServerFirstStoreProvider.overrideWith(
+          (ref) async => fakeStore,
+        ),
+      ],
+    );
+    await pumpUntilFound(tester, find.text('Stale batch delete'));
+    await tester.tap(find.byIcon(Icons.select_all));
+    await tester.pump();
+    expect(
+      _filledButtonByIcon(tester, Icons.delete_outline).onPressed,
+      isNotNull,
+    );
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(DataManagementPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pump();
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(fakeStore.deletedTaskIds, isEmpty);
+  });
+
+  testWidgets('stale data management complete re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(db, name: 'Stale inbox');
+    await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-stale-read-only-complete',
+            dtstamp: fixtureNow(),
+            summary: 'Stale batch complete',
+            taskListId: Value(taskListId),
+            status: const Value('NEEDS-ACTION'),
+          ),
+        );
+    var policy = _writablePolicy;
+
+    await pumpAppAt(
+      tester,
+      db: db,
+      initialLocation: AppRoutes.dataManagement,
+      size: const Size(800, 1000),
+      overrides: [
+        ...await _dataManagementSnapshotOverrides(
+          db,
+          policyProvider: () => policy,
+        ),
+        taskEventServerFirstStoreProvider.overrideWith(
+          (ref) async => fakeStore,
+        ),
+      ],
+    );
+    await pumpUntilFound(tester, find.text('Stale batch complete'));
+    await tester.tap(find.byIcon(Icons.select_all));
+    await tester.pump();
+    expect(
+      _filledButtonByIcon(tester, Icons.check_circle_outline).onPressed,
+      isNotNull,
+    );
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(DataManagementPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byIcon(Icons.check_circle_outline));
+    await tester.pump();
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(fakeStore.completedTaskIds, isEmpty);
+  });
+
+  testWidgets(
       'data management delete failure keeps selection and reports error',
       (tester) async {
     final db = createTestDatabase();
@@ -289,6 +472,7 @@ void main() {
     await _pumpDataManagementRouteHarness(
       tester,
       overrides: [
+        onlinePrimaryPolicyProvider.overrideWith((ref) => _writablePolicy),
         managementTasksProvider.overrideWith((ref) => loadingTasks.stream),
         managementEventsProvider.overrideWith(
           (ref) => Stream.value(const <CalendarEvent>[]),
@@ -307,6 +491,7 @@ void main() {
     await _pumpDataManagementRouteHarness(
       tester,
       overrides: [
+        onlinePrimaryPolicyProvider.overrideWith((ref) => _writablePolicy),
         managementTasksProvider.overrideWith(
           (ref) => Stream<List<TaskItem>>.error(StateError('tasks offline')),
         ),
@@ -336,6 +521,7 @@ void main() {
     await _pumpDataManagementRouteHarness(
       tester,
       overrides: [
+        onlinePrimaryPolicyProvider.overrideWith((ref) => _writablePolicy),
         managementTasksProvider.overrideWith((ref) {
           taskLoads += 1;
           return Stream.value(const <TaskItem>[]);
@@ -457,6 +643,19 @@ void main() {
     expect(find.text('Outlook Today Review'), findsOneWidget);
     expect(find.text('Overdue Action'), findsNothing);
 
+    await chooseDropdownMenuItemByValue(
+      tester,
+      dropdown: _dropdownAt(1),
+      valueFragment: 'local',
+    );
+    expect(find.text('Outlook Today Review'), findsNothing);
+    await chooseDropdownMenuItemByValue(
+      tester,
+      dropdown: _dropdownAt(1),
+      valueFragment: 'outlook',
+    );
+    expect(find.text('Outlook Today Review'), findsOneWidget);
+
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
     expect(find.text('opened event'), findsOneWidget);
@@ -560,8 +759,8 @@ void main() {
       name: 'Timed Tasks',
     );
     final now = DateTime.now();
-    final nextWeek = DateTime(now.year, now.month, now.day, 10)
-        .add(const Duration(days: 3));
+    final nextWeek =
+        DateTime(now.year, now.month, now.day, 10).add(const Duration(days: 3));
 
     await db.into(db.calendarEvents).insert(
           CalendarEventsCompanion.insert(
@@ -625,6 +824,15 @@ Finder _dropdownAt(int index) {
   return find.byWidgetPredicate((widget) => widget is DropdownButton).at(index);
 }
 
+FilledButton _filledButtonByIcon(WidgetTester tester, IconData icon) {
+  return tester.widget<FilledButton>(
+    find.ancestor(
+      of: find.byIcon(icon),
+      matching: find.byType(FilledButton),
+    ),
+  );
+}
+
 Future<void> _pumpDataManagementRouteHarness(
   WidgetTester tester, {
   required List<Override> overrides,
@@ -659,13 +867,22 @@ Future<void> _pumpDataManagementRouteHarness(
   await tester.pump();
 }
 
-Future<List<Override>> _dataManagementSnapshotOverrides(AppDatabase db) async {
+Future<List<Override>> _dataManagementSnapshotOverrides(
+  AppDatabase db, {
+  bool readOnlyCache = false,
+  OnlinePrimaryPolicy Function()? policyProvider,
+}) async {
   final tasks = await db.select(db.taskItems).get();
   final events = await db.select(db.calendarEvents).get();
   final calendars = await db.select(db.eventCalendars).get();
   final taskLists = await db.select(db.taskLists).get();
 
   return [
+    onlinePrimaryPolicyProvider.overrideWith(
+      (ref) =>
+          policyProvider?.call() ??
+          (readOnlyCache ? _readOnlyPolicy : _writablePolicy),
+    ),
     managementTasksProvider.overrideWith((ref) => Stream.value(tasks)),
     managementEventsProvider.overrideWith((ref) => Stream.value(events)),
     allEventCalendarsProvider.overrideWith((ref) => Stream.value(calendars)),

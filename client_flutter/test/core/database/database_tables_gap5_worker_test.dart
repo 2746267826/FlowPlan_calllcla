@@ -37,6 +37,19 @@ void main() {
 
       expect(await db.getSetting('gap5.missing'), isNull);
       expect(await File(databasePath).exists(), isTrue);
+      final busyTimeoutRow =
+          await db.customSelect('PRAGMA busy_timeout').getSingle();
+      final journalModeRow =
+          await db.customSelect('PRAGMA journal_mode').getSingle();
+
+      expect(
+        int.parse(busyTimeoutRow.data.values.single.toString()),
+        greaterThanOrEqualTo(5000),
+      );
+      expect(
+        journalModeRow.data.values.single.toString().toLowerCase(),
+        'wal',
+      );
 
       final targetFile = File(
         p.join(documentsDirectory.path, 'existing-export.sqlite'),

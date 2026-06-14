@@ -67,10 +67,8 @@ void main() {
 
     expect(clientApi.bootstrapCalls, 1);
     expect(clientApi.settingsCalls, 1);
-    expect(syncEngine.pushCalls, 1);
+    expect(syncEngine.pushCalls, 0);
     expect(syncEngine.pullCalls, 1);
-    expect(find.textContaining('accepted 1'), findsOneWidget);
-    expect(find.textContaining('conflicts 1'), findsOneWidget);
     expect(find.textContaining('pulled 3'), findsOneWidget);
 
     clientApi.bootstrapError = StateError('manual sync failed');
@@ -83,7 +81,7 @@ void main() {
     );
 
     expect(clientApi.bootstrapCalls, 2);
-    expect(syncEngine.pushCalls, 1);
+    expect(syncEngine.pushCalls, 0);
     expect(find.text('Bad state: manual sync failed'), findsOneWidget);
     expect(find.textContaining('manual sync failed'), findsWidgets);
   });

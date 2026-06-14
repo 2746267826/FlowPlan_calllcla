@@ -10,6 +10,7 @@ import 'package:flowplanv2/core/sync/sync_cursor_store.dart';
 import 'package:flowplanv2/core/sync/sync_engine.dart';
 import 'package:flowplanv2/core/sync/server_sync_change_applier.dart';
 import 'package:flowplanv2/core/sync/sync_object_state_store.dart';
+import 'package:flowplanv2/core/sync/sync_result.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -325,6 +326,44 @@ void main() {
     expect(await cursorStore.readLastPullAt(), isNull);
   });
 
+  test('refreshCacheFromServer pulls changes without pushing pending mutations',
+      () async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final cursorStore = SyncCursorStore(db);
+    var pulled = false;
+
+    final engine = ServerSyncEngine(
+      cursorStore: cursorStore,
+      offlineMutationRunner: _ThrowingOfflineMutationRunner(
+        OfflineMutationStore(db),
+      ),
+      apiClient: ApiClient(
+        baseUri: Uri.parse('http://localhost:3202/api'),
+        tokenStore: AuthTokenStore(db),
+        httpClient: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/sync/pull');
+          pulled = true;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'changes': <Object?>[
+                <String, Object?>{'changeId': 'change-1'},
+              ],
+            }),
+            200,
+          );
+        }),
+      ),
+    );
+
+    final result = await engine.refreshCacheFromServer(limit: 1);
+
+    expect(pulled, isTrue);
+    expect(result['pulledChanges'], 1);
+    expect(await cursorStore.readLastPullAt(), isNotNull);
+  });
+
   test('pushPending returns acceptedCount and records a successful push time',
       () async {
     final db = createTestDatabase();
@@ -413,4 +452,13 @@ class _FakeChangeApplier extends ServerSyncChangeApplier {
 
   @override
   Future<int> repairOutlookOrphanEvents() async => _repairCount;
+}
+
+class _ThrowingOfflineMutationRunner extends OfflineMutationRunner {
+  _ThrowingOfflineMutationRunner(super.store);
+
+  @override
+  Future<ServerSyncResult> pushPending(ApiClient apiClient) {
+    throw StateError('pushPending must not run during cache refresh');
+  }
 }

@@ -256,6 +256,35 @@ void main() {
       );
     });
 
+    test('scheduler comparator prefers scheduled starts over unscheduled tasks',
+        () async {
+      final harness = await _SchedulerHarness.create(
+        schedule: _scheduleFor(
+          DateTime.monday,
+          const [WorkTimeRange(startMinute: 9 * 60, endMinute: 10 * 60)],
+        ),
+      );
+      addTearDown(harness.close);
+      final scheduled = _taskItem(
+        id: 501,
+        uid: 'compare-scheduled',
+        summary: 'Scheduled comparator',
+        durationMinutes: 15,
+        dtstart: DateTime(2026, 6, 8, 9),
+      );
+      final unscheduled = _taskItem(
+        id: 502,
+        uid: 'compare-unscheduled',
+        summary: 'Unscheduled comparator',
+        durationMinutes: 15,
+      );
+
+      expect(
+        harness.engine.debugCompareTasksForScheduling(scheduled, unscheduled),
+        lessThan(0),
+      );
+    });
+
     test('applyRunResult returns without writes when there are no changes',
         () async {
       final harness = await _SchedulerHarness.create(

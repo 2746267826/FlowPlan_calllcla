@@ -5,6 +5,11 @@ import '../offline_queue/offline_mutation_store.dart';
 import 'sync_object_state_store.dart';
 import 'sync_status.dart';
 
+/// Legacy offline mutation recorder.
+///
+/// Online-primary production providers must not inject this into
+/// server-managed repositories. Keep it for migration tooling and tests that
+/// inspect existing queued mutation behavior.
 class SyncWriteRecorder {
   SyncWriteRecorder({
     required OfflineMutationStore mutationStore,

@@ -420,9 +420,9 @@ class _RecordingPreviewInteractionService
 
 class _LiveRootsPanelRepository extends FakeFileContextRepository {
   _LiveRootsPanelRepository({
-    required List<FileFolder> roots,
-    required List<FileNode> nodes,
-  }) : super(roots: roots, nodes: nodes);
+    required super.roots,
+    required super.nodes,
+  });
 
   @override
   Future<List<FileFolder>> listFolders({int limit = 200}) async {

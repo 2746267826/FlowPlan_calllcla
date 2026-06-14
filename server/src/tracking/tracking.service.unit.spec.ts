@@ -660,6 +660,7 @@ describe('TrackingService unit branches', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const invalidRecords = Array.from({ length: 11 }, (_, index) => ({
+      localId: `client-rejected-${index}`,
       objectType: 'unsupported',
       index,
     }));
@@ -720,6 +721,11 @@ describe('TrackingService unit branches', () => {
         deduplicatedCount: 1,
       }),
     ]);
+    const finalMetadata = JSON.parse(String((finalUpdate?.[1] as unknown[])[6]));
+    expect(finalMetadata.rejectedSamples[0]).toMatchObject({
+      localId: 'client-rejected-0',
+      objectType: 'unsupported',
+    });
     expect(client.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO sync_changes'),
       [

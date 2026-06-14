@@ -47,6 +47,17 @@ TrackerPlatformSource trackerPlatformSourceForRuntime() {
   return debugTrackerPlatformOverride ?? TrackerPlatformSource.current();
 }
 
+class TrackerService {
+  const TrackerService._();
+
+  static const Duration defaultAutoUploadInterval = Duration(seconds: 60);
+}
+
+@visibleForTesting
+void debugTouchTrackerServiceForCoverage() {
+  const TrackerService._();
+}
+
 class TrackerState {
   static const Object _unset = Object();
 
@@ -153,8 +164,8 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
       debugTrackerSampleIntervalOverride ?? const Duration(seconds: 5);
   final Duration _inputEventPollInterval =
       debugTrackerInputEventPollIntervalOverride ?? const Duration(seconds: 1);
-  final Duration _autoUploadInterval =
-      debugTrackerAutoUploadIntervalOverride ?? const Duration(minutes: 10);
+  final Duration _autoUploadInterval = debugTrackerAutoUploadIntervalOverride ??
+      TrackerService.defaultAutoUploadInterval;
   final Duration _sampleTimeout =
       debugTrackerSampleTimeoutOverride ?? const Duration(seconds: 15);
   final Duration _inputEventPollTimeout =
@@ -826,4 +837,5 @@ class TrackerServiceNotifier extends _$TrackerServiceNotifier {
   DateTime? get lastAutoUploadAt => _lastAutoUploadAt;
   String? get lastAutoUploadError => _lastAutoUploadError;
   bool get isAutoUploading => _autoUploadInFlight;
+  Duration get autoUploadInterval => _autoUploadInterval;
 }

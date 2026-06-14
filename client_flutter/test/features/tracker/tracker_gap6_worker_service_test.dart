@@ -281,12 +281,19 @@ void main() {
       api.throwOnCreate = true;
       final successfulCreateCalls = api.createCallCount;
       await _insertClosedActivityRecord(db, DateTime(2026, 6, 11, 13));
-      await _waitFor(() => notifier.lastAutoUploadError != null);
+      String? uploadError;
+      await _waitFor(() {
+        uploadError = notifier.lastAutoUploadError;
+        return uploadError != null;
+      });
+      final lastSampleAt =
+          container.read(trackerServiceNotifierProvider).lastSampleAt;
+      notifier.stop();
+      await _waitFor(() => !notifier.isAutoUploading);
       expect(api.createCallCount, greaterThan(successfulCreateCalls));
-      expect(notifier.lastAutoUploadError, contains('upload refused'));
+      expect(uploadError, contains('upload refused'));
       expect(notifier.isAutoUploading, isFalse);
-      expect(container.read(trackerServiceNotifierProvider).lastSampleAt,
-          isNotNull);
+      expect(lastSampleAt, isNotNull);
     } finally {
       notifier.stop();
       await _waitFor(

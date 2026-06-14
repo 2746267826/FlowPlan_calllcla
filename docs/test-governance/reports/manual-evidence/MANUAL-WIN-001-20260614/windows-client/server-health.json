@@ -1,0 +1,58 @@
+{
+    "ok":  true,
+    "service":  "flowplanv2-server",
+    "phase":  "A-startup-connection",
+    "generatedAt":  "2026-06-14T01:34:27.601Z",
+    "checks":  {
+                   "config":  {
+                                  "ok":  true,
+                                  "databaseUrlPresent":  true,
+                                  "port":  3202,
+                                  "host":  "0.0.0.0",
+                                  "bodyLimit":  "500mb",
+                                  "corsOrigin":  "*",
+                                  "encryptionKeySecure":  true,
+                                  "encryptionKeySource":  "FLOWPLANV2_ENCRYPTION_KEY",
+                                  "poolStats":  {
+                                                    "totalCount":  1,
+                                                    "idleCount":  1,
+                                                    "waitingCount":  0,
+                                                    "max":  20
+                                                },
+                                  "slowQueryThresholdMs":  1000
+                              },
+                   "database":  {
+                                    "ok":  true,
+                                    "connected":  true,
+                                    "serverTime":  "2026-06-14T01:34:27.601Z",
+                                    "databaseName":  "flowplanv2",
+                                    "schemaName":  "public",
+                                    "requiredTables":  {
+                                                           "users":  true,
+                                                           "devices":  true,
+                                                           "deviceConnectionEvents":  true
+                                                       },
+                                    "message":  "PostgreSQL is reachable and A-stage core tables exist."
+                                },
+                   "devices":  {
+                                   "ok":  true,
+                                   "users":  8,
+                                   "devices":  19,
+                                   "onlineDevices":  0,
+                                   "connectionEvents":  747,
+                                   "recentConnectionEvents24h":  115
+                               },
+                   "optional":  {
+                                    "storage":  {
+                                                    "optional":  true,
+                                                    "checked":  false,
+                                                    "message":  "Object storage is not part of A-stage startup health and does not block /api/health."
+                                                },
+                                    "models":  {
+                                                   "optional":  true,
+                                                   "checked":  false,
+                                                   "message":  "Model and AI checks are intentionally excluded from A-stage startup health."
+                                               }
+                                }
+               }
+}

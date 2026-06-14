@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/app_database.dart';
@@ -100,9 +101,11 @@ class SchedulerRunResult {
         'unscheduled_task_count': unscheduledTaskCount,
         'split_suggested_task_count': splitSuggestedTaskCount,
         'evidence_completed_task_count': evidenceCompletedTaskCount,
-        'placements': placements.map((placement) => placement.toJson()).toList(),
+        'placements':
+            placements.map((placement) => placement.toJson()).toList(),
         'cleared_task_ids': clearedTaskIds,
-        'unscheduled_tasks': unscheduledTasks.map((task) => task.toJson()).toList(),
+        'unscheduled_tasks':
+            unscheduledTasks.map((task) => task.toJson()).toList(),
         'log_entries': logEntries.map((entry) => entry.toJson()).toList(),
         'context': context.toJson(),
       };
@@ -308,7 +311,8 @@ class SchedulerEngine {
     final planRunId = 'schedule-${DateTime.now().microsecondsSinceEpoch}';
     final logs = <SchedulerRunLogEntry>[];
     final effectiveStart = _effectiveStartForDate(targetDate, from: from);
-    final effectiveEnd = _effectiveEndForDate(targetDate, effectiveStart, until: until);
+    final effectiveEnd =
+        _effectiveEndForDate(targetDate, effectiveStart, until: until);
     final windows = _buildWorkWindows(targetDate, effectiveStart, effectiveEnd);
     final context = await _buildContextSnapshot(
       targetDate,
@@ -323,19 +327,18 @@ class SchedulerEngine {
       final evidenceByTaskId = {
         for (final evidence in context.taskEvidence) evidence.taskId: evidence,
       };
-      final unscheduledTasks = schedulableTasks
-          .map((task) {
-            final evidence = evidenceByTaskId[task.id] ?? _fallbackEvidenceForTask(task);
-            return SchedulerUnscheduledTask(
-              taskId: task.id,
-              taskSummary: task.summary,
-              reason: '所选排程范围内没有可用工作时段。',
-              originalDurationMinutes: evidence.originalDurationMinutes,
-              actualWorkedMinutes: evidence.actualWorkedMinutes,
-              remainingMinutes: evidence.remainingMinutes,
-            );
-          })
-          .toList(growable: false);
+      final unscheduledTasks = schedulableTasks.map((task) {
+        final evidence =
+            evidenceByTaskId[task.id] ?? _fallbackEvidenceForTask(task);
+        return SchedulerUnscheduledTask(
+          taskId: task.id,
+          taskSummary: task.summary,
+          reason: '所选排程范围内没有可用工作时段。',
+          originalDurationMinutes: evidence.originalDurationMinutes,
+          actualWorkedMinutes: evidence.actualWorkedMinutes,
+          remainingMinutes: evidence.remainingMinutes,
+        );
+      }).toList(growable: false);
       logs.add(
         SchedulerRunLogEntry(
           level: 'warning',
@@ -366,7 +369,8 @@ class SchedulerEngine {
     }
 
     final blockers = await _loadFixedBlocks(targetDate, logs);
-    await _loadConfirmedActualBlocks(targetDate, effectiveStart, blockers, logs);
+    await _loadConfirmedActualBlocks(
+        targetDate, effectiveStart, blockers, logs);
     final activeScheduledTasks = await _taskRepo.getActiveScheduledForDate(
       targetDate,
     );
@@ -435,7 +439,8 @@ class SchedulerEngine {
         .map(
           (task) => _SchedulerCandidate(
             task: task,
-            evidence: evidenceByTaskId[task.id] ?? _fallbackEvidenceForTask(task),
+            evidence:
+                evidenceByTaskId[task.id] ?? _fallbackEvidenceForTask(task),
           ),
         )
         .toList()
@@ -720,8 +725,7 @@ class SchedulerEngine {
       final credibleWorkLogs = workLogs
           .where(
             (log) =>
-                !log.endAt.isAfter(effectiveStart) &&
-                log.status == 'confirmed',
+                !log.endAt.isAfter(effectiveStart) && log.status == 'confirmed',
           )
           .toList(growable: false);
       final workedMinutes = credibleWorkLogs.fold<int>(
@@ -733,7 +737,8 @@ class SchedulerEngine {
           .length;
       final original = task.durationMinutes <= 0 ? 30 : task.durationMinutes;
       final remainingRaw = original - workedMinutes;
-      final remaining = remainingRaw <= 0 ? 0 : _snapDurationMinutes(remainingRaw);
+      final remaining =
+          remainingRaw <= 0 ? 0 : _snapDurationMinutes(remainingRaw);
       final reason = workedMinutes <= 0
           ? '尚无可信实际投入证据，按预计时长 $original 分钟排程。'
           : remaining <= 0
@@ -754,7 +759,8 @@ class SchedulerEngine {
       );
     }
 
-    evidence.sort((left, right) => left.taskSummary.compareTo(right.taskSummary));
+    evidence
+        .sort((left, right) => left.taskSummary.compareTo(right.taskSummary));
     return SchedulerContextSnapshot(
       date: targetDate,
       effectiveStart: effectiveStart,
@@ -858,11 +864,13 @@ class SchedulerEngine {
     DateTime effectiveStart, {
     DateTime? until,
   }) {
-    final dayEnd = DateTime(date.year, date.month, date.day).add(const Duration(days: 1));
+    final dayEnd =
+        DateTime(date.year, date.month, date.day).add(const Duration(days: 1));
     if (until == null) {
       return dayEnd;
     }
-    final sameDayUntil = DateTime(date.year, date.month, date.day, until.hour, until.minute);
+    final sameDayUntil =
+        DateTime(date.year, date.month, date.day, until.hour, until.minute);
     if (!sameDayUntil.isAfter(effectiveStart)) {
       return effectiveStart;
     }
@@ -932,7 +940,8 @@ class SchedulerEngine {
     for (final window in windows) {
       var cursor = window.start;
       for (final block in occupied) {
-        if (!block.end.isAfter(window.start) || !block.start.isBefore(window.end)) {
+        if (!block.end.isAfter(window.start) ||
+            !block.start.isBefore(window.end)) {
           continue;
         }
         final blockStart =
@@ -963,7 +972,8 @@ class SchedulerEngine {
     for (final window in windows) {
       var cursor = window.start;
       for (final block in occupied) {
-        if (!block.end.isAfter(window.start) || !block.start.isBefore(window.end)) {
+        if (!block.end.isAfter(window.start) ||
+            !block.start.isBefore(window.end)) {
           continue;
         }
         final blockStart =
@@ -1045,6 +1055,11 @@ class SchedulerEngine {
       return leftStart.compareTo(rightStart);
     }
     return left.summary.compareTo(right.summary);
+  }
+
+  @visibleForTesting
+  int debugCompareTasksForScheduling(TaskItem left, TaskItem right) {
+    return _compareTasksForScheduling(left, right);
   }
 
   Future<void> _saveReport(SchedulerRunResult result) {

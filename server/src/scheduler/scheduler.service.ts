@@ -507,8 +507,8 @@ export class SchedulerService {
       WHERE user_id = $1
         AND deleted_at IS NULL
         AND object_type = 'task_schedule_segment'
-        AND updated_at >= $2 - interval '1 day'
-        AND updated_at < $3 + interval '1 day'
+        AND updated_at >= $2::timestamptz - interval '1 day'
+        AND updated_at < $3::timestamptz + interval '1 day'
       `,
       [userId, start, end],
     );

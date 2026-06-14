@@ -26,6 +26,7 @@ void main() {
   tearDown(() {
     debugTrackerPlatformOverride = null;
     debugRawInputServiceOverride = null;
+    debugTrackerAutoUploadIntervalOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(androidUsageChannel, null);
   });
@@ -125,6 +126,28 @@ void main() {
     expect(notifier.lastAutoUploadAt, isNull);
     expect(notifier.lastAutoUploadError, isNull);
     expect(notifier.isAutoUploading, isFalse);
+  });
+
+  test('default automatic upload cadence is sixty seconds', () {
+    debugTrackerPlatformOverride = _unsupportedPlatform;
+    debugTouchTrackerServiceForCoverage();
+    final container = ProviderContainer(
+      overrides: <Override>[
+        sequenceRecordingProvider.overrideWith((ref) => false),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(trackerServiceNotifierProvider.notifier);
+
+    expect(
+      TrackerService.defaultAutoUploadInterval,
+      const Duration(seconds: 60),
+    );
+    expect(
+      notifier.autoUploadInterval,
+      TrackerService.defaultAutoUploadInterval,
+    );
   });
 
   test('unsupported collection mode keeps start refresh and stop as no-ops',

@@ -6,7 +6,6 @@ import 'package:flowplanv2/core/bootstrap/client_bootstrap_service.dart';
 import 'package:flowplanv2/core/connection/server_connection_service.dart';
 import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
-import 'package:flowplanv2/core/offline_queue/offline_mutation.dart';
 import 'package:flowplanv2/core/offline_queue/offline_mutation_store.dart';
 import 'package:flowplanv2/core/platform/desktop_shell_service.dart';
 import 'package:flowplanv2/core/router/app_router.dart';
@@ -256,19 +255,12 @@ void main() {
       timers.single.last.fire();
       await _pumpUntil(() => harness.bootstrap.syncSources.length >= 2);
 
-      await SyncWriteRecorder.onMutationRecorded?.call();
-      await _pumpUntil(
-        () => timers.single
-            .any((timer) => timer.delay == const Duration(seconds: 2)),
-      );
-      timers.single.last.fire();
-      await _pumpUntil(() => harness.bootstrap.syncSources.length >= 3);
+      expect(SyncWriteRecorder.onMutationRecorded, isNull);
     });
 
-    expect(harness.bootstrap.syncSources.take(3), <String>[
+    expect(harness.bootstrap.syncSources.take(2), <String>[
       'startup',
       'timer',
-      'write',
     ]);
 
     final firstStarted = Completer<void>();
@@ -327,7 +319,7 @@ void main() {
     });
   });
 
-  test('server first direct wrappers and local-only deletes queue fallbacks',
+  test('server first direct wrappers reject local-only deletes without queueing',
       () async {
     final harness = await _ServerFirstHarness.create((request) async {
       if (request.method == 'PATCH' ||
@@ -386,25 +378,19 @@ void main() {
       state: SyncState.pendingCreate,
     );
 
-    final localDelete = await harness.store.deleteLocalTask(localId: taskId);
+    await expectLater(
+      harness.store.deleteLocalTask(localId: taskId),
+      throwsA(isA<StateError>()),
+    );
     final mutations = await harness.mutationStore.listPending();
-    final payload =
-        jsonDecode(mutations.single.payloadJson) as Map<String, dynamic>;
     final state = await harness.stateStore.getState(
       objectType: SyncObjectType.taskItem.key,
       localId: taskId.toString(),
     );
 
-    expect(localDelete.isPending, isTrue);
-    expect(localDelete.error, isA<StateError>());
-    expect(await harness.db.select(harness.db.taskItems).get(), isEmpty);
-    expect(mutations.single.action, OfflineMutationAction.delete);
-    expect(mutations.single.serverId, isNull);
-    expect(payload, <String, Object?>{
-      'id': taskId.toString(),
-      'uid': 'task-local-delete-gap4',
-    });
-    expect(state?.syncState, SyncState.pendingDelete);
+    expect(await harness.db.select(harness.db.taskItems).get(), hasLength(1));
+    expect(mutations, isEmpty);
+    expect(state?.syncState, SyncState.pendingCreate);
   });
 }
 

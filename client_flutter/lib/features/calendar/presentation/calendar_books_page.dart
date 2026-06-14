@@ -32,6 +32,9 @@ class CalendarBooksPage extends ConsumerWidget {
   ) debugEnsureOutlookTaskListMirrorBinding =
       _ensureOutlookTaskListMirrorBinding;
 
+  @visibleForTesting
+  static bool debugExposeOutlookCalendarEditAction = false;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eventCalendars = ref.watch(allEventCalendarsProvider);
@@ -75,12 +78,14 @@ class CalendarBooksPage extends ConsumerWidget {
               return Column(
                 children: items.map((calendar) {
                   if (calendar.source == 'outlook') {
-                    return _ReadOnlyEventCalendarTile(
-                      calendar: calendar,
-                      onToggle: (value) => ref
-                          .read(calendarBooksRepositoryProvider)
-                          .toggleEventCalendarVisible(calendar.id, value),
-                    );
+                    if (!debugExposeOutlookCalendarEditAction) {
+                      return _ReadOnlyEventCalendarTile(
+                        calendar: calendar,
+                        onToggle: (value) => ref
+                            .read(calendarBooksRepositoryProvider)
+                            .toggleEventCalendarVisible(calendar.id, value),
+                      );
+                    }
                   }
                   return _EventCalendarTile(
                     calendar: calendar,

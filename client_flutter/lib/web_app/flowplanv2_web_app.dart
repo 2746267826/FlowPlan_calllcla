@@ -1222,6 +1222,9 @@ class _DrivePageState extends State<_DrivePage> {
   }
 
   Future<void> _upload() async {
+    if (!await _serverReachableBeforeUpload()) {
+      return;
+    }
     if (rootId == null) {
       await _createRoot();
     }
@@ -1263,6 +1266,21 @@ class _DrivePageState extends State<_DrivePage> {
     await widget.api.postJson('/files/upload-sessions/$sessionId/complete');
     setState(() => status = '上传完成：${file.name}');
     await _load();
+  }
+
+  Future<bool> _serverReachableBeforeUpload() async {
+    try {
+      final result = await widget.api.getJson('/client/bootstrap');
+      if (result['ok'] == false) {
+        throw StateError(result['reason'] ?? 'server unavailable');
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() => status = 'Server connection is required before upload.');
+      }
+      return false;
+    }
   }
 
   Future<void> _download(Map<String, dynamic> node) async {

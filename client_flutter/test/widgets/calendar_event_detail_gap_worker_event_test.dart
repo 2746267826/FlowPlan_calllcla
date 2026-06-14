@@ -1,13 +1,16 @@
 import 'dart:async';
 
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/server_first/server_first_repository.dart';
 import 'package:flowplanv2/core/ui/app_keys.dart';
 import 'package:flowplanv2/features/calendar/data/calendar_books_repository.dart';
 import 'package:flowplanv2/features/calendar/presentation/event_detail_page.dart';
 import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
@@ -19,6 +22,16 @@ import '../test_support/user_workflow_harness.dart';
 const _timelineRoute = '/timeline';
 const _eventCreateRoute = '/event/create';
 const _eventDetailRoute = '/event/:id';
+const _writablePolicy = OnlinePrimaryPolicy(
+  serverReachable: true,
+  authenticated: true,
+  level: ServerConnectionLevel.online,
+);
+const _readOnlyPolicy = OnlinePrimaryPolicy(
+  serverReachable: false,
+  authenticated: true,
+  level: ServerConnectionLevel.localCacheOnly,
+);
 
 void main() {
   testWidgets(
@@ -367,6 +380,119 @@ void main() {
     expect(_deleteButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets(
+      'read-only cache shows event banner and disables save/delete controls',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final calendarId = await insertFixtureCalendar(db, name: 'Writable');
+    final eventId = await _insertEvent(
+      db,
+      calendarId: calendarId,
+      uid: 'event-read-only-cache',
+      summary: 'Cached event',
+    );
+
+    await _pumpEventDetailRoute(
+      tester,
+      db: db,
+      fakeStore: fakeStore,
+      initialLocation: '/event/$eventId',
+      readOnlyCache: true,
+    );
+    await _pumpUntilTextField(tester, 'Cached event');
+
+    expect(find.text('Offline cache is read-only'), findsOneWidget);
+    expect(_saveButton(tester).onPressed, isNull);
+    expect(_deleteButton(tester).onPressed, isNull);
+
+    await tester.tap(find.byKey(AppKeys.eventSaveButton));
+    await tester.tap(find.byIcon(Icons.delete_outline), warnIfMissed: false);
+    await tester.pump();
+
+    expect(fakeStore.updatedEvents, isEmpty);
+    expect(fakeStore.deletedEventIds, isEmpty);
+    expect(find.byType(EventDetailPage), findsOneWidget);
+  });
+
+  testWidgets('stale event save callback re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final calendarId = await insertFixtureCalendar(db, name: 'Writable');
+    final eventId = await _insertEvent(
+      db,
+      calendarId: calendarId,
+      uid: 'event-stale-read-only-save',
+      summary: 'Stale save guard',
+    );
+    var policy = _writablePolicy;
+
+    await _pumpEventDetailRoute(
+      tester,
+      db: db,
+      fakeStore: fakeStore,
+      initialLocation: '/event/$eventId',
+      policyProvider: () => policy,
+    );
+    await _pumpUntilTextField(tester, 'Stale save guard');
+    expect(_saveButton(tester).onPressed, isNotNull);
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(EventDetailPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byKey(AppKeys.eventSaveButton));
+    await tester.pump();
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(fakeStore.updatedEvents, isEmpty);
+  });
+
+  testWidgets('stale event delete callback re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    addTearDown(db.close);
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final calendarId = await insertFixtureCalendar(db, name: 'Writable');
+    final eventId = await _insertEvent(
+      db,
+      calendarId: calendarId,
+      uid: 'event-stale-read-only-delete',
+      summary: 'Stale delete guard',
+    );
+    var policy = _writablePolicy;
+
+    await _pumpEventDetailRoute(
+      tester,
+      db: db,
+      fakeStore: fakeStore,
+      initialLocation: '/event/$eventId',
+      policyProvider: () => policy,
+    );
+    await _pumpUntilTextField(tester, 'Stale delete guard');
+    expect(_deleteButton(tester).onPressed, isNotNull);
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(EventDetailPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pump();
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(fakeStore.deletedEventIds, isEmpty);
+  });
+
   testWidgets('all-day date picking validates and saves adjusted dates',
       (tester) async {
     final db = createTestDatabase();
@@ -460,6 +586,8 @@ Future<void> _pumpEventDetailRoute(
   required String initialLocation,
   required FakeTaskEventServerFirstStore fakeStore,
   Stream<List<EventCalendar>>? calendarStream,
+  bool readOnlyCache = false,
+  OnlinePrimaryPolicy Function()? policyProvider,
 }) async {
   final calendars = await db.select(db.eventCalendars).get();
   final router = GoRouter(
@@ -495,6 +623,11 @@ Future<void> _pumpEventDetailRoute(
     db: db,
     size: const Size(900, 1400),
     overrides: [
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) =>
+            policyProvider?.call() ??
+            (readOnlyCache ? _readOnlyPolicy : _writablePolicy),
+      ),
       allEventCalendarsProvider.overrideWith(
         (ref) => calendarStream ?? Stream.value(calendars),
       ),

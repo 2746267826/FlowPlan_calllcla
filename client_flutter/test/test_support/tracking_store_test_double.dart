@@ -107,8 +107,8 @@ class TrackingStoreTestDouble implements TrackingServerFirstStore {
     this.inputEventsResponseBuilder,
   });
 
-  final List<String> processOptions;
-  final List<String> categoryOptions;
+  List<String> processOptions;
+  List<String> categoryOptions;
   final Map<String, dynamic> Function(ActivityDaySummaryCall call)?
       activityDaySummaryResponseBuilder;
   final Map<String, dynamic> Function()? trackingSummaryResponseBuilder;
@@ -129,6 +129,7 @@ class TrackingStoreTestDouble implements TrackingServerFirstStore {
   final inputHeatmapCalls = <InputHeatmapCall>[];
   final activityRecordsCalls = <ActivityRecordsCall>[];
   final inputEventsCalls = <InputEventsCall>[];
+  final filterOptionsCalls = <({DateTime? start, DateTime? end})>[];
 
   Object? activityDaySummaryError;
   Object? trackingSummaryError;
@@ -218,6 +219,7 @@ class TrackingStoreTestDouble implements TrackingServerFirstStore {
     DateTime? start,
     DateTime? end,
   }) async {
+    filterOptionsCalls.add((start: start, end: end));
     final error = filterOptionsError;
     if (error != null) {
       throw error;

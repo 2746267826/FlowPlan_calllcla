@@ -532,8 +532,8 @@ export class ActivityUnderstandingService {
       WHERE user_id = $1
         AND deleted_at IS NULL
         AND object_type = ANY($2::text[])
-        AND updated_at >= $3 - interval '1 day'
-        AND updated_at < $4 + interval '1 day'
+        AND updated_at >= $3::timestamptz - interval '1 day'
+        AND updated_at < $4::timestamptz + interval '1 day'
       ORDER BY updated_at ASC
       LIMIT 5000
       `,

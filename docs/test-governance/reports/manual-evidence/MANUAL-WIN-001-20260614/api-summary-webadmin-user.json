@@ -1,0 +1,191 @@
+{
+  "marker": "manual-win-001-webadmin-supplement-20260614005536",
+  "generatedAt": "2026-06-14T00:55:40.461Z",
+  "tokenUserStorage": {
+    "deviceId": "9fde55ef-57d8-49a7-9790-e41fdd35a3d3"
+  },
+  "taskId": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+  "create": {
+    "ok": true,
+    "canonical": true,
+    "item": {
+      "id": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+      "uid": "task_item:0376be59-b00f-4c8a-bdb1-d40ac4a77f62",
+      "objectType": "task_item",
+      "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+      "status": "todo",
+      "location": "",
+      "syncStatus": "server",
+      "serverVersion": 1,
+      "updatedAt": "2026-06-14T00:55:38.764Z",
+      "payload": {
+        "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+        "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+        "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+        "status": "todo",
+        "priority": "normal",
+        "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+        "isLocked": false,
+        "isAutoScheduled": true,
+        "isSplittable": true,
+        "source": "manual-win-001-supplemental-web-admin-auth"
+      }
+    },
+    "serverVersion": 1,
+    "syncChangeId": "303198",
+    "auditId": "dc5e375a-54ff-4c8a-a4d7-11dab7d6ad13",
+    "replayed": false
+  },
+  "complete": {
+    "ok": true,
+    "canonical": true,
+    "item": {
+      "id": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+      "uid": "task_item:0376be59-b00f-4c8a-bdb1-d40ac4a77f62",
+      "objectType": "task_item",
+      "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+      "status": "done",
+      "location": "",
+      "syncStatus": "server",
+      "serverVersion": 2,
+      "updatedAt": "2026-06-14T00:55:38.776Z",
+      "payload": {
+        "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+        "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+        "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+        "status": "done",
+        "priority": "normal",
+        "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+        "isLocked": false,
+        "isAutoScheduled": true,
+        "isSplittable": true,
+        "source": "manual-win-001-supplemental-web-admin-auth"
+      }
+    },
+    "serverVersion": 2,
+    "syncChangeId": "303199",
+    "auditId": "c660af7a-70bc-4e6c-9510-d931a4908fa9"
+  },
+  "taskResponse": {
+    "domain": "tasks",
+    "objectTypes": [
+      "task_item",
+      "task_list",
+      "task_schedule_segment",
+      "task",
+      "tasks",
+      "task_items",
+      "task_lists",
+      "task_schedule_segments"
+    ],
+    "limit": 200,
+    "offset": 0,
+    "hasMore": false,
+    "items": [
+      {
+        "id": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+        "objectType": "task_item",
+        "uid": "task_item:0376be59-b00f-4c8a-bdb1-d40ac4a77f62",
+        "payload": {
+          "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "source": "manual-win-001-supplemental-web-admin-auth",
+          "status": "done",
+          "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "isLocked": false,
+          "priority": "normal",
+          "completedAt": "2026-06-14T00:55:38.772Z",
+          "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "updatedFrom": "client",
+          "isSplittable": true,
+          "isAutoScheduled": true
+        },
+        "serverVersion": 2,
+        "deletedAt": null,
+        "createdAt": "2026-06-14T00:55:38.764Z",
+        "updatedAt": "2026-06-14T00:55:38.776Z",
+        "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536"
+      }
+    ]
+  },
+  "matchingAuditRows": [
+    {
+      "id": "c660af7a-70bc-4e6c-9510-d931a4908fa9",
+      "actor": "web",
+      "action": "web.task_item.update",
+      "targetType": "web",
+      "targetId": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+      "summary": "web.task_item.update",
+      "details": {
+        "after": {
+          "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "source": "manual-win-001-supplemental-web-admin-auth",
+          "status": "done",
+          "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "isLocked": false,
+          "priority": "normal",
+          "completedAt": "2026-06-14T00:55:38.772Z",
+          "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "updatedFrom": "client",
+          "isSplittable": true,
+          "isAutoScheduled": true
+        },
+        "before": {
+          "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "source": "manual-win-001-supplemental-web-admin-auth",
+          "status": "todo",
+          "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "isLocked": false,
+          "priority": "normal",
+          "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "isSplittable": true,
+          "isAutoScheduled": true
+        },
+        "objectId": "056309da-f63e-44a4-8b26-bffdb2a519e7"
+      },
+      "occurredAt": "2026-06-14T00:55:38.776Z",
+      "createdAt": "2026-06-14T00:55:38.776Z",
+      "deviceId": "9fde55ef-57d8-49a7-9790-e41fdd35a3d3",
+      "deviceName": "Unregistered device"
+    },
+    {
+      "id": "dc5e375a-54ff-4c8a-a4d7-11dab7d6ad13",
+      "actor": "web",
+      "action": "web.task_item.create",
+      "targetType": "web",
+      "targetId": "056309da-f63e-44a4-8b26-bffdb2a519e7",
+      "summary": "web.task_item.create",
+      "details": {
+        "uid": "task_item:0376be59-b00f-4c8a-bdb1-d40ac4a77f62",
+        "payload": {
+          "notes": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "title": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "source": "manual-win-001-supplemental-web-admin-auth",
+          "status": "todo",
+          "summary": "MANUAL-WIN-001 supplemental manual-win-001-webadmin-supplement-20260614005536",
+          "isLocked": false,
+          "priority": "normal",
+          "description": "Supplemental Web Admin/API evidence. Not a real Windows client screenshot run.",
+          "isSplittable": true,
+          "isAutoScheduled": true
+        },
+        "objectId": "056309da-f63e-44a4-8b26-bffdb2a519e7"
+      },
+      "occurredAt": "2026-06-14T00:55:38.764Z",
+      "createdAt": "2026-06-14T00:55:38.764Z",
+      "deviceId": "9fde55ef-57d8-49a7-9790-e41fdd35a3d3",
+      "deviceName": "Unregistered device"
+    }
+  ],
+  "auditRowCount": 2,
+  "webAdmin": {
+    "visible": true,
+    "visibleRows": [
+      "2026-06-14 08:55:38web.task_item.updatewebweb.task_item.updateweb056309da-f63e-44a4-8b26-bffdb2a519e7查 看",
+      "2026-06-14 08:55:38web.task_item.createwebweb.task_item.createweb056309da-f63e-44a4-8b26-bffdb2a519e7查 看"
+    ],
+    "screenshot": "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-WIN-001-20260614\\screenshots\\web-admin-audit-filtered-webadmin-user.png"
+  }
+}

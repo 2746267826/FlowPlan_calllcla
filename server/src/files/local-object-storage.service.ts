@@ -14,7 +14,7 @@ export interface StoredObjectResult {
 @Injectable()
 export class LocalObjectStorageService {
   private readonly rootPath = path.resolve(
-    process.env.FLOWPLANV2_SERVER_STORAGE_DIR ??
+    process.env.FLOWPLANV2_SERVER_STORAGE_DIR?.trim() ||
       path.join(process.cwd(), 'server_storage_flowplanv2'),
   );
 
@@ -86,11 +86,11 @@ export class LocalObjectStorageService {
     start: number,
     endInclusive: number,
   ): Promise<Buffer> {
-    const { safeStart, safeEnd } = await this.computeRange(storedPath, start, endInclusive);
+    const { resolved, safeStart, safeEnd } = await this.computeRange(storedPath, start, endInclusive);
     if (safeEnd < safeStart) {
       return Buffer.alloc(0);
     }
-    const handle = await open(storedPath, 'r');
+    const handle = await open(resolved, 'r');
     try {
       const buffer = Buffer.alloc(safeEnd - safeStart + 1);
       await handle.read(buffer, 0, buffer.length, safeStart);
@@ -135,7 +135,7 @@ export class LocalObjectStorageService {
     const fileStat = await stat(resolved);
     const safeStart = Math.max(0, Math.min(start, fileStat.size));
     const safeEnd = Math.max(safeStart - 1, Math.min(endInclusive, fileStat.size - 1));
-    return { safeStart, safeEnd };
+    return { resolved, safeStart, safeEnd };
   }
 
   resolveStoredPath(storedPath: string) {

@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
 
@@ -369,6 +371,9 @@ Future<void> _pumpTimeline(
       activityRecordsForDateProvider.overrideWith((ref) async => records),
       taskEventServerFirstStoreProvider.overrideWith(
         (ref) async => fakeStore ?? FakeTaskEventServerFirstStore(),
+      ),
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
       ),
       ...overrides,
     ],

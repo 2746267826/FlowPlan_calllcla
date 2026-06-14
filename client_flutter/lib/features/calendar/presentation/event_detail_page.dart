@@ -10,6 +10,7 @@ import '../../../core/sync/sync_object_registry.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
+import '../../../shared/widgets/offline_read_only_banner.dart';
 import '../../files/data/file_context_repository.dart';
 import '../../files/presentation/file_context_panel.dart';
 import '../../sync/sync_status_badge.dart';
@@ -152,6 +153,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   Widget build(BuildContext context) {
     final isCreating = widget.eventId == null;
     final calendarsAsync = ref.watch(allEventCalendarsProvider);
+    final readOnlyCache = ref.watch(onlinePrimaryPolicyProvider).readOnlyCache;
     final calendars = calendarsAsync.asData?.value ?? const <EventCalendar>[];
     EventCalendar? selectedCalendar;
     for (final calendar in calendars) {
@@ -161,11 +163,12 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       }
     }
 
-    final isReadOnly =
-        _isReadOnly || (selectedCalendar?.source == 'outlook' && !isCreating);
+    final isReadOnly = readOnlyCache ||
+        _isReadOnly ||
+        (selectedCalendar?.source == 'outlook' && !isCreating);
     final pageTitle = isCreating
         ? '\u65b0\u5efa\u65e5\u7a0b'
-        : isReadOnly
+        : _isReadOnly || (selectedCalendar?.source == 'outlook' && !isCreating)
             ? 'Outlook \u65e5\u7a0b\uff08\u53ea\u8bfb\uff09'
             : '\u7f16\u8f91\u65e5\u7a0b';
 
@@ -177,9 +180,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
           onPressed: () => _close(context),
         ),
         actions: [
-          if (!isCreating && !isReadOnly)
+          if (!isCreating &&
+              !(_isReadOnly ||
+                  (selectedCalendar?.source == 'outlook' && !isCreating)))
             IconButton(
-              onPressed: _saving ? null : _delete,
+              onPressed: _saving || readOnlyCache ? null : _delete,
               tooltip: '\u5220\u9664\u65e5\u7a0b',
               icon: const Icon(Icons.delete_outline),
             ),
@@ -209,7 +214,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               ),
               const SizedBox(height: 16),
             ],
-            if (isReadOnly) ...[
+            if (readOnlyCache) ...[
+              const OfflineReadOnlyBanner(
+                reason: 'Reconnect to save changes.',
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (!readOnlyCache &&
+                (_isReadOnly ||
+                    (selectedCalendar?.source == 'outlook' &&
+                        !isCreating))) ...[
               const _WarningNotice(
                 message:
                     '\u8fd9\u662f\u4ece Outlook \u540c\u6b65\u8fc7\u6765\u7684\u53ea\u8bfb\u65e5\u7a0b\u3002\u8bf7\u5728 Outlook \u5b98\u65b9\u5ba2\u6237\u7aef\u4e2d\u4fee\u6539\u540e\uff0c\u518d\u56de\u5230 FlowPlanV2 \u6267\u884c\u540c\u6b65\u3002',
@@ -440,6 +454,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   }
 
   Future<void> _save() async {
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
     if (_isReadOnly || _selectedCalendarIsOutlook()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -533,6 +551,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     if (widget.eventId == null || _saving) {
       return;
     }
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
     if (_isReadOnly || _selectedCalendarIsOutlook()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -600,6 +622,14 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         ),
       );
     }
+  }
+
+  void _showReadOnlyCacheMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Offline cache is read-only. Reconnect to save changes.'),
+      ),
+    );
   }
 }
 

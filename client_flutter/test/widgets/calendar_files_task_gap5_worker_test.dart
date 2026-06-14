@@ -134,6 +134,7 @@ void main() {
     final missingSessionFile =
         File('${tempDir.path}${Platform.pathSeparator}missing-session.txt');
     await missingSessionFile.writeAsString('missing session');
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     final missingSessionService = _createTransferService(
       db,
       _Gap5FileCloudApi(omitUploadSessionId: true),
@@ -144,7 +145,7 @@ void main() {
       missingSessionService.uploadFile(missingSessionFile.path),
       throwsA(isA<StateError>()),
     );
-    expect(missingSessionService.jobs.first.status, FileTransferStatus.failed);
+    expect(missingSessionService.jobs, isEmpty);
 
     final zeroFile = File('${tempDir.path}${Platform.pathSeparator}zero.bin');
     await zeroFile.writeAsBytes(const <int>[]);
@@ -508,8 +509,13 @@ class _Gap5FileCloudApi implements FileCloudApi {
         ? <dynamic, dynamic>{}
         : <dynamic, dynamic>{'sessionId': 'upload-session-1'};
     return <String, dynamic>{
-      'uploadSession':
-          useDynamicMaps ? session : Map<String, Object?>.from(session),
+      if (omitUploadSessionId)
+        'uploadSession': useDynamicMaps
+            ? session
+            : Map<String, Object?>.from(session)
+      else
+        'uploadSession':
+            useDynamicMaps ? session : Map<String, Object?>.from(session),
     };
   }
 

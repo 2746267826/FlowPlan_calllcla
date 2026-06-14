@@ -106,13 +106,13 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   EnsureTrayIcon();
 
-  flutter_controller_->engine()->SetNextFrameCallback([this]() {
-    if (start_hidden_to_tray_) {
+  if (start_hidden_to_tray_) {
+    flutter_controller_->engine()->SetNextFrameCallback([this]() {
       HideToTray();
-      return;
-    }
+    });
+  } else {
     Show();
-  });
+  }
   flutter_controller_->ForceRedraw();
 
   return true;

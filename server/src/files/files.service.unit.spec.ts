@@ -459,7 +459,7 @@ describe('FilesService', () => {
 
   it('creates upload sessions with computed expected chunks and audit logging', async () => {
     const database = createDatabase();
-    const { service } = createService(database);
+    const { service, objectStorage } = createService(database);
 
     await expect(
       service.createUploadSession(
@@ -482,6 +482,8 @@ describe('FilesService', () => {
       expect.stringContaining('INSERT INTO file_transfer_sessions'),
       expect.arrayContaining([context.userId, 'server_storage', 'report.txt', null, null, 'object-1', 10, 4, 3]),
     );
+    expect(database.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO file_storage_objects'))).toBe(false);
+    expect(objectStorage.writeObjectFromChunks).not.toHaveBeenCalled();
   });
 
   it('uses transfer session defaults and ignores chunks for completed uploads', async () => {
@@ -713,9 +715,10 @@ describe('FilesService', () => {
         relativePath: 'docs/report.md',
       },
     };
+    const payloadChunks = [{ payload: Buffer.from('part-one') }, { payload: Buffer.from('part-two') }];
     const database = createDatabase({
       sessions: [completedSession],
-      payloadChunks: [{ payload: Buffer.from('part-one') }, { payload: Buffer.from('part-two') }],
+      payloadChunks,
       storageObjects: [{ storageObjectId: 'storage-1', objectKey: 'object-1' }],
       insertedNodes: [{ id: 'node-1' }],
     });
@@ -733,6 +736,9 @@ describe('FilesService', () => {
       'object-1',
       [Buffer.from('part-one'), Buffer.from('part-two')],
     );
+    const writtenChunks = objectStorage.writeObjectFromChunks.mock.calls[0]?.[2] as unknown[];
+    expect(writtenChunks.map((chunk) => Buffer.isBuffer(chunk))).toEqual([true, true]);
+    expect(writtenChunks).not.toContain(Buffer.from('part-one').toString('base64'));
     expect(database.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO file_storage_objects'),
       expect.arrayContaining([context.userId, 'server_storage', 'object-1', 'report.txt', 12, 'checksum', 4, 2]),

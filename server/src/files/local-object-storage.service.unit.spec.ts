@@ -42,6 +42,23 @@ describe('LocalObjectStorageService unit', () => {
     expect(service.root()).toBe(tempRoot);
   });
 
+  it('falls back to the default storage root when the storage env var is blank', () => {
+    const previousStorageDir = process.env.FLOWPLANV2_SERVER_STORAGE_DIR;
+    process.env.FLOWPLANV2_SERVER_STORAGE_DIR = '';
+
+    try {
+      const blankEnvService = new LocalObjectStorageService();
+
+      expect(blankEnvService.root()).toBe(join(process.cwd(), 'server_storage_flowplanv2'));
+    } finally {
+      if (previousStorageDir === undefined) {
+        delete process.env.FLOWPLANV2_SERVER_STORAGE_DIR;
+      } else {
+        process.env.FLOWPLANV2_SERVER_STORAGE_DIR = previousStorageDir;
+      }
+    }
+  });
+
   it('writes chunked objects with sanitized storage segments and hashes the content', async () => {
     const result = await service.writeObjectFromChunks('user/id', 'folder:name?.txt', [
       Buffer.from('hello '),
@@ -73,6 +90,7 @@ describe('LocalObjectStorageService unit', () => {
     const result = await service.writeObjectFromChunks('user', 'ranges.txt', [Buffer.from('0123456789')]);
 
     await expect(service.readRange(result.storagePath, 4, 99)).resolves.toEqual(Buffer.from('456789'));
+    await expect(service.readRange(result.relativePath, 2, 5)).resolves.toEqual(Buffer.from('2345'));
     await expect(service.readRange(result.storagePath, 99, 120)).resolves.toEqual(Buffer.alloc(0));
     await expect(readStream(service.createReadStream(result.relativePath, 2, 5))).resolves.toEqual(Buffer.from('2345'));
   });

@@ -102,6 +102,7 @@ app.*.map.json
 *.sqlite-shm
 
 # Server runtime storage
+logs/codex_tracker_fix/
 server/server_storage/
 server/server_storage_flowplanv2/
 server/uploads/

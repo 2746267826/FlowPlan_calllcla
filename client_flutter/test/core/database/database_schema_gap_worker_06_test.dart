@@ -152,7 +152,7 @@ void main() {
     final db = createTestDatabase();
     addTearDown(db.close);
 
-    expect(db.schemaVersion, 19);
+    expect(db.schemaVersion, 20);
 
     final taskLists = await db.select(db.taskLists).get();
     expect(taskLists.map((row) => row.name), containsAll(['收件箱', '工作', '个人']));
@@ -177,6 +177,19 @@ void main() {
       containsAll(['delta_x', 'delta_y', 'event_count', 'token_text']),
     );
     expect(trackedInputColumns['event_count']?['dflt_value'], '1');
+
+    final quarantineColumns =
+        await _columnsFor(db, 'tracking_upload_quarantine');
+    expect(
+      quarantineColumns.keys,
+      containsAll([
+        'data_kind',
+        'local_id',
+        'reason',
+        'server_payload_json',
+        'created_at',
+      ]),
+    );
 
     final syncStateColumns = await _columnsFor(db, 'sync_object_states');
     expect(
@@ -205,6 +218,13 @@ void main() {
       containsAll([
         'tracked_input_events_day_key_idx',
         'tracked_input_events_process_kind_idx',
+      ]),
+    );
+    expect(
+      await _indexNamesFor(db, 'tracking_upload_quarantine'),
+      containsAll([
+        'tracking_upload_quarantine_kind_idx',
+        'tracking_upload_quarantine_created_idx',
       ]),
     );
     expect(

@@ -1,0 +1,16 @@
+{
+  "date": "2026-06-14",
+  "url": "http://127.0.0.1:5174/",
+  "page": "数据操作审计",
+  "filter": "manual-audit-001-webadmin-20260614-061340",
+  "rows": [
+    "时间摘要操作者动作对象类型对象 ID详情",
+    "2026-06-14 06:13:40web.task_item.updatewebweb.task_item.updatewebf8b271cf-f1d8-41b6-bea9-1829017628af查 看",
+    "2026-06-14 06:13:40web.task_item.createwebweb.task_item.createwebf8b271cf-f1d8-41b6-bea9-1829017628af查 看"
+  ],
+  "notes": [
+    "Web Admin initially showed no rows because the first API probe was created under the default header user 00000000-0000-4000-8000-000000000001 while Web Admin auto-login was using user 085c6e69-289d-4d13-8e6f-96b24451546a.",
+    "After creating the probe under the Web Admin user, the audit table displayed both create and update rows.",
+    "The in-app Browser screenshot API timed out twice on Page.captureScreenshot; a separate local Playwright screenshot was captured at screenshots/web-admin-audit-filtered.png."
+  ]
+}

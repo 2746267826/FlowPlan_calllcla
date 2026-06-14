@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:meta/meta.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/database/app_database.dart';
@@ -2193,6 +2194,21 @@ class FileContextRepository {
       ],
     );
     return (await _getFileById(existing.id)) ?? existing;
+  }
+
+  @visibleForTesting
+  Future<FileItem> upsertLocalFileWithoutSyncForTesting({
+    required String localPath,
+    int? folderId,
+    String? mimeType,
+    String previewMode = 'none',
+  }) {
+    return _upsertLocalFileWithoutSync(
+      localPath: localPath,
+      folderId: folderId,
+      mimeType: mimeType,
+      previewMode: previewMode,
+    );
   }
 
   Future<FileFolder> _lastFolder() async {

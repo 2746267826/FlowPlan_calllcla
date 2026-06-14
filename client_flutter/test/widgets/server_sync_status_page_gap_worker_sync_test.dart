@@ -76,7 +76,7 @@ void main() {
 
     expect(harness.clientApi.bootstrapCalls, 1);
     expect(harness.clientApi.settingsCalls, 1);
-    expect(harness.syncEngine.pushCalls, 1);
+    expect(harness.syncEngine.pushCalls, 0);
     expect(harness.syncEngine.pullCalls, 1);
     expect(harness.trackingUploadCalls, 1);
   });
@@ -112,18 +112,18 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 100));
 
-    harness.syncEngine.pushError = StateError('manual push failed');
+    harness.syncEngine.pullError = StateError('manual pull failed');
     await tester.tap(find.byType(OutlinedButton).at(1));
     await tester.pump();
     await pumpUntilFound(
       tester,
-      find.textContaining('manual push failed'),
+      find.textContaining('manual pull failed'),
       maxPumps: 20,
     );
 
-    expect(harness.syncEngine.pushCalls, 2);
+    expect(harness.syncEngine.pushCalls, 0);
     expect(harness.clientApi.bootstrapCalls, 1);
-    expect(find.text('Bad state: manual push failed'), findsOneWidget);
+    expect(find.text('Bad state: manual pull failed'), findsOneWidget);
   });
 
   testWidgets(
@@ -154,7 +154,7 @@ void main() {
     expect(harness.clientApi.confirmedImportIds, <String>['import-789']);
     expect(harness.clientApi.bootstrapCalls, 1);
     expect(harness.clientApi.settingsCalls, 1);
-    expect(harness.syncEngine.pushCalls, 1);
+    expect(harness.syncEngine.pushCalls, 0);
     expect(harness.syncEngine.pullCalls, 1);
   });
 
@@ -446,6 +446,7 @@ class _RecordingServerSyncEngine extends FakeServerSyncEngine {
   _RecordingServerSyncEngine(super.db);
 
   Object? pushError;
+  Object? pullError;
 
   @override
   Future<ServerSyncResult> pushPending() async {
@@ -460,6 +461,18 @@ class _RecordingServerSyncEngine extends FakeServerSyncEngine {
       conflictCount: 1,
       rejectedCount: 0,
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> pullChanges({
+    int limit = 200,
+    void Function(int pulledChanges, int pageCount)? onProgress,
+  }) async {
+    final error = pullError;
+    if (error != null) {
+      throw error;
+    }
+    return super.pullChanges(limit: limit, onProgress: onProgress);
   }
 }
 

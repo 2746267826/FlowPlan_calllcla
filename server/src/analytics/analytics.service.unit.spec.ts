@@ -383,34 +383,36 @@ describe('AnalyticsService query endpoints', () => {
     const { service, query } = createHarness([
       [
         {
-          bucket_start: '2026-06-01T00:00:00.000Z',
-          event_count: '20',
-          keyboard_event_count: '10',
-          mouse_button_event_count: '3',
-          wheel_event_count: '2',
-          mouse_move_event_count: '5',
-          mouse_move_distance: '600',
-        },
-      ],
-      [
-        { key_code: '65', label: 'A', event_count: '6' },
-        { key_code: 13, label: null, event_count: '4' },
-      ],
-      [
-        { name: 'left', event_count: '3' },
-        { name: null, event_count: '1' },
-      ],
-      [
-        {
-          process_name: null,
-          event_count: '20',
-          keyboard_event_count: '10',
-          mouse_button_event_count: '3',
-          wheel_event_count: '2',
-          mouse_move_event_count: '5',
-          mouse_move_distance: '600',
-          active_minutes: '9',
-          intensity_score: '42',
+          buckets: [
+            {
+              bucketStart: '2026-06-01T00:00:00.000Z',
+              eventCount: '20',
+              keyboardEventCount: '10',
+              mouseButtonEventCount: '3',
+              wheelEventCount: '2',
+              mouseMoveEventCount: '5',
+              mouseMoveDistance: '600',
+            },
+          ],
+          key_counts: { '65': '6', '13': '4' },
+          top_keys: [
+            { keyCode: '65', label: 'A', count: '6' },
+            { keyCode: '13', label: null, count: '4' },
+          ],
+          mouse_counts: { left: '3', unknown: '1' },
+          process_intensities: [
+            {
+              processName: null,
+              totalEvents: '20',
+              keyEvents: '10',
+              mouseButtonEvents: '3',
+              wheelEvents: '2',
+              mouseMoveEvents: '5',
+              moveDistance: '600',
+              activeMinutes: '9',
+              intensityScore: '42',
+            },
+          ],
         },
       ],
     ]);
@@ -455,19 +457,12 @@ describe('AnalyticsService query endpoints', () => {
         },
       ],
     });
-    expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('keyboard_event_count'), [
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('filtered_events AS MATERIALIZED'), [
       context.userId,
       start,
       end,
       'month',
-      'Code',
-      null,
-      'key_down',
-    ]);
-    expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('key_code'), [
-      context.userId,
-      start,
-      end,
       'Code',
       null,
       'key_down',
@@ -478,10 +473,15 @@ describe('AnalyticsService query endpoints', () => {
     const start = '2026-06-01T00:00:00.000Z';
     const end = '2026-06-08T00:00:00.000Z';
     const { service } = createHarness([
-      [],
-      [{ key_code: '9', label: 'Tab', event_count: '0' }],
-      [],
-      [],
+      [
+        {
+          buckets: [],
+          key_counts: { '9': '0' },
+          top_keys: [{ keyCode: '9', label: 'Tab', count: '0' }],
+          mouse_counts: {},
+          process_intensities: [],
+        },
+      ],
     ]);
 
     const response = await service.inputHeatmap({ start, end }, context);

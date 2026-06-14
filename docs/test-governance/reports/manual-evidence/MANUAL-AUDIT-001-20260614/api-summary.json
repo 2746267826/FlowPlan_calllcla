@@ -1,0 +1,21 @@
+{
+  "date": "2026-06-14",
+  "server": "http://127.0.0.1:3202/api",
+  "marker": "manual-audit-001-webadmin-20260614-061340",
+  "userId": "085c6e69-289d-4d13-8e6f-96b24451546a",
+  "deviceId": "11111111-1111-4111-8111-111111111111",
+  "taskId": "f8b271cf-f1d8-41b6-bea9-1829017628af",
+  "createAuditId": "449ae504-a25e-4e08-b7c7-33c2e72fa035",
+  "createSyncChangeId": "303191",
+  "completeAuditId": "24c561a2-f9ab-4cc7-aa9f-9a85ee1064ff",
+  "completeSyncChangeId": "303192",
+  "adminAuditItemCount": 2,
+  "adminAuditActions": [
+    "web.task_item.update",
+    "web.task_item.create"
+  ],
+  "adminAuditActors": [
+    "web",
+    "web"
+  ]
+}

@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/features/files/data/file_context_repository.dart';
+import 'package:flowplanv2/features/files/presentation/file_context_page.dart';
 import 'package:flowplanv2/features/files/services/file_context_interaction_service.dart';
+import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../test_support/file_context_page_harness.dart';
@@ -192,6 +197,11 @@ void main() {
       repository: repository,
       cloudApi: cloudApi,
       filePicker: picker,
+      onlinePrimaryPolicy: const OnlinePrimaryPolicy(
+        serverReachable: true,
+        authenticated: true,
+        level: ServerConnectionLevel.online,
+      ),
     );
     await pumpFileContextUntilFound(tester, find.text('first.md'));
 
@@ -240,6 +250,77 @@ void main() {
     expect(
         cloudApi.downloadedVersionCopies.single['versionId'], 'version-gap9');
     expect(picker.saveRequests.single['fileName'], 'second.kopia-copy.md');
+  });
+
+  testWidgets('server storage register action requires online upload policy',
+      (tester) async {
+    final directory = Directory.systemTemp.createTempSync(
+      'flowplanv2-gap9-policy-',
+    );
+    addTearDown(() => _disposeWidgetAndDeleteTemp(tester, directory));
+    final file = File('${directory.path}${Platform.pathSeparator}policy.md')
+      ..writeAsStringSync('policy');
+    final root = fileFolderFixture(
+      id: 1,
+      displayName: 'Gap9 Policy Root',
+      localPath: directory.path,
+      remoteId: 'gap9-policy-root',
+      availability: FileAvailability.local,
+    );
+    final rootNode = fileNodeFixture(
+      id: 10,
+      rootFolderId: root.id,
+      itemType: FileNodeType.folder,
+      displayName: root.displayName,
+      localPath: directory.path,
+      relativePath: '',
+      remoteId: 'gap9-policy-root-node',
+      availability: FileAvailability.local,
+      depth: 0,
+    );
+    final node = fileNodeFixture(
+      id: 11,
+      rootFolderId: root.id,
+      parentNodeId: rootNode.id,
+      displayName: 'policy.md',
+      localPath: file.path,
+      relativePath: 'policy.md',
+      remoteId: 'gap9-policy-node',
+      availability: FileAvailability.local,
+    );
+    final repository = FakeFileContextRepository(
+      roots: [root],
+      nodes: [rootNode, node],
+    );
+    final cloudApi = FakeFileCloudApi();
+
+    await _pumpFileContextPageWithPolicy(
+      tester,
+      repository: repository,
+      cloudApi: cloudApi,
+      policy: const OnlinePrimaryPolicy(
+        serverReachable: false,
+        authenticated: true,
+        level: ServerConnectionLevel.offline,
+      ),
+    );
+    await pumpFileContextUntilFound(tester, find.text('policy.md'));
+
+    await _selectNode(tester, 'policy.md');
+    await pumpFileContextUntilFound(tester, find.text('登记到服务端'));
+
+    await _tapIcon(tester, Icons.cloud_upload_outlined);
+    await _pumpUntil(
+      tester,
+      () => find
+          .text(
+              'Server connection is required before this write can be accepted.')
+          .evaluate()
+          .isNotEmpty,
+      maxPumps: 20,
+    );
+
+    expect(cloudApi.registeredStorageObjects, isEmpty);
   });
 
   testWidgets('event panel binds a picked node after the root dropdown changes',
@@ -330,6 +411,33 @@ Future<void> _selectNode(WidgetTester tester, String nodeName) async {
           matching: find.widgetWithIcon(IconButton, Icons.check_circle_outline),
         )
         .first,
+  );
+  await tester.pump();
+}
+
+Future<void> _pumpFileContextPageWithPolicy(
+  WidgetTester tester, {
+  required FakeFileContextRepository repository,
+  required FakeFileCloudApi cloudApi,
+  required OnlinePrimaryPolicy policy,
+}) async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  tester.view.physicalSize = const Size(1280, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        fileContextRepositoryProvider.overrideWithValue(repository),
+        fileContextApiProvider
+            .overrideWith((ref) async => FakeFileContextApi()),
+        fileCloudApiProvider.overrideWith((ref) async => cloudApi),
+        onlinePrimaryPolicyProvider.overrideWith((ref) => policy),
+      ],
+      child: const MaterialApp(home: FileContextPage()),
+    ),
   );
   await tester.pump();
 }

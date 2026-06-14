@@ -1,17 +1,39 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
+import 'package:flowplanv2/core/router/app_router.dart';
 import 'package:flowplanv2/core/server_first/server_first_repository.dart';
 import 'package:flowplanv2/core/ui/app_keys.dart';
 import 'package:flowplanv2/features/calendar/data/calendar_books_repository.dart';
+import 'package:flowplanv2/features/task/presentation/task_detail_page.dart';
+import 'package:flowplanv2/features/tracker/data/activity_record_repository.dart';
+import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import '../test_support/fixtures.dart';
-import '../test_support/task_detail_workflow_harness.dart';
+import '../test_support/provider_harness.dart';
+import '../test_support/task_detail_workflow_harness.dart'
+    hide pumpTaskDetailWorkflow;
 import '../test_support/test_database.dart';
 import '../test_support/user_workflow_harness.dart';
+
+const _writablePolicy = OnlinePrimaryPolicy(
+  serverReachable: true,
+  authenticated: true,
+  level: ServerConnectionLevel.online,
+);
+
+const _readOnlyPolicy = OnlinePrimaryPolicy(
+  serverReachable: false,
+  authenticated: true,
+  level: ServerConnectionLevel.localCacheOnly,
+);
 
 void main() {
   testWidgets('task create blocks empty titles without writing',
@@ -83,6 +105,141 @@ void main() {
     expect(find.byKey(AppKeys.taskSummaryField), findsOneWidget);
   });
 
+  testWidgets(
+      'read-only cache shows task banner and disables save/delete controls',
+      (tester) async {
+    final db = createTestDatabase();
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(
+      db,
+      name: 'Cached task list',
+    );
+    final taskId = await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-read-only-cache',
+            dtstamp: fixtureNow(),
+            summary: 'Cached task',
+            taskListId: Value(taskListId),
+          ),
+        );
+
+    await pumpTaskDetailWorkflow(
+      tester,
+      db: db,
+      taskId: taskId,
+      fakeStore: fakeStore,
+      readOnlyCache: true,
+    );
+    await pumpUntilFound(tester, find.byKey(AppKeys.taskSummaryField));
+    await pumpTaskDetailFrames(tester);
+
+    expect(find.text('Offline cache is read-only'), findsOneWidget);
+    expect(find.text('Cached task'), findsOneWidget);
+    expect(
+      tester.widget<TextButton>(find.byKey(AppKeys.taskSaveButton)).onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.delete_outline),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(fakeStore.updatedTasks, isEmpty);
+    expect(fakeStore.deletedTaskIds, isEmpty);
+  });
+
+  testWidgets('stale task save callback re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(db, name: 'Stale policy');
+    final taskId = await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-stale-read-only-save',
+            dtstamp: fixtureNow(),
+            summary: 'Stale save guard',
+            taskListId: Value(taskListId),
+          ),
+        );
+    var policy = _writablePolicy;
+
+    await pumpTaskDetailWorkflow(
+      tester,
+      db: db,
+      taskId: taskId,
+      fakeStore: fakeStore,
+      policyProvider: () => policy,
+    );
+    await pumpUntilFound(tester, find.byKey(AppKeys.taskSummaryField));
+    expect(
+      tester.widget<TextButton>(find.byKey(AppKeys.taskSaveButton)).onPressed,
+      isNotNull,
+    );
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(TaskDetailPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byKey(AppKeys.taskSaveButton));
+    await pumpTaskDetailFrames(tester);
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(fakeStore.updatedTasks, isEmpty);
+  });
+
+  testWidgets('stale task delete callback re-checks read-only cache policy',
+      (tester) async {
+    final db = createTestDatabase();
+    final fakeStore = FakeTaskEventServerFirstStore();
+    final taskListId = await insertFixtureTaskList(db, name: 'Stale policy');
+    final taskId = await db.into(db.taskItems).insert(
+          TaskItemsCompanion.insert(
+            uid: 'task-stale-read-only-delete',
+            dtstamp: fixtureNow(),
+            summary: 'Stale delete guard',
+            taskListId: Value(taskListId),
+          ),
+        );
+    var policy = _writablePolicy;
+
+    await pumpTaskDetailWorkflow(
+      tester,
+      db: db,
+      taskId: taskId,
+      fakeStore: fakeStore,
+      policyProvider: () => policy,
+    );
+    await pumpUntilFound(tester, find.byKey(AppKeys.taskSummaryField));
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.delete_outline),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    policy = _readOnlyPolicy;
+    ProviderScope.containerOf(
+      tester.element(find.byType(TaskDetailPage)),
+    ).invalidate(onlinePrimaryPolicyProvider);
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await pumpTaskDetailFrames(tester);
+
+    expect(
+      find.text('Offline cache is read-only. Reconnect to save changes.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(fakeStore.deletedTaskIds, isEmpty);
+  });
+
   testWidgets('close button cancels an edited task without saving',
       (tester) async {
     final db = createTestDatabase();
@@ -116,6 +273,37 @@ void main() {
     expect(fakeStore.createdTasks, isEmpty);
     expect(fakeStore.updatedTasks, isEmpty);
     expect(fakeStore.deletedTaskIds, isEmpty);
+  });
+
+  testWidgets('task detail navigator helper pops nested routes',
+      (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Navigator(
+          key: navigatorKey,
+          onGenerateInitialRoutes: (navigator, initialRoute) => [
+            MaterialPageRoute<void>(
+              builder: (_) => const Center(child: Text('nested root')),
+            ),
+            MaterialPageRoute<void>(
+              builder: (_) => const Center(child: Text('nested detail')),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('nested detail'), findsOneWidget);
+
+    expect(
+      debugPopTaskDetailNavigatorForCoverage(navigatorKey.currentState!),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('nested detail'), findsNothing);
+    expect(find.text('nested root'), findsOneWidget);
   });
 
   testWidgets('deadline picker saves a due date in the create payload',
@@ -352,6 +540,78 @@ void main() {
       isNotNull,
     );
   });
+}
+
+Future<void> pumpTaskDetailWorkflow(
+  WidgetTester tester, {
+  required AppDatabase db,
+  required int? taskId,
+  required FakeTaskEventServerFirstStore fakeStore,
+  List<TaskList>? taskListsOverride,
+  bool readOnlyCache = false,
+  OnlinePrimaryPolicy Function()? policyProvider,
+}) async {
+  final taskLists = taskListsOverride ?? await db.select(db.taskLists).get();
+  final router = GoRouter(
+    initialLocation: taskId == null ? AppRoutes.taskCreate : '/task/$taskId',
+    routes: [
+      GoRoute(
+        path: AppRoutes.timeline,
+        builder: (context, state) => const Center(
+          child: Text('timeline fallback'),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.taskCreate,
+        builder: (context, state) => const TaskDetailPage(taskId: null),
+      ),
+      GoRoute(
+        path: AppRoutes.taskDetail,
+        builder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '');
+          return TaskDetailPage(taskId: id);
+        },
+      ),
+    ],
+  );
+
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpTaskDetailFrames(tester, 4);
+    router.dispose();
+    await db.close();
+  });
+
+  await pumpFlowPlanTestApp(
+    tester,
+    db: db,
+    size: const Size(800, 1000),
+    overrides: [
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) =>
+            policyProvider?.call() ??
+            (readOnlyCache ? _readOnlyPolicy : _writablePolicy),
+      ),
+      allTaskListsProvider.overrideWith((ref) => Stream.value(taskLists)),
+      activityRecordRepositoryProvider.overrideWithValue(
+        _FakeActivityRecordRepository(db),
+      ),
+      taskEventServerFirstStoreProvider.overrideWith(
+        (ref) async => fakeStore,
+      ),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
+  await tester.pump();
+}
+
+class _FakeActivityRecordRepository extends ActivityRecordRepository {
+  _FakeActivityRecordRepository(super.db);
+
+  @override
+  Stream<List<ActivityRecord>> watchByTaskId(int taskId) {
+    return Stream.value(const <ActivityRecord>[]);
+  }
 }
 
 Future<void> _pickVisibleDeadlineDay(

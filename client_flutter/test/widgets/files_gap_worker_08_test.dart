@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../test_support/task_detail_workflow_harness.dart'
+    show writableOnlinePrimaryPolicy;
 import '../test_support/test_database.dart';
 
 void main() {
@@ -155,6 +157,9 @@ Future<void> _pumpTransferCenter(
     ProviderScope(
       overrides: [
         fileTransferServiceProvider.overrideWith((ref) => service),
+        onlinePrimaryPolicyProvider.overrideWith(
+          (ref) => writableOnlinePrimaryPolicy,
+        ),
       ],
       child: const MaterialApp(home: FileTransferCenterPage()),
     ),

@@ -50,6 +50,23 @@ class ServerConnectionState {
 
   bool get hasConflict => conflictCount > 0;
 
+  bool get isReadOnlyCache {
+    return switch (level) {
+      ServerConnectionLevel.online ||
+      ServerConnectionLevel.syncing ||
+      ServerConnectionLevel.conflicted =>
+        false,
+      ServerConnectionLevel.unknown ||
+      ServerConnectionLevel.degraded ||
+      ServerConnectionLevel.offline ||
+      ServerConnectionLevel.authRequired ||
+      ServerConnectionLevel.localCacheOnly =>
+        true,
+    };
+  }
+
+  bool get canAttemptServerWrite => !isReadOnlyCache;
+
   ServerConnectionState copyWith({
     ServerConnectionLevel? level,
     String? serverUrl,
@@ -82,8 +99,7 @@ class ServerConnectionState {
       pendingCount: pendingCount ?? this.pendingCount,
       failedCount: failedCount ?? this.failedCount,
       conflictCount: conflictCount ?? this.conflictCount,
-      nextHeartbeatSeconds:
-          nextHeartbeatSeconds ?? this.nextHeartbeatSeconds,
+      nextHeartbeatSeconds: nextHeartbeatSeconds ?? this.nextHeartbeatSeconds,
       syncing: syncing ?? this.syncing,
       syncPhase: clearProgress ? null : syncPhase ?? this.syncPhase,
       syncReason: clearProgress ? null : syncReason ?? this.syncReason,

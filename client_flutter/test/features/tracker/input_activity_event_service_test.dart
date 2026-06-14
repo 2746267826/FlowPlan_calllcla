@@ -608,10 +608,13 @@ void main() {
     final payload = service.debugDecodePayloadJsonForTesting('{"deltaX":4}');
     final invalidDay =
         InputActivityEventService.debugParseDayKeyForTesting('bad-day-key');
+    final missingParts =
+        InputActivityEventService.debugParseDayKeyForTesting('badkey');
 
     expect(payload, <String, dynamic>{'deltaX': 4});
     expect(invalidDay.year, 1970);
     expect(invalidDay.month, 1);
     expect(invalidDay.day, 1);
+    expect(missingParts, DateTime.fromMillisecondsSinceEpoch(0));
   });
 }

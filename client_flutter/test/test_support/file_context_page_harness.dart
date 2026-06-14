@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/router/app_router.dart';
 import 'package:flowplanv2/core/server_api/file_cloud_api.dart';
 import 'package:flowplanv2/core/server_api/file_context_api.dart';
@@ -17,6 +19,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 final fileContextHarnessNow = DateTime.utc(2026, 6, 9, 8);
+
+const fileContextWritablePolicy = OnlinePrimaryPolicy(
+  serverReachable: true,
+  authenticated: true,
+  level: ServerConnectionLevel.online,
+);
 
 FileFolder fileFolderFixture({
   int id = 1,
@@ -125,6 +133,7 @@ Future<void> pumpFileContextPageHarness(
   FakeFilePicker? filePicker,
   FileContextInteractionService? interactionService,
   FileTransferService? transferService,
+  OnlinePrimaryPolicy? onlinePrimaryPolicy,
   bool withRouter = false,
   Size size = const Size(1280, 900),
 }) async {
@@ -136,6 +145,7 @@ Future<void> pumpFileContextPageHarness(
     filePicker: filePicker,
     interactionService: interactionService,
     transferService: transferService,
+    onlinePrimaryPolicy: onlinePrimaryPolicy,
     withRouter: withRouter,
     size: size,
     child: const FileContextPage(),
@@ -191,6 +201,7 @@ Future<void> _pumpHarness(
   FakeFilePicker? filePicker,
   FileContextInteractionService? interactionService,
   FileTransferService? transferService,
+  OnlinePrimaryPolicy? onlinePrimaryPolicy,
   bool withRouter = false,
   Size size = const Size(1280, 900),
 }) async {
@@ -243,6 +254,9 @@ Future<void> _pumpHarness(
               .overrideWithValue(interactionService),
         if (transferService != null)
           fileTransferServiceProvider.overrideWith((ref) => transferService),
+        onlinePrimaryPolicyProvider.overrideWith(
+          (ref) => onlinePrimaryPolicy ?? fileContextWritablePolicy,
+        ),
       ],
       child: app,
     ),

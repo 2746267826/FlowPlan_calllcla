@@ -544,6 +544,34 @@ bool trackerPresentationDebugMatchesLogEntry(
   );
 }
 
+@visibleForTesting
+int? trackerPresentationDebugDominantHourForRange({
+  required DateTime itemStart,
+  required DateTime itemEnd,
+  required DateTime selectedDate,
+}) {
+  return _dominantHourForRange(
+    itemStart: itemStart,
+    itemEnd: itemEnd,
+    selectedDate: selectedDate,
+  );
+}
+
+@visibleForTesting
+bool trackerPresentationDebugTimeRangeOverlaps({
+  required DateTime rangeStart,
+  required DateTime rangeEnd,
+  required DateTime itemStart,
+  required DateTime itemEnd,
+}) {
+  return _timeRangeOverlaps(
+    rangeStart: rangeStart,
+    rangeEnd: rangeEnd,
+    itemStart: itemStart,
+    itemEnd: itemEnd,
+  );
+}
+
 bool _hasInputActivity({
   required int keyCount,
   required int mouseClicks,
@@ -776,32 +804,9 @@ List<TaskItem> _buildTrackerTaskCandidates(
 ) {
   final candidates = List<TaskItem>.from(tasks);
   final referenceDay = DateUtils.dateOnly(referenceDate);
-  candidates.sort((left, right) {
-    final leftCompletion = _taskCompletionRank(left);
-    final rightCompletion = _taskCompletionRank(right);
-    if (leftCompletion != rightCompletion) {
-      return leftCompletion.compareTo(rightCompletion);
-    }
-
-    final leftDistance = _taskDayDistance(left, referenceDay);
-    final rightDistance = _taskDayDistance(right, referenceDay);
-    if (leftDistance != rightDistance) {
-      return leftDistance.compareTo(rightDistance);
-    }
-
-    final leftAnchor = _taskAnchorTime(left);
-    final rightAnchor = _taskAnchorTime(right);
-    if (leftAnchor != null && rightAnchor != null) {
-      final byAnchor = leftAnchor.compareTo(rightAnchor);
-      if (byAnchor != 0) {
-        return byAnchor;
-      }
-    } else if (leftAnchor != null || rightAnchor != null) {
-      return leftAnchor == null ? 1 : -1;
-    }
-
-    return left.summary.toLowerCase().compareTo(right.summary.toLowerCase());
-  });
+  candidates.sort(
+    (left, right) => _compareTrackerTaskCandidates(left, right, referenceDay),
+  );
 
   return candidates.take(24).toList(growable: false);
 }
@@ -812,6 +817,50 @@ List<TaskItem> trackerPresentationDebugBuildTaskCandidates(
   DateTime referenceDate,
 ) {
   return _buildTrackerTaskCandidates(tasks, referenceDate);
+}
+
+@visibleForTesting
+int trackerPresentationDebugCompareTaskCandidates(
+  TaskItem left,
+  TaskItem right,
+  DateTime referenceDate,
+) {
+  return _compareTrackerTaskCandidates(
+    left,
+    right,
+    DateUtils.dateOnly(referenceDate),
+  );
+}
+
+int _compareTrackerTaskCandidates(
+  TaskItem left,
+  TaskItem right,
+  DateTime referenceDay,
+) {
+  final leftCompletion = _taskCompletionRank(left);
+  final rightCompletion = _taskCompletionRank(right);
+  if (leftCompletion != rightCompletion) {
+    return leftCompletion.compareTo(rightCompletion);
+  }
+
+  final leftDistance = _taskDayDistance(left, referenceDay);
+  final rightDistance = _taskDayDistance(right, referenceDay);
+  if (leftDistance != rightDistance) {
+    return leftDistance.compareTo(rightDistance);
+  }
+
+  final leftAnchor = _taskAnchorTime(left);
+  final rightAnchor = _taskAnchorTime(right);
+  if (leftAnchor != null && rightAnchor != null) {
+    final byAnchor = leftAnchor.compareTo(rightAnchor);
+    if (byAnchor != 0) {
+      return byAnchor;
+    }
+  } else if (leftAnchor != null || rightAnchor != null) {
+    return leftAnchor == null ? 1 : -1;
+  }
+
+  return left.summary.toLowerCase().compareTo(right.summary.toLowerCase());
 }
 
 int _taskCompletionRank(TaskItem task) {

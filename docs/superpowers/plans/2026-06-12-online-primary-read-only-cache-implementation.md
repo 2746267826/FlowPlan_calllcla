@@ -16,13 +16,13 @@
 - Full test governance design: `docs/superpowers/specs/2026-06-08-full-test-governance-design.md`
 - Quality gate policy: `docs/test-governance/quality-gates.md`
 - Future development test rules: `docs/test-governance/future-development-rules.md`
-- Existing Flutter command constraint: `docs/development_constraints_260426.md`
+- Flutter/Dart execution policy: user authorized Codex to run Flutter and Dart commands for this implementation on 2026-06-13; older `docs/development_constraints_260426.md` restrictions are superseded for this plan.
 - Server scripts: `server/package.json`
 - Flutter dependencies: `client_flutter/pubspec.yaml`
 
 ## Global Rules
 
-- Do not run `flutter`, `dart`, `dart format`, or `dart run build_runner` as Codex. List those commands for the user.
+- Codex may run `flutter`, `dart`, `dart format`, and `dart run build_runner` for this implementation. Run Flutter/Dart verification serially, avoid parallel Flutter test processes, and record command output or log paths in the closeout report.
 - Keep `/sync/pull` and `ServerSyncChangeApplier` as the first cache-refresh path.
 - Do not create new ordinary business entries in `offline_mutations`.
 - Keep existing `offline_mutations` rows visible for migration and diagnostics.
@@ -30,9 +30,39 @@
 - Do not let file upload entry points open `FilePicker` while the client is in read-only cache mode.
 - Every behavior change must update `docs/test-governance/feature-test-matrix.csv`.
 - Every real-device, real-network, long-running, or externally dependent acceptance path must update `docs/test-governance/manual-acceptance.csv`.
-- Completion evidence must include governance matrix validation, focused tests, full root quality gate status, Flutter/Dart user-run status, coverage report references, and open manual acceptance rows.
+- Completion evidence must include governance matrix validation, focused tests, full root quality gate status, Flutter/Dart command results, coverage report references, and open manual acceptance rows.
 - Do not mark a feature-test row `verified` or `implemented` when it references a manual acceptance row that is not `passing`; use `partial` until dated manual evidence exists.
 - Commit after each task when executing this plan.
+
+## Full Test Governance Requirements
+
+This plan must satisfy the complete testing standard established in `docs/superpowers/specs/2026-06-08-full-test-governance-design.md`, `docs/test-governance/quality-gates.md`, and `docs/test-governance/future-development-rules.md`. Implementation is not complete just because focused tests pass.
+
+- Write or update an effective automated test before each behavior change. The test must fail for the missing behavior or old bug before implementation and pass after implementation.
+- Every changed user-facing flow must have coverage for the trigger control or background trigger, applicable loading/empty/success/disabled/permission-denied/validation-error/network-error/API-error/duplicate-submission/external-failure states, data integrity side effects, and accessibility/layout selectors where relevant.
+- Every changed feature, control, API, data path, and workflow must be represented in `docs/test-governance/feature-test-matrix.csv`.
+- Manual acceptance is allowed only for real-device, live-network, credential, long-running, platform-permission, or external-provider evidence that automation cannot reliably drive. Each such path must have a row in `docs/test-governance/manual-acceptance.csv` with controls, states, error paths, side effects, exact steps, and dated evidence requirements.
+- Do not mark a matrix row `implemented`, `passing`, or `verified` when it links to manual acceptance that is still `pending-user`, `blocked`, or `blocked-environment`; keep it `partial` or another open status until dated passing evidence exists.
+- Server and Web Admin included hand-written production code must satisfy their root-gate 100% coverage requirements for lines, branches, functions, and statements.
+- Flutter included hand-written Dart code must satisfy root-gate 100% included-line LCOV coverage after reviewed `docs/test-governance/coverage-exclusions.csv` exclusions are applied.
+- Any coverage exclusion must have a reviewed row in `docs/test-governance/coverage-exclusions.csv` with reason, replacement verification, owner/module, review condition, and status.
+- No focused or skipped automated tests may be committed unless the skip is explicitly allowed by a reviewed governance exclusion.
+- The final evidence must include focused feature tests, server focused tests, `flutter analyze`, Flutter coverage, golden tests, Windows Flutter integration tests, governance-only validation, the full root quality gate, and the completion gate status.
+- `scripts/test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` is the only completion gate. If it fails because manual acceptance rows remain open, record that blocker and do not claim full completion.
+
+## Testing Completion Definition
+
+Treat the full test governance rules as hard completion gates, not optional documentation work. A worker may report an implementation task as locally done after its focused red/green tests pass, but the feature may not be called complete until all of the following are true and recorded in `docs/test-governance/reports/online-primary-read-only-cache-closeout.md`:
+
+- Focused automated tests for every changed behavior pass, including client policy, server-first business writes, bootstrap pull-only refresh, tracking batching/cleanup, file upload boundaries, UI read-only states, and server canonical boundaries.
+- `flutter analyze` passes after the final client edits.
+- Full Flutter coverage passes with 100% included-line LCOV after reviewed `docs/test-governance/coverage-exclusions.csv` exclusions are applied.
+- Server and Web Admin root-gate coverage remains at 100% for included hand-written production code.
+- `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -GovernanceOnly` passes.
+- `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` passes.
+- `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` either passes or fails only because documented manual acceptance rows are still `pending-user`; in the latter case, mark the implementation as blocked by manual evidence rather than complete.
+- `docs/test-governance/feature-test-matrix.csv`, `docs/test-governance/manual-acceptance.csv`, and `docs/test-governance/cross-end-workflow-matrix.md` reflect every changed feature, control, API, data path, workflow, manual-only acceptance path, and dated evidence status.
+- No focused or skipped tests, unreviewed coverage exclusions, or stale local-first/offline-queue success messages remain outside an explicit reviewed governance exception.
 
 ## File Structure
 
@@ -104,7 +134,7 @@ Modify full test governance files:
 - Modify `docs/test-governance/feature-test-matrix.csv`: add online-primary behavior rows for client policy, task/event write rejection, tracking spool upload cleanup, server-hosted file upload, legacy queue cleanup, and cross-end online-primary workflow evidence.
 - Modify `docs/test-governance/manual-acceptance.csv`: add manual rows for real offline read-only cache behavior, real tracking batching/cleanup, and real file upload interruption/retry under the new server-hosted rule.
 - Modify `docs/test-governance/cross-end-workflow-matrix.md`: add online-primary cache, tracking, and file workflows to the representative cross-end matrix.
-- Create `docs/test-governance/reports/online-primary-read-only-cache-closeout.md`: stable closeout report template that records focused tests, full gate results, coverage artifacts, user-run Flutter evidence, and open manual acceptance rows.
+- Create `docs/test-governance/reports/online-primary-read-only-cache-closeout.md`: stable closeout report template that records focused tests, full gate results, coverage artifacts, Flutter/Dart command evidence, and open manual acceptance rows.
 
 ## Scope Check
 
@@ -173,9 +203,9 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Ask the user to run the failing Flutter policy test**
+- [ ] **Step 2: Run the failing Flutter policy test**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -342,9 +372,9 @@ final onlinePrimaryPolicyProvider = Provider<OnlinePrimaryPolicy>((ref) {
 }, dependencies: [serverConnectionStateProvider]);
 ```
 
-- [ ] **Step 6: Ask the user to run the passing policy test**
+- [ ] **Step 6: Run the passing policy test**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -598,9 +628,9 @@ Add these three additional tests in the same file:
   });
 ```
 
-- [ ] **Step 3: Ask the user to run the failing server-first tests**
+- [ ] **Step 3: Run the failing server-first tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -744,9 +774,9 @@ Keep `queueLegacyCacheMutation` in `TaskEventServerFirstStore`, but add this com
   // call this method for user-initiated business writes.
 ```
 
-- [ ] **Step 8: Ask the user to run the passing server-first tests**
+- [ ] **Step 8: Run the passing server-first tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -816,9 +846,9 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Ask the user to run the failing provider wiring test**
+- [ ] **Step 2: Run the failing provider wiring test**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -893,9 +923,9 @@ final repo = TaskRepository(
 
 Do not reintroduce recorder injection in `app_providers.dart`.
 
-- [ ] **Step 6: Ask the user to run focused provider and repository tests**
+- [ ] **Step 6: Run focused provider and repository tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1040,9 +1070,9 @@ class _ThrowingPushRunner extends OfflineMutationRunner {
 }
 ```
 
-- [ ] **Step 4: Ask the user to run failing bootstrap/sync tests**
+- [ ] **Step 4: Run failing bootstrap/sync tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1127,9 +1157,9 @@ Modify `client_flutter/lib/core/connection/server_connection_service.dart`:
 
 In `dispose`, remove the block that clears `SyncWriteRecorder.onMutationRecorded`.
 
-- [ ] **Step 8: Ask the user to run passing bootstrap/sync tests**
+- [ ] **Step 8: Run passing bootstrap/sync tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1263,9 +1293,9 @@ Add:
   });
 ```
 
-- [ ] **Step 4: Ask the user to run failing tracking tests**
+- [ ] **Step 4: Run failing tracking tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1522,9 +1552,9 @@ Return:
 
 Keep the last-id keys for read compatibility, but they no longer drive upload selection.
 
-- [ ] **Step 10: Ask the user to run passing tracking tests**
+- [ ] **Step 10: Run passing tracking tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1561,9 +1591,9 @@ Add this test to the tracker service test file that already covers timers:
   });
 ```
 
-- [ ] **Step 2: Ask the user to run the failing tracker service test**
+- [ ] **Step 2: Run the failing tracker service test**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1607,9 +1637,9 @@ Modify `client_flutter/lib/shared/providers/tracker_providers.dart` so `tracking
 
 from `TrackingUploadService.buildUploadDiagnostics()`.
 
-- [ ] **Step 5: Ask the user to run focused tracker tests**
+- [ ] **Step 5: Run focused tracker tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1723,9 +1753,9 @@ import 'package:flowplanv2/core/connection/server_connection_state.dart';
 import 'package:flowplanv2/core/online/online_primary_policy.dart';
 ```
 
-- [ ] **Step 2: Ask the user to run failing file transfer tests**
+- [ ] **Step 2: Run failing file transfer tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1843,9 +1873,9 @@ Modify `fileTransferServiceProvider` in `client_flutter/lib/shared/providers/app
 
 Add `onlinePrimaryPolicyProvider` to dependencies.
 
-- [ ] **Step 6: Ask the user to run passing file transfer tests**
+- [ ] **Step 6: Run passing file transfer tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -1980,9 +2010,9 @@ Add this test:
   });
 ```
 
-- [ ] **Step 2: Ask the user to run failing file widget tests**
+- [ ] **Step 2: Run failing file widget tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2059,9 +2089,9 @@ At the beginning of `_upload`, before `_createRoot()` and before `FilePicker.pla
     }
 ```
 
-- [ ] **Step 6: Ask the user to run passing file widget tests**
+- [ ] **Step 6: Run passing file widget tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2119,9 +2149,9 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Ask the user to run failing banner test**
+- [ ] **Step 2: Run failing banner test**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2271,9 +2301,9 @@ content: Text('Saved on server.'),
 
 The catch branch remains the only failed write message and must not close the page.
 
-- [ ] **Step 7: Ask the user to run focused widget tests**
+- [ ] **Step 7: Run focused widget tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2377,9 +2407,9 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Ask the user to run failing cleanup tests**
+- [ ] **Step 2: Run failing cleanup tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2516,9 +2546,9 @@ FutureBuilder(
 )
 ```
 
-- [ ] **Step 6: Ask the user to run focused cleanup tests**
+- [ ] **Step 6: Run focused cleanup tests**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2836,7 +2866,7 @@ Commit range:
 | --- | --- | --- | --- |
 | Governance-only | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -GovernanceOnly` | pending | |
 | Server focused | `npm run test:unit -- src/files/files.service.unit.spec.ts src/tracking/tracking.service.unit.spec.ts src/web/web.service.unit.spec.ts` | pending | |
-| Flutter focused | user-run focused command from implementation plan | pending | |
+| Flutter focused | focused Flutter command from implementation plan | pending | |
 | Root full gate | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` | pending | |
 | Completion gate | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` | pending | |
 
@@ -2867,7 +2897,7 @@ Commit range:
 
 - Completion cannot be claimed while linked manual rows are `pending-user`.
 - Completion cannot be claimed while any coverage exclusion row is not `reviewed`.
-- Completion cannot be claimed while root gate or Flutter user-run evidence is missing.
+- Completion cannot be claimed while root gate or Flutter/Dart command evidence is missing.
 ```
 
 - [ ] **Step 5: Run governance-only validation**
@@ -2917,9 +2947,9 @@ powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -Governance
 
 Expected: feature-test, manual-acceptance, coverage-exclusions, actual gate exclusions, and focused/skipped scan checks pass.
 
-- [ ] **Step 3: Ask the user to run Flutter focused verification**
+- [ ] **Step 3: Run Flutter focused verification**
 
-User-run only:
+Codex may run:
 
 ```powershell
 cd client_flutter
@@ -2928,9 +2958,9 @@ flutter test test/core/online/online_primary_policy_test.dart test/core/server_f
 
 Expected: all focused Flutter tests pass.
 
-- [ ] **Step 4: Ask the user to run full Flutter gate evidence**
+- [ ] **Step 4: Run full Flutter gate evidence**
 
-User-run only:
+Codex may run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800
@@ -2938,9 +2968,9 @@ powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -FlutterInt
 
 Expected: root gate records governance validation, boundary checks, server, web admin, Flutter coverage, golden tests, and Windows integration evidence. If Flutter or Dart commands fail, copy the failing gate name and log path into `docs/test-governance/reports/online-primary-read-only-cache-closeout.md`.
 
-- [ ] **Step 5: Ask the user to run completion gate**
+- [ ] **Step 5: Run completion gate**
 
-User-run only:
+Codex may run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800
@@ -2982,7 +3012,7 @@ Modify `docs/test-governance/reports/online-primary-read-only-cache-closeout.md`
 ```markdown
 | Governance-only | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -GovernanceOnly` | PASS | 2026-06-13: console transcript or generated report path |
 | Server focused | `npm run test:unit -- src/files/files.service.unit.spec.ts src/tracking/tracking.service.unit.spec.ts src/web/web.service.unit.spec.ts` | PASS | 2026-06-13: Vitest output |
-| Flutter focused | user-run focused command from implementation plan | PASS | 2026-06-13: user-provided transcript |
+| Flutter focused | focused Flutter command from implementation plan | PASS | 2026-06-13: console transcript or log path |
 | Root full gate | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` | PASS | 2026-06-13: generated root report path |
 | Completion gate | `powershell -ExecutionPolicy Bypass -File scripts\test-flowplanv2.ps1 -Completion -FlutterIntegrationDevice windows -GateTimeoutSeconds 1800` | PASS or BLOCKED | 2026-06-13: generated root report path or manual acceptance blocker |
 ```

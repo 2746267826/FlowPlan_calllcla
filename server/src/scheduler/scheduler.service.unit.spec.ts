@@ -1184,7 +1184,7 @@ describe('SchedulerService public API', () => {
   });
 
   it('detects deviations from startAt aliases without duplicating matching actuals', async () => {
-    const { service, transactionClient } = createService({
+    const { service, database, transactionClient } = createService({
       runRows: [
         {
           id: 'segment-without-title',
@@ -1221,6 +1221,18 @@ describe('SchedulerService public API', () => {
         context,
       ),
     ).resolves.toEqual({ ok: true, created: 0 });
+
+    const segmentQuery = database.query.mock.calls.find(([sql]) =>
+      String(sql).includes("object_type = 'task_schedule_segment'"),
+    );
+    const segmentSql = String(segmentQuery?.[0]).replace(/\s+/g, ' ');
+    expect(segmentSql).toContain("updated_at >= $2::timestamptz - interval '1 day'");
+    expect(segmentSql).toContain("updated_at < $3::timestamptz + interval '1 day'");
+    expect(segmentQuery?.[1]).toEqual([
+      userId,
+      new Date('2026-06-08T09:00:00.000Z'),
+      new Date('2026-06-08T11:00:00.000Z'),
+    ]);
 
     const deviationCalls = transactionClient.query.mock.calls.filter(([sql]) =>
       String(sql).includes('INSERT INTO plan_deviations'),

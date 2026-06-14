@@ -1,0 +1,71 @@
+﻿{
+  "session": {
+    "sessionId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+    "status": "completed",
+    "storageObjectId": "42b4dada-f546-4fb0-a2e6-5c0fbce99a6b",
+    "receivedChunks": 3,
+    "expectedChunks": 3,
+    "checksum": "f9eb03845ba9be71aa00894a98db215caad3a922e126c77b136925b56539defe"
+  },
+  "storage": {
+    "storageObjectId": "42b4dada-f546-4fb0-a2e6-5c0fbce99a6b",
+    "displayName": "manual-file-online-001-20260614-063414.bin",
+    "sizeBytes": "10485760",
+    "checksum": "f9eb03845ba9be71aa00894a98db215caad3a922e126c77b136925b56539defe",
+    "metadata": {
+      "marker": "manual-file-online-001-20260614-063414",
+      "localPath": "C:\\Users\\a2746\\Desktop\\calll260426\\docs\\test-governance\\reports\\manual-evidence\\MANUAL-FILE-ONLINE-001-20260614\\artifacts\\manual-file-online-001-20260614-063414.bin",
+      "storagePath": "44444444-4444-4444-8444-444444444444/66831ac1-a602-4968-9c2b-e9ba3c38d0fe",
+      "storageRoot": "C:\\Users\\a2746\\Desktop\\calll260426\\server\\server_storage",
+      "storageType": "local_filesystem",
+      "acceptanceId": "MANUAL-FILE-ONLINE-001",
+      "uploadSessionId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+      "absoluteStoragePath": "C:\\Users\\a2746\\Desktop\\calll260426\\server\\server_storage\\44444444-4444-4444-8444-444444444444\\66831ac1-a602-4968-9c2b-e9ba3c38d0fe"
+    }
+  },
+  "audit": [
+    {
+      "id": "1ee7c397-378d-4da6-b5c6-f0f70201f77f",
+      "action": "files.upload.create_session",
+      "actor": "server",
+      "entityType": "file",
+      "entityId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+      "metadata": {
+        "fileName": "manual-file-online-001-20260614-063414.bin",
+        "chunkSize": 4194304,
+        "sessionId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+        "totalBytes": 10485760,
+        "providerKey": "server_storage",
+        "expectedChunks": 3
+      }
+    },
+    {
+      "id": "16c557ad-f721-488d-8cd5-91b533154dfa",
+      "action": "files.upload.complete",
+      "actor": "server",
+      "entityType": "file",
+      "entityId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+      "metadata": {
+        "checksum": "f9eb03845ba9be71aa00894a98db215caad3a922e126c77b136925b56539defe",
+        "sessionId": "acc291d1-4ec0-449f-b827-5a45e1f33475",
+        "storagePath": "44444444-4444-4444-8444-444444444444/66831ac1-a602-4968-9c2b-e9ba3c38d0fe",
+        "storageObjectId": "42b4dada-f546-4fb0-a2e6-5c0fbce99a6b"
+      }
+    },
+    {
+      "id": "6aaa71b7-30f8-4df6-92f5-e2833d595b69",
+      "action": "files.download.create_session",
+      "actor": "server",
+      "entityType": "file",
+      "entityId": "143048b2-071d-4bde-af93-44c472fa515c",
+      "metadata": {
+        "fileName": "manual-file-online-001-20260614-063414.bin",
+        "chunkSize": 4194304,
+        "sessionId": "143048b2-071d-4bde-af93-44c472fa515c",
+        "totalBytes": 10485760,
+        "expectedChunks": 3,
+        "storageObjectId": "42b4dada-f546-4fb0-a2e6-5c0fbce99a6b"
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import 'package:flowplanv2/shared/providers/app_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../test_support/task_detail_workflow_harness.dart';
 import '../test_support/user_workflow_harness.dart';
 
 void main() {
@@ -13,6 +14,9 @@ void main() {
       tester,
       initialLocation: AppRoutes.taskCreate,
       overrides: [
+        onlinePrimaryPolicyProvider.overrideWith(
+          (ref) => writableOnlinePrimaryPolicy,
+        ),
         allTaskListsProvider.overrideWith(
           (ref) => Stream.value([fixtureTaskList()]),
         ),

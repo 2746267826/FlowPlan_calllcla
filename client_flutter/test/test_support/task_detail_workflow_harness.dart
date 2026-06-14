@@ -1,4 +1,6 @@
 import 'package:flowplanv2/core/database/app_database.dart';
+import 'package:flowplanv2/core/connection/server_connection_state.dart';
+import 'package:flowplanv2/core/online/online_primary_policy.dart';
 import 'package:flowplanv2/core/router/app_router.dart';
 import 'package:flowplanv2/features/task/presentation/task_detail_page.dart';
 import 'package:flowplanv2/features/tracker/data/activity_record_repository.dart';
@@ -9,6 +11,12 @@ import 'package:go_router/go_router.dart';
 
 import 'provider_harness.dart';
 import 'user_workflow_harness.dart';
+
+const writableOnlinePrimaryPolicy = OnlinePrimaryPolicy(
+  serverReachable: true,
+  authenticated: true,
+  level: ServerConnectionLevel.online,
+);
 
 Future<void> pumpTaskDetailWorkflow(
   WidgetTester tester, {
@@ -53,6 +61,9 @@ Future<void> pumpTaskDetailWorkflow(
     db: db,
     size: const Size(800, 1000),
     overrides: [
+      onlinePrimaryPolicyProvider.overrideWith(
+        (ref) => writableOnlinePrimaryPolicy,
+      ),
       allTaskListsProvider.overrideWith((ref) => Stream.value(taskLists)),
       activityRecordRepositoryProvider.overrideWithValue(
         _FakeActivityRecordRepository(db),

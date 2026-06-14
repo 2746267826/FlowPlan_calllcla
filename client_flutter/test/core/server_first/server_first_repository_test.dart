@@ -143,7 +143,7 @@ void main() {
     });
   });
 
-  test('API failures queue task writes when queueOnFailure is enabled',
+  test('explicit queueOnFailure true queues task writes after API failures',
       () async {
     final harness = _Harness((request) async {
       return http.Response('{"error":"offline"}', 503);
@@ -152,6 +152,7 @@ void main() {
 
     final result = await harness.repository.createTask(
       const <String, Object?>{'uid': 'task-offline', 'summary': 'Offline task'},
+      queueOnFailure: true,
     );
 
     expect(result.isPending, isTrue);
@@ -170,7 +171,8 @@ void main() {
     });
   });
 
-  test('generic transport failures queue event updates with sync metadata',
+  test(
+      'explicit queueOnFailure true queues event updates after transport errors',
       () async {
     final harness = _Harness((request) async {
       throw StateError('socket closed');
@@ -182,6 +184,7 @@ void main() {
       patch: const <String, Object?>{'location': 'Room A'},
       baseServerVersion: 11,
       changedFields: const <String>['location'],
+      queueOnFailure: true,
     );
 
     expect(result.isPending, isTrue);
@@ -202,19 +205,70 @@ void main() {
     });
   });
 
-  test('queueOnFailure false rethrows and does not create offline mutations',
-      () async {
+  test('task and event writes rethrow API failures by default', () async {
     final harness = _Harness((request) async {
       return http.Response('{"error":"bad request"}', 400);
     });
     addTearDown(harness.close);
 
     await expectLater(
-      harness.repository.createEvent(
-        const <String, Object?>{'uid': 'event-1'},
-        queueOnFailure: false,
+      harness.repository.createTask(
+        const <String, Object?>{'uid': 'task-default-create'},
       ),
       throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.updateTask(
+        id: 'task-default-update',
+        patch: const <String, Object?>{'summary': 'No queue'},
+      ),
+      throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.completeTask(
+        id: 'task-default-complete',
+        body: const <String, Object?>{'completedAt': '2026-06-10T00:00:00Z'},
+      ),
+      throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.deleteTask(id: 'task-default-delete'),
+      throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.createEvent(
+        const <String, Object?>{'uid': 'event-default-create'},
+      ),
+      throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.updateEvent(
+        id: 'event-default-update',
+        patch: const <String, Object?>{'summary': 'No queue'},
+      ),
+      throwsA(isA<ApiError>()),
+    );
+    await expectLater(
+      harness.repository.deleteEvent(id: 'event-default-delete'),
+      throwsA(isA<ApiError>()),
+    );
+
+    expect(await harness.store.listPending(), isEmpty);
+  });
+
+  test('transport failures rethrow by default without offline mutations',
+      () async {
+    final harness = _Harness((request) async {
+      throw StateError('socket closed');
+    });
+    addTearDown(harness.close);
+
+    await expectLater(
+      harness.repository.updateEvent(
+        id: 'event-default-transport',
+        patch: const <String, Object?>{'location': 'Room B'},
+      ),
+      throwsA(isA<StateError>()),
     );
 
     expect(await harness.store.listPending(), isEmpty);

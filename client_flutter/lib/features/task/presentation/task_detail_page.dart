@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/app_keys.dart';
 import '../../../shared/providers/app_providers.dart';
 import '../../../shared/providers/settings_provider.dart';
+import '../../../shared/widgets/offline_read_only_banner.dart';
 import '../../files/data/file_context_repository.dart';
 import '../../files/presentation/file_context_panel.dart';
 import '../../sync/sync_status_badge.dart';
@@ -23,6 +24,15 @@ class TaskDetailPage extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<TaskDetailPage> createState() => _TaskDetailPageState();
+}
+
+@visibleForTesting
+bool debugPopTaskDetailNavigatorForCoverage(NavigatorState navigator) {
+  if (navigator.canPop()) {
+    navigator.pop();
+    return true;
+  }
+  return false;
 }
 
 class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
@@ -124,6 +134,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
   Widget build(BuildContext context) {
     final isCreating = widget.taskId == null;
     final taskListsAsync = ref.watch(allTaskListsProvider);
+    final readOnlyCache = ref.watch(onlinePrimaryPolicyProvider).readOnlyCache;
 
     return Scaffold(
       appBar: AppBar(
@@ -137,13 +148,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         actions: [
           if (!isCreating)
             IconButton(
-              onPressed: _saving ? null : _delete,
+              onPressed: _saving || readOnlyCache ? null : _delete,
               tooltip: '\u5220\u9664\u4efb\u52a1',
               icon: const Icon(Icons.delete_outline),
             ),
           TextButton.icon(
             key: AppKeys.taskSaveButton,
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || readOnlyCache ? null : _save,
             icon: _saving
                 ? const SizedBox(
                     width: 16,
@@ -160,6 +171,12 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (readOnlyCache) ...[
+              const OfflineReadOnlyBanner(
+                reason: 'Reconnect to save changes.',
+              ),
+              const SizedBox(height: 16),
+            ],
             if (!isCreating) ...[
               SyncStatusBadge(
                 objectType: SyncObjectType.taskItem.key,
@@ -335,8 +352,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     }
 
     final navigator = Navigator.of(context);
-    if (navigator.canPop()) {
-      navigator.pop();
+    if (debugPopTaskDetailNavigatorForCoverage(navigator)) {
       return;
     }
 
@@ -369,6 +385,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
   }
 
   Future<void> _save() async {
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -457,6 +477,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     if (widget.taskId == null || _saving) {
       return;
     }
+    if (ref.read(onlinePrimaryPolicyProvider).readOnlyCache) {
+      _showReadOnlyCacheMessage();
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -514,6 +538,14 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         ),
       );
     }
+  }
+
+  void _showReadOnlyCacheMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Offline cache is read-only. Reconnect to save changes.'),
+      ),
+    );
   }
 }
 
