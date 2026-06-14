@@ -49,7 +49,8 @@ import {
   formatDate,
   pickId,
 } from '../utils/format';
-import { defaultApiBase, datasets, modules } from './constants';
+import { resolveInitialApiBase } from './apiBase';
+import { datasets, modules } from './constants';
 import { safeRandomId } from './hooks';
 
 const iconMap: Record<ModuleKey, ReactNode> = {
@@ -131,9 +132,10 @@ function saveStored(key: string, value: string): void {
 
 export function AdminApp() {
   const [apiBase, setApiBase] = useState(() =>
-    normalizeApiBase(
-      loadStored('flowplanv2.admin.apiBase') ?? defaultApiBase,
-    ),
+    resolveInitialApiBase({
+      storedValue: loadStored('flowplanv2.admin.apiBase'),
+      viteValue: import.meta.env.VITE_API_BASE_URL,
+    }),
   );
   const [deviceId, setDeviceId] = useState(() =>
     loadStored('flowplanv2.admin.deviceId') ?? safeRandomId(),

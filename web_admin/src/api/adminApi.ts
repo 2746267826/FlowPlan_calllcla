@@ -323,6 +323,10 @@ export class TokenExpiredError extends Error {
 export function normalizeApiBase(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, '');
   if (!trimmed) return defaultApiBase;
+  if (trimmed === '/api') return '';
+  if (trimmed.endsWith('/api') && trimmed.startsWith('/')) {
+    return trimmed.slice(0, -4);
+  }
   try {
     const url = new URL(trimmed);
     if (url.pathname === '/api') {
@@ -340,7 +344,7 @@ export function normalizeApiBase(value: string): string {
 
 export function buildApiUrl(apiBase: string, path: string): string {
   if (path.startsWith('http')) return path;
-  const base = normalizeApiBase(apiBase);
+  const base = apiBase === '' ? '' : normalizeApiBase(apiBase);
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${base}${normalizedPath}`;
 }

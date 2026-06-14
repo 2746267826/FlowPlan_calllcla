@@ -27,6 +27,9 @@ describe('AdminApiClient', () => {
     expect(normalizeApiBase(' http://server.test/api/ ')).toBe(
       'http://server.test',
     );
+    expect(normalizeApiBase('/api')).toBe('');
+    expect(buildApiUrl('', '/api/health')).toBe('/api/health');
+    expect(buildApiUrl('/api', '/api/health')).toBe('/api/health');
     expect(buildApiUrl('http://server.test/api', 'https://other.test/x')).toBe(
       'https://other.test/x',
     );
