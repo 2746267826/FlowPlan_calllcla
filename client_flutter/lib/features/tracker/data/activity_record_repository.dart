@@ -121,11 +121,17 @@ class ActivityRecordRepository {
     final record = await getById(id);
     if (record == null) return;
 
-    final duration = endTime.difference(record.startTime).inMinutes;
+    final effectiveEndTime =
+        endTime.isBefore(record.startTime) ? record.startTime : endTime;
+    final duration = effectiveEndTime
+        .difference(record.startTime)
+        .inMinutes
+        .clamp(0, 1 << 31)
+        .toInt();
     if (telemetry == null) {
       await (_db.update(_db.activityRecords)..where((r) => r.id.equals(id)))
           .write(ActivityRecordsCompanion(
-        endTime: Value(endTime),
+        endTime: Value(effectiveEndTime),
         durationMinutes: Value(duration),
       ));
       return;
@@ -133,7 +139,7 @@ class ActivityRecordRepository {
 
     await (_db.update(_db.activityRecords)..where((r) => r.id.equals(id)))
         .write(ActivityRecordsCompanion(
-      endTime: Value(endTime),
+      endTime: Value(effectiveEndTime),
       durationMinutes: Value(duration),
       keyCount: Value(telemetry.keyCount),
       mouseClicks: Value(telemetry.clicks.total),

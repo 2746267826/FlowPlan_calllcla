@@ -169,6 +169,33 @@ void main() {
     });
   });
 
+  group('ActivityRecordRepository gap7 coverage', () {
+    test('endRecord clamps a backwards finish time before persisting',
+        () async {
+      final db = createTestDatabase();
+      addTearDown(db.close);
+      final repository = ActivityRecordRepository(db);
+      final start = DateTime(2026, 6, 14, 16);
+      final backwardsEnd = start.subtract(const Duration(days: 730));
+
+      final id = await repository.startRecord(
+        startTime: start,
+        processName: 'Code.exe',
+        category: 'coding',
+      );
+      await repository.endRecord(
+        id,
+        backwardsEnd,
+        telemetry: InputTelemetry.empty(backwardsEnd),
+      );
+
+      final record = await repository.getById(id);
+
+      expect(record?.endTime, start);
+      expect(record?.durationMinutes, 0);
+    });
+  });
+
   group('AndroidUsageImportService gap7 coverage', () {
     test('opens a new package by closing the previous session at the boundary',
         () async {

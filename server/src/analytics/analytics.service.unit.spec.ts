@@ -377,6 +377,20 @@ describe('AnalyticsService query endpoints', () => {
     ]);
   });
 
+  it('does not let negative activity durations enter heatmap totals', async () => {
+    const start = '2026-06-01T00:00:00.000Z';
+    const end = '2026-06-08T00:00:00.000Z';
+    const { service, query } = createHarness([[]]);
+
+    await service.activityHeatmap({ start, end, bucket: 'hour' }, context);
+
+    const sql = String(query.mock.calls[0][0]);
+    expect(sql).toContain('GREATEST');
+    expect(sql).toContain(
+      "COALESCE(payload->>'durationMinutes', payload->>'duration_minutes')::numeric, 0",
+    );
+  });
+
   it('maps input heatmap buckets, keys, mouse counts, and process intensities', async () => {
     const start = '2026-06-01T00:00:00.000Z';
     const end = '2026-06-08T00:00:00.000Z';

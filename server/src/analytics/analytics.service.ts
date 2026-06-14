@@ -893,9 +893,9 @@ export class AnalyticsService {
     return `
       CASE
         WHEN ${durationMinutes} ~ '^-?\\d+(\\.\\d+)?$'
-        THEN ${durationMinutes}::numeric
+        THEN GREATEST(${durationMinutes}::numeric, 0)
         WHEN ${durationSeconds} ~ '^-?\\d+(\\.\\d+)?$'
-        THEN ${durationSeconds}::numeric / 60
+        THEN GREATEST(${durationSeconds}::numeric / 60, 0)
         WHEN ${endAt} IS NOT NULL
         THEN GREATEST(EXTRACT(EPOCH FROM (${endAt} - ${startAt})) / 60, 0)
         ELSE 0
