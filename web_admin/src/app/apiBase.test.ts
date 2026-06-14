@@ -26,6 +26,15 @@ describe('resolveInitialApiBase', () => {
     ).toBe('https://stored.example.com');
   });
 
+  it('preserves persisted same-origin API base overrides', () => {
+    expect(
+      resolveInitialApiBase({
+        storedValue: '',
+        viteValue: 'https://vite.example.com/api',
+      }),
+    ).toBe('');
+  });
+
   it('supports same-origin reverse proxy configuration with /api', () => {
     expect(
       resolveInitialApiBase({
