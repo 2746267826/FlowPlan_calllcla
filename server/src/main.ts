@@ -1,32 +1,18 @@
 import 'reflect-metadata';
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { config } from 'dotenv';
+import { formatEnvLoadMessage, loadEnvFile } from './common/config/env-files';
 
-const envCandidates = [
-  resolve(__dirname, '..', '.env'),
-  resolve(__dirname, '..', '..', '.env'),
-  resolve(process.cwd(), '.env'),
-  resolve(process.cwd(), 'server', '.env'),
-];
-const envPath = envCandidates.find((candidate) => existsSync(candidate));
-
-if (envPath) {
-  const result = config({ path: envPath });
-  const count = Object.keys(result.parsed ?? {}).length;
-  console.log(`[Env] Loaded ${count} vars from ${envPath}`);
-} else {
-  console.warn(`[Env] .env not found. Searched: ${envCandidates.join(', ')}`);
-  console.warn('[Env] Using system environment variables only.');
-}
-
-import { NestFactory } from '@nestjs/core';
-import { configureApp } from './app.bootstrap';
-import { AppModule } from './app.module';
-import { AppLogger } from './common/logger/app-logger.service';
+const loadedEnv = loadEnvFile();
+console.log(formatEnvLoadMessage(loadedEnv));
 
 async function bootstrap() {
+  const [{ NestFactory }, { configureApp }, { AppModule }, { AppLogger }] =
+    await Promise.all([
+      import('@nestjs/core'),
+      import('./app.bootstrap'),
+      import('./app.module'),
+      import('./common/logger/app-logger.service'),
+    ]);
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   configureApp(app);
 
@@ -37,7 +23,13 @@ async function bootstrap() {
 
   const logger = app.get(AppLogger);
   logger.log(`FlowPlanV2 server listening on http://${host}:${port}/api`);
-  logger.log(`Encryption key: ${process.env.FLOWPLANV2_ENCRYPTION_KEY ? '✅ configured' : '❌ NOT SET — set FLOWPLANV2_ENCRYPTION_KEY in .env'}`);
+  logger.log(
+    `Encryption key: ${
+      process.env.FLOWPLANV2_ENCRYPTION_KEY
+        ? 'configured'
+        : 'NOT SET - set FLOWPLANV2_ENCRYPTION_KEY in the environment'
+    }`,
+  );
 }
 
 bootstrap().catch((error) => {

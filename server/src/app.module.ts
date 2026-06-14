@@ -1,13 +1,16 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService, type ConfigModuleOptions } from '@nestjs/config';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
-import { resolve } from 'node:path';
 import { JwtModule } from '@nestjs/jwt';
 import type { JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { loadConfig } from './common/config/app-config';
+import {
+  resolveEnvFile,
+  type EnvFileDiscoveryOptions,
+} from './common/config/env-files';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { JwtStrategy } from './auth/jwt.strategy';
@@ -84,10 +87,23 @@ export function createAppValidationPipe(): ValidationPipe {
   });
 }
 
+export function resolveConfigModuleEnvOptions(
+  options: EnvFileDiscoveryOptions = {},
+): Pick<ConfigModuleOptions, 'envFilePath' | 'ignoreEnvFile'> {
+  const selectedPath = resolveEnvFile(options).selectedPath;
+  return selectedPath
+    ? { envFilePath: [selectedPath], ignoreEnvFile: false }
+    : { envFilePath: [], ignoreEnvFile: true };
+}
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: resolve(__dirname, '..', '.env'), load: [loadConfig] }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      ...resolveConfigModuleEnvOptions(),
+      load: [loadConfig],
+    }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
